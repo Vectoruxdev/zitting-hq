@@ -46,6 +46,7 @@ export async function getFinanceData(): Promise<FinanceData> {
     const memberRows = await db.select().from(s.familyMembers).orderBy(asc(s.familyMembers.name));
     const groupRows = await db.select().from(s.categoryGroups).orderBy(asc(s.categoryGroups.sortOrder));
     const catRows = await db.select().from(s.categories).orderBy(asc(s.categories.sortOrder));
+    const catRuleRows = await db.select().from(s.categorizationRules).orderBy(asc(s.categorizationRules.priority));
     const txnRows = await db.select().from(s.transactions).orderBy(asc(s.transactions.id));
     const splitRows = await db.select().from(s.transactionSplits).orderBy(asc(s.transactionSplits.sortOrder));
     const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder));
@@ -87,6 +88,18 @@ export async function getFinanceData(): Promise<FinanceData> {
       sortOrder: c.sortOrder,
     }));
     data.members = memberRows.map((m) => ({ id: m.id, name: m.name, role: m.role }));
+    data.catRules = catRuleRows.map((r) => ({
+      id: r.id,
+      matchType: r.matchType,
+      matchValue: r.matchValue,
+      field: r.field,
+      categoryId: r.categoryId,
+      categoryName: r.categoryId ? catById.get(r.categoryId)?.name ?? null : null,
+      member: r.member,
+      priority: r.priority,
+      enabled: r.enabled,
+      source: r.source,
+    }));
     data.accountsFlat = accountRows.map((a) => ({
       id: a.id,
       name: a.name,

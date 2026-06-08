@@ -1,62 +1,86 @@
 import React from 'react';
-/* Overview — the owner's command center dashboard. */
+/* Overview — the owner's command center dashboard (computed from real data). */
 function ZHQOverview({ onNavigate }) {
   const {
-    Card, SectionHeader, StatTile, Delta, Button, Icon, Avatar, Tag,
+    Card, SectionHeader, StatTile, Button, Icon, Avatar, Tag,
     DonutChart, DonutLegend, AreaChart, BudgetRow, ChecklistRow,
     DataTable, AmountCell,
   } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
+  const user = window.ZHQ_USER || {};
+
+  const txns = D.txns || [];
+  const cats = D.categories || [];
+  const budgets = D.budgets || [];
+  const upcoming = D.upcoming || [];
+
+  // ---- empty state ----
+  if (!txns.length) {
+    return (
+      <div style={{ display: 'grid', placeItems: 'center', padding: '70px 20px' }}>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>
+          <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 999, placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--accent)', marginBottom: 16 }}>
+            <Icon name="dashboard" size={26} />
+          </span>
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>Welcome to Family HQ</h2>
+          <p style={{ margin: '0 0 20px', color: 'var(--text-secondary)', fontSize: 14.5, lineHeight: 1.5 }}>
+            Add an account and import a CSV from your bank. Your spending breakdown, trends, and totals fill in automatically.
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <Button variant="primary" iconLeft={<Icon name="arrowDown" size={16} />} onClick={() => onNavigate('import')}>Import transactions</Button>
+            <Button variant="secondary" iconLeft={<Icon name="plus" size={16} />} onClick={() => onNavigate('accounts')}>Add account</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const catTotal = cats.reduce((s, c) => s + c.value, 0);
+  const fmtK = (v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${Math.round(v)}`);
 
   const tiles = [
-    { label: 'Total cash', value: D.stats.totalCash, delta: { value: 4330, percent: 1.8 } },
-    { label: 'This-month spending', value: D.stats.spending, delta: { value: 240, percent: 4, invert: true } },
-    { label: 'This-month income', value: D.stats.income, delta: { value: 650, percent: 7 } },
-    { label: 'Transfers to make', value: D.stats.transfers, sub: '5 transfers · 3 left', accent: true, icon: 'transfers', nav: 'transfers' },
+    { label: 'Total cash', value: D.stats.totalCash },
+    { label: 'This-month spending', value: D.stats.spending },
+    { label: 'This-month income', value: D.stats.income },
+    { label: 'Transfers to make', value: D.stats.transfers, sub: upcoming.length ? `${upcoming.length} to send` : 'none pending', accent: true, icon: 'transfers', nav: 'transfers' },
   ];
-
-  const catTotal = D.categories.reduce((s, c) => s + c.value, 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <div className="zt-eyebrow" style={{ marginBottom: 7 }}>Saturday, June 8</div>
-          <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Good morning, Jared</h2>
+          <div className="zt-eyebrow" style={{ marginBottom: 7 }}>{dateStr}</div>
+          <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{greeting}, {user.name || 'there'}</h2>
         </div>
-        <Button variant="primary" iconLeft={<Icon name="plus" size={16} />} style={{ flex: 'none' }} onClick={() => onNavigate('onboarding')}>Connect account</Button>
+        <Button variant="primary" iconLeft={<Icon name="arrowDown" size={16} />} style={{ flex: 'none' }} onClick={() => onNavigate('import')}>Import</Button>
       </div>
 
       {/* Stat tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
         {tiles.map((t, i) => (
           <Card key={i} interactive={!!t.nav} onClick={t.nav ? () => onNavigate(t.nav) : undefined} style={t.accent ? { boxShadow: 'var(--shadow-md)', border: '1px solid var(--green-tint)' } : undefined}>
-            <StatTile {...t} />
+            <StatTile label={t.label} value={t.value} sub={t.sub} accent={t.accent} icon={t.icon} />
           </Card>
         ))}
-      </div>
-
-      {/* Coach insight banner */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: 'var(--olive-fill)', borderRadius: 'var(--radius-lg)' }}>
-        <span style={{ width: 38, height: 38, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--paper-tint)', color: 'var(--olive-text)' }}>
-          <Icon name="sparkles" size={20} />
-        </span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14.5, color: 'var(--text-primary)', fontWeight: 500 }}>Dining is up 60% vs your 3-month average — <span className="zt-num" style={{ color: 'var(--olive-text)' }}>$240 over</span>.</div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>Mostly weekend takeout. Want to set a tighter Dining budget?</div>
-        </div>
-        <Button variant="ghost" size="sm" iconRight={<Icon name="chevronRight" size={15} />} style={{ color: 'var(--olive-text)' }}>Ask coach</Button>
       </div>
 
       {/* Money going + income vs spending */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.05fr', gap: 16 }}>
         <Card>
           <SectionHeader eyebrow="This month" title="Where's our money going"
-            action={<Button variant="ghost" size="sm">Merchants</Button>} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
-            <DonutChart segments={D.categories} size={148} thickness={15} centerTop="Spent" centervalue="$5.4k" centerSub="of $6.4k" />
-            <div style={{ flex: 1 }}><DonutLegend segments={D.categories} /></div>
-          </div>
+            action={<Button variant="ghost" size="sm" onClick={() => onNavigate('categories')}>Categories</Button>} />
+          {cats.length ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
+              <DonutChart segments={cats} size={148} thickness={15} centerTop="Spent" centervalue={fmtK(catTotal)} />
+              <div style={{ flex: 1 }}><DonutLegend segments={cats} /></div>
+            </div>
+          ) : (
+            <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>No spending categorized this month yet.</div>
+          )}
         </Card>
         <Card>
           <SectionHeader eyebrow="Last 6 months" title="Income vs spending"
@@ -68,38 +92,37 @@ function ZHQOverview({ onNavigate }) {
         </Card>
       </div>
 
-      {/* Budgets + upcoming transfers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Card>
-          <SectionHeader title="Budgets at a glance"
-            action={<Button variant="ghost" size="sm" onClick={() => onNavigate('budgets')}>See all</Button>} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 17 }}>
-            {D.budgets.map((b, i) => {
-              const left = b.limit - b.spent;
-              const over = left < 0;
-              const near = !over && left / b.limit <= 0.15;
-              return (
-                <BudgetRow key={i} name={b.name} value={b.spent} max={b.limit}
-                  left={b.who ? <Avatar name={b.who} size="xs" /> : <Icon name={b.icon} size={15} style={{ color: 'var(--text-tertiary)' }} />}
-                  right={<span className="zt-num" style={{ fontSize: 13.5, color: over ? 'var(--negative)' : near ? 'var(--warning)' : 'var(--text-secondary)' }}>{over ? `$${Math.abs(left)} over` : `$${left} left`}</span>}
-                  caption={`$${b.spent} of $${b.limit}`} />
-              );
-            })}
-          </div>
-        </Card>
-        <Card>
-          <SectionHeader title="Upcoming transfers"
-            action={<Button variant="ghost" size="sm" onClick={() => onNavigate('transfers')}>Open</Button>} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {D.upcoming.slice(0, 3).map((t, i) => (
-              <ChecklistRow key={i} {...t} />
-            ))}
-            <button onClick={() => onNavigate('transfers')} style={{ marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px', background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', font: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-              2 more · $1,800 to move <Icon name="arrowRight" size={15} />
-            </button>
-          </div>
-        </Card>
-      </div>
+      {/* Budgets + upcoming transfers (only if present) */}
+      {(budgets.length || upcoming.length) ? (
+        <div style={{ display: 'grid', gridTemplateColumns: budgets.length && upcoming.length ? '1fr 1fr' : '1fr', gap: 16 }}>
+          {budgets.length ? (
+            <Card>
+              <SectionHeader title="Budgets at a glance" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('budgets')}>See all</Button>} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 17 }}>
+                {budgets.map((b, i) => {
+                  const left = b.limit - b.spent;
+                  const over = left < 0;
+                  const near = !over && left / b.limit <= 0.15;
+                  return (
+                    <BudgetRow key={i} name={b.name} value={b.spent} max={b.limit}
+                      left={b.who ? <Avatar name={b.who} size="xs" /> : <Icon name={b.icon} size={15} style={{ color: 'var(--text-tertiary)' }} />}
+                      right={<span className="zt-num" style={{ fontSize: 13.5, color: over ? 'var(--negative)' : near ? 'var(--warning)' : 'var(--text-secondary)' }}>{over ? `$${Math.abs(left)} over` : `$${left} left`}</span>}
+                      caption={`$${b.spent} of $${b.limit}`} />
+                  );
+                })}
+              </div>
+            </Card>
+          ) : null}
+          {upcoming.length ? (
+            <Card>
+              <SectionHeader title="Upcoming transfers" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('transfers')}>Open</Button>} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {upcoming.slice(0, 4).map((t, i) => <ChecklistRow key={i} {...t} />)}
+              </div>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Recent transactions */}
       <Card>
@@ -110,7 +133,7 @@ function ZHQOverview({ onNavigate }) {
             { key: 'date', header: 'Date', render: (r) => <span style={{ color: 'var(--text-secondary)' }}>{r.date}</span> },
             { key: 'merchant', header: 'Merchant', render: (r) => (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 500 }}>
-                {r.merchant}{r.flagged ? <Icon name="flag" size={13} style={{ color: 'var(--warning)' }} /> : null}{r.pending ? <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>pending</span> : null}
+                <span style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant}</span>{r.flagged ? <Icon name="flag" size={13} style={{ color: 'var(--warning)' }} /> : null}{r.pending ? <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>pending</span> : null}
               </span>
             ) },
             { key: 'cat', header: 'Category', render: (r) => <Tag color={r.color} size="sm">{r.cat}</Tag> },
@@ -118,7 +141,7 @@ function ZHQOverview({ onNavigate }) {
             { key: 'account', header: 'Account', render: (r) => <span style={{ color: 'var(--text-tertiary)', fontSize: 12.5 }} className="zt-num">{r.account}</span> },
             { key: 'amt', header: 'Amount', align: 'right', sortable: true, render: (r) => <AmountCell value={r.amt} income={r.income} /> },
           ]}
-          rows={D.txns} sortKey="amt" />
+          rows={txns.slice(0, 8)} sortKey="amt" />
       </Card>
     </div>
   );

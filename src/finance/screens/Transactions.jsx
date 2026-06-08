@@ -15,8 +15,59 @@ function CategoryList({ cats, onPick }) {
   );
 }
 
+function SplitEditor({ txn, onClose }) {
+  const { Modal, Select, TextInput, Button, Icon } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA;
+  const API = window.ZHQ_API || {};
+  const cats = (D.allCategories || []).filter((c) => c.kind !== 'transfer');
+  const target = Math.abs(txn.amt);
+  const [splits, setSplits] = React.useState([{ categoryId: txn.categoryId || 'uncategorized', amount: String(target) }]);
+  const [busy, setBusy] = React.useState(false);
+  const sum = splits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const remaining = Math.round((target - sum) * 100) / 100;
+
+  const set = (i, patch) => setSplits((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => setSplits((rs) => [...rs, { categoryId: 'uncategorized', amount: String(Math.max(0, remaining)) }]);
+  const remove = (i) => setSplits((rs) => rs.filter((_, j) => j !== i));
+
+  async function save() {
+    if (Math.abs(remaining) > 0.01 || !API.splitTransaction) return;
+    setBusy(true);
+    try {
+      await API.splitTransaction(txn.id, splits.map((r) => ({ categoryId: r.categoryId, amount: parseFloat(r.amount) || 0 })));
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      onClose();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Split transaction" width={460}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={save} disabled={busy || Math.abs(remaining) > 0.01}>Save split</Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {splits.map((r, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <Select value={r.categoryId} onChange={(v) => set(i, { categoryId: v })} options={cats.map((c) => ({ value: c.id, label: c.name }))} style={{ flex: 1 }} />
+            <TextInput value={r.amount} onChange={(v) => set(i, { amount: v })} prefix="$" inputMode="decimal" style={{ width: 120 }} />
+            {splits.length > 1 ? <Button variant="ghost" size="sm" onClick={() => remove(i)} iconLeft={<Icon name="x" size={14} />} /> : null}
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Button variant="ghost" size="sm" iconLeft={<Icon name="plus" size={14} />} onClick={add}>Add split</Button>
+          <span className="zt-num" style={{ fontSize: 13, color: Math.abs(remaining) > 0.01 ? 'var(--warning)' : 'var(--accent)' }}>
+            {Math.abs(remaining) > 0.01 ? `$${remaining.toFixed(2)} unallocated` : `Fully split · $${target.toFixed(2)}`}
+          </span>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTransfer }) {
-  const { Icon, IconButton, Tag, Avatar, Badge, Toggle } = window.ZittingHQDesignSystem_c9e528;
+  const { Icon, IconButton, Tag, Avatar, Badge, Toggle, Button } = window.ZittingHQDesignSystem_c9e528;
+  const [splitOpen, setSplitOpen] = React.useState(false);
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 30, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)' }} />
@@ -58,6 +109,12 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
             <Toggle checked={!!txn.isTransfer} onChange={() => onToggleTransfer(txn)} />
           </div>
         </div>
+
+        <Button variant="secondary" size="sm" full iconLeft={<Icon name="allocations" size={15} />} onClick={() => setSplitOpen(true)}>
+          {txn.hasSplit ? 'Edit split' : 'Split into categories'}
+        </Button>
+
+        {splitOpen ? <SplitEditor txn={txn} onClose={() => setSplitOpen(false)} /> : null}
       </div>
     </div>
   );

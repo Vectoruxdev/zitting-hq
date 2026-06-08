@@ -43,6 +43,7 @@ import "./screens/Access.jsx";
 import "./screens/Spendable.jsx";
 import "./screens/Onboarding.jsx";
 import "./screens/Import.jsx";
+import "./screens/Categories.jsx";
 
 const w = (typeof window !== "undefined" ? window : {}) as any;
 
@@ -141,6 +142,7 @@ export default function FinanceApp({
     accounts: { title: "Accounts", render: (nav) => React.createElement(w.ZHQAccounts, { onNavigate: nav }) },
     transactions: { title: "Transactions", render: (nav) => React.createElement(w.ZHQTransactions, { onNavigate: nav }) },
     import: { title: "Import transactions", render: (nav) => React.createElement(w.ZHQImport, { onNavigate: nav }) },
+    categories: { title: "Categories", render: () => React.createElement(w.ZHQCategories) },
     budgets: { title: "Budgets", render: () => React.createElement(w.ZHQBudgets) },
     income: { title: "Income", render: () => React.createElement(w.ZHQIncome) },
     bills: { title: "Bills & recurring", render: () => React.createElement(w.ZHQBills) },
