@@ -19,7 +19,10 @@ const fmt = (v: unknown) =>
 export type FinanceData = typeof MOCK_FINANCE_DATA;
 
 export async function getFinanceData(): Promise<FinanceData> {
-  if (!isDbConfigured || !db) return MOCK_FINANCE_DATA;
+  if (!isDbConfigured || !db) {
+    console.log("[getFinanceData] source=mock (no database configured)");
+    return MOCK_FINANCE_DATA;
+  }
 
   try {
     const [
@@ -193,6 +196,9 @@ export async function getFinanceData(): Promise<FinanceData> {
       }));
     }
 
+    console.log(
+      `[getFinanceData] source=supabase accounts=${accountRows.length} txns=${txnRows.length} budgets=${budgetRows.length} bills=${billRows.length} goals=${goalRows.length}`
+    );
     return data;
   } catch (err) {
     console.error("[getFinanceData] DB read failed, using mock data:", err);
