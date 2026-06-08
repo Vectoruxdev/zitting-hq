@@ -1,0 +1,88 @@
+/* Zitting HQ — Color tokens
+ * Premium Dark Fintech: OLED-leaning near-black canvas, tonal surfaces,
+ * one bright green accent, restrained semantics. Quiet and expensive.
+ */
+
+:root {
+  /* ---- Base palette (raw values) ---- */
+  --black-true:    #000000; /* outermost void behind the rounded app shell */
+  --ink-900:       #0A0A0B; /* app canvas */
+  --ink-850:       #0F0F11;
+  --ink-800:       #161618; /* card surface */
+  --ink-750:       #1A1A1D;
+  --ink-700:       #1D1D20; /* elevated panel / secondary button */
+  --ink-650:       #232327;
+  --ink-600:       #26262A; /* hairline / divider */
+  --ink-550:       #2E2E33;
+  --ink-500:       #3A3A40;
+
+  --hair:          #1F1F22; /* outer shell hairline border over true black */
+
+  --paper-50:      #F5F5F6; /* primary text / high-contrast surface */
+  --paper-200:     #C9C9CE;
+  --gray-400:      #8A8A90; /* secondary / muted text */
+  --gray-500:      #6E6E75;
+  --gray-600:      #5C5C62; /* tertiary labels, small-caps */
+
+  /* ---- Brand + data accents ---- */
+  --green-400:     #5BDB97;
+  --green-500:     #3FD07F; /* PRIMARY accent — gains, charts, focus */
+  --green-600:     #2FB86C;
+  --green-glow:    rgba(63, 208, 127, 0.16);
+
+  --indigo-400:    #8A88F4;
+  --indigo-500:    #6E6CF0; /* secondary data series (dotted comparison) */
+
+  --red-500:       #FF5C5C; /* negative / destructive */
+  --red-600:       #E24A4A;
+  --amber-500:     #E5A33D; /* warning / near-limit / changed */
+  --amber-600:     #CC8E2C;
+
+  --olive-fill:    #2C3A20; /* muted forest-olive promo block */
+  --olive-text:    #9FD27A;
+
+  /* ---- Tints (translucent accent washes for chips/badges) ---- */
+  --green-tint:    rgba(63, 208, 127, 0.12);
+  --indigo-tint:   rgba(110, 108, 240, 0.14);
+  --red-tint:      rgba(255, 92, 92, 0.12);
+  --amber-tint:    rgba(229, 163, 61, 0.13);
+  --paper-tint:    rgba(245, 245, 246, 0.06);
+
+  /* ====== Semantic aliases ====== */
+  --bg-void:           var(--black-true);
+  --bg-app:            var(--ink-900);
+  --surface-card:      var(--ink-800);
+  --surface-raised:    var(--ink-700);
+  --surface-sunken:    var(--ink-850);
+  --surface-hover:     var(--ink-750);
+
+  --border-hairline:   var(--ink-600);
+  --border-shell:      var(--hair);
+  --border-strong:     var(--ink-550);
+  --border-focus:      var(--green-500);
+
+  --text-primary:      var(--paper-50);
+  --text-secondary:    var(--gray-400);
+  --text-tertiary:     var(--gray-600);
+  --text-on-accent:    var(--ink-900);
+
+  --accent:            var(--green-500);
+  --accent-hover:      var(--green-400);
+  --accent-press:      var(--green-600);
+  --accent-soft:       var(--green-tint);
+
+  --data-1:            var(--green-500); /* primary series */
+  --data-2:            var(--indigo-500); /* comparison series */
+
+  --positive:          var(--green-500);
+  --negative:          var(--red-500);
+  --warning:           var(--amber-500);
+
+  --positive-soft:     var(--green-tint);
+  --negative-soft:     var(--red-tint);
+  --warning-soft:      var(--amber-tint);
+
+  /* Primary CTA = solid white pill, black text (the one high-contrast moment) */
+  --btn-primary-bg:    var(--paper-50);
+  --btn-primary-fg:    var(--ink-900);
+}

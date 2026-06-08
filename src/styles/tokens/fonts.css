@@ -1,0 +1,6 @@
+/* Zitting HQ — Webfonts.
+ * Geist (UI) + Geist Mono (numbers) + Instrument Serif (wordmark) now load via
+ * a <link> in the Next.js root layout, not a CSS @import, so the design-system
+ * token @imports can stay consecutive and ahead of all rules (PostCSS rule).
+ * Family names are referenced by the typography tokens in typography.css.
+ */

@@ -1,26 +1,60 @@
 @import "tailwindcss";
+/* Design-system tokens. Imported individually (not via the styles.css @import
+ * chain) so every @import stays consecutive and ahead of all rules — the
+ * webfonts load via a <link> in the root layout instead of a nested @import. */
+@import "../styles/tokens/colors.css";
+@import "../styles/tokens/typography.css";
+@import "../styles/tokens/spacing.css";
+@import "../styles/tokens/base.css";
+@import "../styles/tokens/theme-light.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ---- Finance app chrome (ported from the design prototype's index.html) ---- */
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+}
+
+.zhq-member-canvas {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow: auto;
+  background: radial-gradient(120% 90% at 50% 0%, var(--surface-card) 0%, var(--bg-void) 72%);
+}
+
+.zhq-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.zhq-nav-item .zhq-nav-icon {
+  color: currentColor;
+}
+.zhq-nav-item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.zhq-nav-item[data-active="true"] {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.zhq-nav-item[data-active="true"] .zhq-nav-icon {
+  color: var(--accent);
 }

@@ -1,0 +1,100 @@
+/* Zitting HQ — Base layer
+ * Minimal reset + element defaults wired to tokens. Dark by default.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  letter-spacing: var(--ls-tight);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, p { margin: 0; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+a { color: inherit; text-decoration: none; }
+
+::selection { background: var(--green-glow); color: var(--text-primary); }
+
+/* Tabular, monospaced numerals — the house style for every figure */
+.zt-num {
+  font-family: var(--font-numeric);
+  font-feature-settings: var(--numeric-feature);
+  letter-spacing: var(--ls-tight);
+}
+
+/* Small-caps eyebrow label */
+.zt-eyebrow {
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+}
+
+/* The serif wordmark flourish */
+.zt-wordmark {
+  font-family: var(--font-serif);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0.01em;
+}
+
+/* Thin custom scrollbar to match the calm dark surfaces */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-550) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--ink-550);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- Motion: entrance + chart-draw + loading keyframes (shipped to consumers) ---- */
+@keyframes zt-fade-up   { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes zt-fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zt-pop-in    { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes zt-draw      { to { stroke-dashoffset: 0; } }
+@keyframes zt-enter-up  { from { transform: translateY(12px); } to { transform: translateY(0); } }
+@keyframes zt-shimmer   { from { background-position: 180% 0; } to { background-position: -180% 0; } }
+@keyframes zt-pulse     { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes zt-indeterminate { 0% { transform: translateX(-100%) scaleX(0.4); } 50% { transform: translateX(20%) scaleX(0.6); } 100% { transform: translateX(220%) scaleX(0.4); } }
+@keyframes zt-spin      { to { transform: rotate(360deg); } }
+
+/* Screen / card entrance — transform-only so content is NEVER hidden if a
+   browser throttles the animation timeline (e.g. background tab). */
+.zt-enter      { animation: zt-enter-up 0.44s var(--ease-out) both; }
+.zt-enter-in   { animation: zt-fade-in 0.5s var(--ease-out) both; }
+.zt-stagger > * { animation: zt-enter-up 0.5s var(--ease-out) both; }
+.zt-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.zt-stagger > *:nth-child(2) { animation-delay: 0.07s; }
+.zt-stagger > *:nth-child(3) { animation-delay: 0.12s; }
+.zt-stagger > *:nth-child(4) { animation-delay: 0.17s; }
+.zt-stagger > *:nth-child(5) { animation-delay: 0.22s; }
+.zt-stagger > *:nth-child(6) { animation-delay: 0.27s; }
+
+/* Skeleton shimmer placeholder */
+.zt-skeleton {
+  position: relative;
+  background: linear-gradient(100deg, var(--surface-raised) 28%, var(--surface-hover) 48%, var(--surface-raised) 68%);
+  background-size: 220% 100%;
+  animation: zt-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

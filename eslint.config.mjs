@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored design-system prototype (components + screens authored by
+    // Claude Design). Kept faithful to the handoff; not linted as app code.
+    "src/finance/components/**",
+    "src/finance/screens/**",
+    "src/finance/assets/**",
   ]),
 ]);
 

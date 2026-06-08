@@ -1,0 +1,54 @@
+/* Zitting HQ — Spacing, radii, shadows, motion
+ * Generous negative space; large radii; soft diffuse shadows; quick subtle motion.
+ */
+
+:root {
+  /* ---- Spacing scale (4px base) ---- */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-7:  32px;
+  --space-8:  40px;
+  --space-9:  48px;
+  --space-10: 64px;
+  --space-11: 80px;
+
+  /* ---- Radii (large, soft) ---- */
+  --radius-xs:    6px;
+  --radius-sm:    10px;  /* inputs, dropdowns, chips */
+  --radius-md:    14px;
+  --radius-lg:    18px;  /* cards / panels */
+  --radius-xl:    24px;  /* outer app container */
+  --radius-pill:  999px; /* buttons, segmented controls, badges */
+
+  /* ---- Shadows (low-opacity, diffuse — never hard edges) ---- */
+  --shadow-sm:    0 1px 2px rgba(0,0,0,0.40);
+  --shadow-md:    0 4px 16px rgba(0,0,0,0.45);
+  --shadow-lg:    0 12px 40px rgba(0,0,0,0.55);
+  --shadow-pop:   0 18px 60px rgba(0,0,0,0.65);
+  --shadow-glow:  0 0 0 1px rgba(63,208,127,0.30), 0 0 24px rgba(63,208,127,0.18);
+  --ring-focus:   0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent);
+
+  /* ---- Borders ---- */
+  --border-width: 1px;
+  --border:       var(--border-width) solid var(--border-hairline);
+  --border-soft:  var(--border-width) solid var(--ink-650);
+
+  /* ---- Motion (subtle + quick: 150–250ms) ---- */
+  --ease-out:     cubic-bezier(0.22, 1, 0.36, 1); /* @kind other */
+  --ease-in-out:  cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --dur-fast:     130ms; /* @kind other */
+  --dur-base:     190ms; /* @kind other */
+  --dur-slow:     260ms; /* @kind other */
+  --transition:   var(--dur-base) var(--ease-out);
+
+  /* ---- Layout ---- */
+  --sidebar-w:      232px;
+  --sidebar-rail-w: 64px;
+  --topbar-h:       60px;
+  --content-max:    1240px;
+}

@@ -1,0 +1,67 @@
+/* Zitting HQ — Light theme
+ * A clean, warm light variant. Activated by [data-theme="light"] on <html>.
+ * Strategy: re-map the BASE palette so every semantic alias and every component
+ * that reads a base var flips automatically, then fix the few exceptions
+ * (on-accent text, primary CTA, shadows, promo block).
+ */
+
+[data-theme="light"] {
+  /* ---- Base surfaces re-mapped to warm paper ---- */
+  --black-true: #e7e4de;   /* the void behind the app shell (light) */
+  --ink-900:    #faf9f7;   /* app canvas */
+  --ink-850:    #f3f1ec;   /* sunken */
+  --ink-800:    #ffffff;   /* card */
+  --ink-750:    #f5f3ef;   /* hover */
+  --ink-700:    #ffffff;   /* raised panel (borders separate it) */
+  --ink-650:    #eeebe5;
+  --ink-600:    #e9e6e0;   /* hairline */
+  --ink-550:    #d7d3cb;   /* strong border */
+  --ink-500:    #c0bbb1;
+
+  --hair:       #e4e1da;
+
+  /* ---- Ink ramp (text) flips dark ---- */
+  --paper-50:   #1b1a17;   /* primary text */
+  --paper-200:  #46443e;   /* near-primary text */
+  --gray-400:   #6c685f;   /* secondary text */
+  --gray-500:   #837e74;
+  --gray-600:   #9a958b;   /* tertiary text */
+
+  /* ---- Accents: deepen for contrast on light ---- */
+  --green-400:  #1eb866;
+  --green-500:  #18a558;   /* primary accent */
+  --green-600:  #0f8a45;
+  --green-glow: rgba(24,165,88,0.14);
+
+  --indigo-400: #5654d8;
+  --indigo-500: #5b59e6;
+
+  --red-500:    #dc2626;
+  --red-600:    #c41f1f;
+  --amber-500:  #c77d1a;
+  --amber-600:  #a9690f;
+
+  --olive-fill: #e8efda;   /* light promo block */
+  --olive-text: #3f6b27;
+
+  /* ---- Tints (slightly stronger on white) ---- */
+  --green-tint:  rgba(24,165,88,0.12);
+  --indigo-tint: rgba(91,89,230,0.12);
+  --red-tint:    rgba(220,38,38,0.10);
+  --amber-tint:  rgba(199,125,26,0.13);
+  --paper-tint:  rgba(20,18,14,0.05);
+
+  /* ---- Semantic exceptions ---- */
+  --text-on-accent: #ffffff;
+  --btn-primary-bg: #1b1a17;   /* high-contrast moment = near-black pill */
+  --btn-primary-fg: #ffffff;
+
+  /* ---- Shadows: soft + light ---- */
+  --shadow-sm:   0 1px 2px rgba(28,24,18,0.06);
+  --shadow-md:   0 3px 12px rgba(28,24,18,0.07);
+  --shadow-lg:   0 12px 32px rgba(28,24,18,0.10);
+  --shadow-pop:  0 20px 50px rgba(28,24,18,0.16);
+  --shadow-glow: 0 0 0 1px rgba(24,165,88,0.30), 0 0 18px rgba(24,165,88,0.14);
+
+  color-scheme: light;
+}

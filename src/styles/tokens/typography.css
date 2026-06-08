@@ -1,0 +1,53 @@
+/* Zitting HQ — Typography tokens
+ * Geist for UI, Geist Mono for numbers/data (tabular), Instrument Serif wordmark.
+ * Strong numeric hierarchy: the key figure is huge, bold, tight-tracked.
+ */
+
+:root {
+  /* ---- Families ---- */
+  --font-sans:  'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:  'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+
+  /* Numbers use mono + tabular figures for honest column alignment */
+  --font-numeric: 'Geist Mono', ui-monospace, monospace;
+  --numeric-feature: "tnum" 1, "zero" 1; /* @kind other */
+
+  /* ---- Weights ---- */
+  --fw-light:    300; /* @kind font */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+
+  /* ---- Type scale (display → caption) ---- */
+  --fs-hero:    56px;  /* the marquee balance figure */
+  --fs-display: 40px;  /* big stat numbers */
+  --fs-title:   28px;
+  --fs-h1:      22px;
+  --fs-h2:      18px;  /* section titles */
+  --fs-h3:      16px;
+  --fs-body:    14px;  /* default UI body */
+  --fs-sm:      13px;  /* stat labels, table cells */
+  --fs-xs:      12px;  /* tertiary labels */
+  --fs-2xs:     11px;  /* small-caps eyebrows */
+
+  /* ---- Line heights ---- */
+  --lh-tight:   1.05; /* @kind font */
+  --lh-snug:    1.2; /* @kind font */
+  --lh-normal:  1.45; /* @kind font */
+  --lh-relaxed: 1.6; /* @kind font */
+
+  /* ---- Letter spacing ---- */
+  --ls-tighter: -0.03em; /* @kind font */
+  --ls-tight:   -0.015em; /* @kind font */
+  --ls-normal:  0; /* @kind font */
+  --ls-wide:    0.04em; /* @kind font */
+  --ls-caps:    0.09em; /* @kind font */
+
+  /* ---- Semantic roles ---- */
+  --text-eyebrow-size:   var(--fs-2xs);
+  --text-eyebrow-spacing: var(--ls-caps);
+  --text-label-size:     var(--fs-xs);
+  --text-body-size:      var(--fs-body);
+}
