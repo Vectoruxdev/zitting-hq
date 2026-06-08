@@ -12,7 +12,9 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-const connectionString = process.env.DATABASE_URL;
+// Accept either our own DATABASE_URL or the names the Vercel→Supabase
+// integration injects (POSTGRES_URL = pooled transaction connection).
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
 export const isDbConfigured = Boolean(connectionString);
 

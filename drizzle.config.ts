@@ -5,8 +5,12 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 // For schema push/migrate prefer a direct (non-pooled) connection if provided
-// (Supabase: port 5432). Falls back to DATABASE_URL.
-const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
+// (Supabase port 5432 / POSTGRES_URL_NON_POOLING). Falls back to the pooled URL.
+const url =
+  process.env.DIRECT_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL;
 
 export default defineConfig({
   schema: "./src/db/schema.ts",

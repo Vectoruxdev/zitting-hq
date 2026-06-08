@@ -13,9 +13,13 @@ import { sql } from "drizzle-orm";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA as D } from "@/finance/data/mockData";
 
-const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
+const url =
+  process.env.DIRECT_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL;
 if (!url) {
-  console.error("✗ No DIRECT_URL/DATABASE_URL set. Add it to .env.local first.");
+  console.error("✗ No database URL set. Run `vercel env pull .env.local` or set DATABASE_URL.");
   process.exit(1);
 }
 
