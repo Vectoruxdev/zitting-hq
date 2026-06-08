@@ -27,10 +27,18 @@ const FinanceApp = dynamic(() => import("./FinanceApp"), {
   ),
 });
 
-export default function FinanceClient({ data }: { data?: unknown }) {
+export default function FinanceClient({
+  data,
+  role = "owner",
+  name,
+}: {
+  data?: unknown;
+  role?: "owner" | "member";
+  name?: string;
+}) {
   return (
     <div style={{ height: "100vh", overflow: "hidden", background: "var(--bg-app)" }}>
-      <FinanceApp data={data} />
+      <FinanceApp data={data} role={role} name={name} />
     </div>
   );
 }

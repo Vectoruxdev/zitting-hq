@@ -1,5 +1,8 @@
+import { redirect } from "next/navigation";
 import FinanceClient from "@/finance/FinanceClient";
 import { getFinanceData } from "@/db/queries";
+import { getCurrentUser } from "@/lib/auth";
+import { isAuthConfigured } from "@/lib/supabase/server";
 
 export const metadata = {
   title: "Finance · Family HQ",
@@ -10,6 +13,11 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function FinancePage() {
+  const user = await getCurrentUser();
+  // When auth is configured, require a session. When it isn't (e.g. local dev
+  // with no Supabase env), fall through as owner so the app stays usable.
+  if (isAuthConfigured && !user) redirect("/login?redirect=/finance");
+
   const data = await getFinanceData();
-  return <FinanceClient data={data} />;
+  return <FinanceClient data={data} role={user?.role ?? "owner"} name={user?.name} />;
 }

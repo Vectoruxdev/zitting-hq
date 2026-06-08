@@ -1,6 +1,6 @@
 import React from 'react';
 /* Shell — sidebar + topbar layout for the Zitting Finance desktop app. */
-function ZHQSidebar({ active, onNavigate }) {
+function ZHQSidebar({ active, onNavigate, onLogout }) {
   const { Icon, Avatar } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
   return (
@@ -34,10 +34,15 @@ function ZHQSidebar({ active, onNavigate }) {
         <button className="zhq-nav-item" data-active={active === 'settings' ? 'true' : 'false'} onClick={() => onNavigate && onNavigate('settings')}>
           <Icon name="settings" size={18} className="zhq-nav-icon" /> Settings
         </button>
+        {onLogout ? (
+          <button className="zhq-nav-item" data-active="false" onClick={() => onLogout()}>
+            <Icon name="logout" size={18} className="zhq-nav-icon" /> Log out
+          </button>
+        ) : null}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 9px' }}>
-          <Avatar name="Jared" size="sm" />
+          <Avatar name={(typeof window !== 'undefined' && window.ZHQ_USER && window.ZHQ_USER.name) || 'Jared'} size="sm" />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Jared</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{(typeof window !== 'undefined' && window.ZHQ_USER && window.ZHQ_USER.name) || 'Jared'}</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>Owner</div>
           </div>
         </div>
@@ -76,11 +81,11 @@ function ZHQTopbar({ title, onNavigate }) {
   );
 }
 
-function ZHQShell({ active, onNavigate, title, children, loading }) {
+function ZHQShell({ active, onNavigate, title, children, loading, onLogout }) {
   const { LoadingBar } = window.ZittingHQDesignSystem_c9e528;
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--bg-app)' }}>
-      <ZHQSidebar active={active} onNavigate={onNavigate} />
+      <ZHQSidebar active={active} onNavigate={onNavigate} onLogout={onLogout} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <ZHQTopbar title={title} onNavigate={onNavigate} />
         <div style={{ height: 2, flex: 'none' }}>{loading && LoadingBar ? <LoadingBar /> : null}</div>

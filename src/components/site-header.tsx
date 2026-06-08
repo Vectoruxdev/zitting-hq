@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { MODULES } from "@/lib/modules";
+import { signOut } from "@/app/login/actions";
+import { isAuthConfigured } from "@/lib/supabase/server";
 
 export function SiteHeader() {
   return (
@@ -46,6 +48,26 @@ export function SiteHeader() {
           );
         })}
       </nav>
+      <div style={{ flex: 1 }} />
+      {isAuthConfigured && (
+        <form action={signOut}>
+          <button
+            type="submit"
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              padding: "7px 12px",
+              borderRadius: "var(--radius-sm, 10px)",
+              border: "1px solid var(--border-hairline)",
+              background: "var(--surface-raised)",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+            }}
+          >
+            Sign out
+          </button>
+        </form>
+      )}
     </header>
   );
 }

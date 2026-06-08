@@ -16,6 +16,7 @@
 import React from "react";
 import { DS } from "./ds";
 import { MOCK_FINANCE_DATA } from "./data/mockData";
+import { signOut } from "@/app/login/actions";
 
 // Side-effect imports: populate window with icons, and register every screen as
 // a window.ZHQ* global. Order doesn't matter — screens only read the namespace
@@ -61,14 +62,24 @@ if (typeof window !== "undefined") {
   }
 }
 
-export default function FinanceApp({ data }: { data?: any }) {
+export default function FinanceApp({
+  data,
+  role = "owner",
+  name,
+}: {
+  data?: any;
+  role?: "owner" | "member";
+  name?: string;
+}) {
   // Make the finance data available to the window-global screens before they
   // render. Falls back to the curated mock when no server data was supplied.
   if (typeof window !== "undefined") {
     w.ZHQ_DATA = data || MOCK_FINANCE_DATA;
+    w.ZHQ_USER = { name, role };
   }
 
-  const [route, setRoute] = React.useState("overview");
+  const isMember = role === "member";
+  const [route, setRoute] = React.useState(isMember ? "member" : "overview");
   const [loading, setLoading] = React.useState(true);
   const [booting, setBooting] = React.useState(true);
   const [bootFade, setBootFade] = React.useState(false);
@@ -123,21 +134,32 @@ export default function FinanceApp({ data }: { data?: any }) {
 
   const splash = booting && BootSplash ? <BootSplash fading={bootFade} /> : null;
 
-  if (route === "member") {
+  if (isMember || route === "member") {
     return (
       <>
         {splash}
         <div className="zhq-member-canvas">
           {Spendable ? <Spendable /> : null}
           <div style={{ position: "fixed", top: 20, left: 20 }}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => navigate("overview")}
-              iconLeft={<Icon name="chevronLeft" size={15} />}
-            >
-              Owner view
-            </Button>
+            {isMember ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => signOut()}
+                iconLeft={<Icon name="logout" size={15} />}
+              >
+                Log out
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate("overview")}
+                iconLeft={<Icon name="chevronLeft" size={15} />}
+              >
+                Owner view
+              </Button>
+            )}
           </div>
         </div>
       </>
@@ -166,7 +188,7 @@ export default function FinanceApp({ data }: { data?: any }) {
   return (
     <>
       {splash}
-      <ShellC active={route} onNavigate={navigate} title={r.title} loading={loading}>
+      <ShellC active={route} onNavigate={navigate} title={r.title} loading={loading} onLogout={() => signOut()}>
         {loading && ScreenSkeleton ? (
           <ScreenSkeleton />
         ) : (
