@@ -25,31 +25,20 @@ export async function getFinanceData(): Promise<FinanceData> {
   }
 
   try {
-    const [
-      accountRows,
-      txnRows,
-      budgetRows,
-      ruleRows,
-      incomeRows,
-      billRows,
-      goalRows,
-      transferRows,
-      notifRows,
-      notifRuleRows,
-      receiptRows,
-    ] = await Promise.all([
-      db.select().from(s.accounts).orderBy(asc(s.accounts.sortOrder)),
-      db.select().from(s.transactions).orderBy(asc(s.transactions.sortOrder)),
-      db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder)),
-      db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder)),
-      db.select().from(s.incomeStreams).orderBy(asc(s.incomeStreams.sortOrder)),
-      db.select().from(s.bills).orderBy(asc(s.bills.sortOrder)),
-      db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder)),
-      db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder)),
-      db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder)),
-      db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)),
-      db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)),
-    ]);
+    // Sequential, not Promise.all: Supabase's transaction pooler (pgbouncer)
+    // can misroute pipelined concurrent queries from a single postgres.js
+    // client, scrambling result sets. One-at-a-time keeps results correct.
+    const accountRows = await db.select().from(s.accounts).orderBy(asc(s.accounts.sortOrder));
+    const txnRows = await db.select().from(s.transactions).orderBy(asc(s.transactions.sortOrder));
+    const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder));
+    const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder));
+    const incomeRows = await db.select().from(s.incomeStreams).orderBy(asc(s.incomeStreams.sortOrder));
+    const billRows = await db.select().from(s.bills).orderBy(asc(s.bills.sortOrder));
+    const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder));
+    const transferRows = await db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder));
+    const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder));
+    const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder));
+    const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder));
 
     // Deep clone the defaults so we never mutate the shared mock object.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
