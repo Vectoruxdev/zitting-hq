@@ -16,6 +16,9 @@ import { SegmentedControl } from "./components/core/SegmentedControl";
 import { Tabs } from "./components/core/Tabs";
 import { Tag } from "./components/core/Tag";
 import { Toggle } from "./components/core/Toggle";
+import { TextInput } from "./components/core/TextInput";
+import { Select } from "./components/core/Select";
+import { Checkbox } from "./components/core/Checkbox";
 
 import { AreaChart } from "./components/data/AreaChart";
 import { ChecklistRow } from "./components/data/ChecklistRow";
@@ -31,6 +34,8 @@ import {
   Spinner,
   LoadingBar,
 } from "./components/feedback/Skeleton";
+import { Modal } from "./components/feedback/Modal";
+import { FileDropzone } from "./components/data/FileDropzone";
 
 export const DS = {
   Avatar,
@@ -59,6 +64,11 @@ export const DS = {
   SkeletonText,
   Spinner,
   LoadingBar,
+  TextInput,
+  Select,
+  Checkbox,
+  Modal,
+  FileDropzone,
 };
 
 export type DSNamespace = typeof DS;

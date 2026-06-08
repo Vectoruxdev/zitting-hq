@@ -14,9 +14,11 @@
  * ssr:false), so touching `window` at module scope is safe.
  */
 import React from "react";
+import { useRouter } from "next/navigation";
 import { DS } from "./ds";
 import { MOCK_FINANCE_DATA } from "./data/mockData";
 import { signOut } from "@/app/login/actions";
+import * as ZHQApi from "@/app/finance/actions";
 
 // Side-effect imports: populate window with icons, and register every screen as
 // a window.ZHQ* global. Order doesn't matter — screens only read the namespace
@@ -46,6 +48,8 @@ const w = (typeof window !== "undefined" ? window : {}) as any;
 // Expose the design-system namespace exactly as the screens expect it.
 if (typeof window !== "undefined") {
   w.ZittingHQDesignSystem_c9e528 = DS;
+  // Expose server-action API to the window-global screens.
+  w.ZHQ_API = ZHQApi;
 
   // Theme bootstrap (ported from the prototype's index.html inline script).
   if (!w.__zhqSetTheme) {
@@ -78,11 +82,26 @@ export default function FinanceApp({
     w.ZHQ_USER = { name, role };
   }
 
+  const router = useRouter();
   const isMember = role === "member";
   const [route, setRoute] = React.useState(isMember ? "member" : "overview");
   const [loading, setLoading] = React.useState(true);
   const [booting, setBooting] = React.useState(true);
   const [bootFade, setBootFade] = React.useState(false);
+  // Bumped whenever fresh server `data` arrives (after a mutation +
+  // router.refresh()); used in the screen `key` to force a re-render.
+  const [dataVersion, setDataVersion] = React.useState(0);
+
+  if (typeof window !== "undefined") {
+    w.ZHQ_REFRESH = () => router.refresh();
+  }
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      w.ZHQ_DATA = data || MOCK_FINANCE_DATA;
+      setDataVersion((v) => v + 1);
+    }
+  }, [data]);
 
   const navigate = React.useCallback((r: string) => {
     setLoading(true);
@@ -192,7 +211,7 @@ export default function FinanceApp({
         {loading && ScreenSkeleton ? (
           <ScreenSkeleton />
         ) : (
-          <div key={route} className="zt-enter">
+          <div key={`${route}:${dataVersion}`} className="zt-enter">
             {r.render(navigate)}
           </div>
         )}
