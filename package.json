@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
     "db:reset": "tsx src/db/seed.ts",
-    "db:export-sql": "tsx src/db/export-seed-sql.ts"
+    "db:export-sql": "tsx src/db/export-seed-sql.ts",
+    "db:run": "tsx src/db/run-sql.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
