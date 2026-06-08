@@ -18,6 +18,8 @@ import {
   serial,
   jsonb,
   timestamp,
+  date,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const familyMembers = pgTable("family_members", {
@@ -25,6 +27,25 @@ export const familyMembers = pgTable("family_members", {
   name: text("name").notNull(),
   role: text("role").notNull().default("member"), // owner | member
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ---- Categories ---------------------------------------------------------
+
+export const categoryGroups = pgTable("category_groups", {
+  id: text("id").primaryKey(), // slug, e.g. "essentials"
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const categories = pgTable("categories", {
+  id: text("id").primaryKey(), // slug, e.g. "groceries"
+  name: text("name").notNull(),
+  groupId: text("group_id").references(() => categoryGroups.id),
+  color: text("color").notNull().default("var(--gray-500)"), // CSS var
+  icon: text("icon"),
+  kind: text("kind").notNull().default("expense"), // income | expense | transfer
+  excludeFromBudget: boolean("exclude_from_budget").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 export const accounts = pgTable("accounts", {
@@ -42,19 +63,98 @@ export const accounts = pgTable("accounts", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
-export const transactions = pgTable("transactions", {
+// ---- Import batches -----------------------------------------------------
+
+export const importBatches = pgTable("import_batches", {
+  id: text("id").primaryKey(), // uuid
+  accountId: text("account_id").references(() => accounts.id),
+  filename: text("filename"),
+  rowsTotal: integer("rows_total").notNull().default(0),
+  rowsImported: integer("rows_imported").notNull().default(0),
+  rowsSkipped: integer("rows_skipped").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: text("created_by"), // email
+  undoneAt: timestamp("undone_at"),
+});
+
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: serial("id").primaryKey(),
+    // Real, normalized fields (source of truth)
+    date: date("date"), // real date; nullable for legacy/mock rows
+    accountId: text("account_id").references(() => accounts.id),
+    categoryId: text("category_id").references(() => categories.id),
+    memberId: text("member_id").references(() => familyMembers.id),
+    importBatchId: text("import_batch_id").references(() => importBatches.id),
+    isTransfer: boolean("is_transfer").notNull().default(false),
+    transferPairId: integer("transfer_pair_id"),
+    dedupeHash: text("dedupe_hash"),
+    notes: text("notes"),
+    // Core fields
+    merchant: text("merchant").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    income: boolean("income").notNull().default(false),
+    pending: boolean("pending").notNull().default(false),
+    flagged: boolean("flagged").notNull().default(false),
+    hasSplit: boolean("has_split").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    // Legacy/denormalized label columns (now nullable; backfilled on write
+    // from the FKs so the existing label-based UI keeps rendering).
+    dateLabel: text("date_label"), // e.g. "Jun 4"
+    category: text("category"),
+    color: text("color"), // CSS var for the category chip
+    who: text("who"),
+    accountLabel: text("account_label"),
+  },
+  (t) => [
+    index("idx_txn_account").on(t.accountId),
+    index("idx_txn_category").on(t.categoryId),
+    index("idx_txn_member").on(t.memberId),
+    index("idx_txn_date").on(t.date),
+    index("idx_txn_batch").on(t.importBatchId),
+    index("idx_txn_dedupe").on(t.accountId, t.dedupeHash),
+  ]
+);
+
+export const transactionSplits = pgTable(
+  "transaction_splits",
+  {
+    id: serial("id").primaryKey(),
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    categoryId: text("category_id").references(() => categories.id),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("idx_splits_txn").on(t.transactionId)]
+);
+
+export const categorizationRules = pgTable(
+  "categorization_rules",
+  {
+    id: serial("id").primaryKey(),
+    matchType: text("match_type").notNull().default("contains"), // contains | exact | regex
+    matchValue: text("match_value").notNull(),
+    field: text("field").notNull().default("merchant"), // merchant | amount | account
+    categoryId: text("category_id").references(() => categories.id),
+    member: text("member"), // optional person to also assign
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    source: text("source").notNull().default("manual"), // manual | learned
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [index("idx_rules_enabled").on(t.enabled, t.priority)]
+);
+
+export const columnMappingTemplates = pgTable("column_mapping_templates", {
   id: serial("id").primaryKey(),
-  dateLabel: text("date_label").notNull(), // e.g. "Jun 4"
-  merchant: text("merchant").notNull(),
-  category: text("category").notNull(),
-  color: text("color"), // CSS var for the category chip
-  who: text("who").notNull().default("Household"),
-  accountLabel: text("account_label").notNull(),
-  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
-  income: boolean("income").notNull().default(false),
-  pending: boolean("pending").notNull().default(false),
-  flagged: boolean("flagged").notNull().default(false),
-  sortOrder: integer("sort_order").notNull().default(0),
+  accountId: text("account_id").references(() => accounts.id),
+  bank: text("bank"),
+  name: text("name").notNull(),
+  mapping: jsonb("mapping").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const budgets = pgTable("budgets", {

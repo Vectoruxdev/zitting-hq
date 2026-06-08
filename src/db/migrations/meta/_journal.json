@@ -8,6 +8,13 @@
       "when": 1780955427402,
       "tag": "0000_volatile_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780961069537,
+      "tag": "0001_charming_hitman",
+      "breakpoints": true
     }
   ]
 }
