@@ -14,6 +14,26 @@ async function ensureOwner() {
 
 const refresh = () => revalidatePath("/finance");
 
+// ---- accounts ----
+export async function createAccount(args: Parameters<typeof m.createAccount>[0]) {
+  await ensureOwner();
+  const res = await m.createAccount(args);
+  refresh();
+  return res;
+}
+export async function updateAccount(id: string, patch: Parameters<typeof m.updateAccount>[1]) {
+  await ensureOwner();
+  const res = await m.updateAccount(id, patch);
+  refresh();
+  return res;
+}
+export async function deleteAccount(id: string) {
+  await ensureOwner();
+  const res = await m.deleteAccount(id);
+  refresh();
+  return res;
+}
+
 // ---- import ----
 export async function commitImport(args: Parameters<typeof m.commitImport>[0]) {
   const u = await ensureOwner();

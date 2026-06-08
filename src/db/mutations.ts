@@ -40,6 +40,46 @@ async function accountLabel(accountId: string | null | undefined): Promise<strin
 }
 
 // ====================================================================
+// Accounts
+// ====================================================================
+export async function createAccount(args: {
+  name: string;
+  institution?: string;
+  type: string; // checking | savings | credit
+  mask?: string | null;
+  who?: string;
+}) {
+  const id = crypto.randomUUID();
+  await requireDb().insert(s.accounts).values({
+    id,
+    name: args.name,
+    institution: args.institution || "",
+    type: args.type,
+    mask: args.mask || null,
+    who: args.who || "Household",
+  });
+  return { ok: true as const, id };
+}
+
+export async function updateAccount(
+  id: string,
+  patch: { name?: string; institution?: string; type?: string; mask?: string | null; who?: string; destLabel?: string | null }
+) {
+  await requireDb().update(s.accounts).set(patch).where(eq(s.accounts.id, id));
+  return { ok: true as const };
+}
+
+export async function deleteAccount(id: string) {
+  const database = requireDb();
+  await database.transaction(async (tx) => {
+    await tx.delete(s.transactions).where(eq(s.transactions.accountId, id));
+    await tx.delete(s.importBatches).where(eq(s.importBatches.accountId, id));
+    await tx.delete(s.accounts).where(eq(s.accounts.id, id));
+  });
+  return { ok: true as const };
+}
+
+// ====================================================================
 // Import
 // ====================================================================
 export interface ImportRow {

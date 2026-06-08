@@ -7,6 +7,8 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
     { id: 'accounts', label: 'Accounts', icon: 'wallet' },
     { id: 'transactions', label: 'Transactions', icon: 'list' },
+    { id: 'import', label: 'Import', icon: 'arrowDown' },
+    { id: 'categories', label: 'Categories', icon: 'pie' },
     { id: 'budgets', label: 'Budgets', icon: 'pie' },
     { id: 'income', label: 'Income', icon: 'trendingUp' },
     { id: 'bills', label: 'Bills', icon: 'repeat' },

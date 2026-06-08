@@ -42,6 +42,7 @@ import "./screens/Ask.jsx";
 import "./screens/Access.jsx";
 import "./screens/Spendable.jsx";
 import "./screens/Onboarding.jsx";
+import "./screens/Import.jsx";
 
 const w = (typeof window !== "undefined" ? window : {}) as any;
 
@@ -137,8 +138,9 @@ export default function FinanceApp({
   // route id -> { title, render }
   const ROUTES: Record<string, { title: string; render: (nav: (r: string) => void) => React.ReactNode }> = {
     overview: { title: "Overview", render: (nav) => React.createElement(w.ZHQOverview, { onNavigate: nav }) },
-    accounts: { title: "Accounts", render: () => React.createElement(w.ZHQAccounts) },
-    transactions: { title: "Transactions", render: () => React.createElement(w.ZHQTransactions) },
+    accounts: { title: "Accounts", render: (nav) => React.createElement(w.ZHQAccounts, { onNavigate: nav }) },
+    transactions: { title: "Transactions", render: (nav) => React.createElement(w.ZHQTransactions, { onNavigate: nav }) },
+    import: { title: "Import transactions", render: (nav) => React.createElement(w.ZHQImport, { onNavigate: nav }) },
     budgets: { title: "Budgets", render: () => React.createElement(w.ZHQBudgets) },
     income: { title: "Income", render: () => React.createElement(w.ZHQIncome) },
     bills: { title: "Bills & recurring", render: () => React.createElement(w.ZHQBills) },
