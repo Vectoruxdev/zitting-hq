@@ -146,6 +146,9 @@ export async function getFinanceData(): Promise<FinanceData> {
         flagged: t.flagged,
         isTransfer: t.isTransfer,
         hasSplit: t.hasSplit,
+        reviewed: t.reviewed,
+        source: t.categorySource,
+        confidence: t.categoryConfidence == null ? null : Number(t.categoryConfidence),
         // ids for inline editing
         categoryId: t.categoryId,
         memberId: t.memberId,

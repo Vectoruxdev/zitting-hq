@@ -14,7 +14,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "db:reset": "tsx src/db/seed.ts",
     "db:export-sql": "tsx src/db/export-seed-sql.ts",
-    "db:run": "tsx src/db/run-sql.ts"
+    "db:run": "tsx src/db/run-sql.ts",
+    "test": "vitest run"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -43,6 +44,7 @@
     "eslint-config-next": "16.2.7",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.8"
   }
 }

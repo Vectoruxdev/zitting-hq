@@ -6,10 +6,10 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
-import { dedupeKey, matchRules, normalizeMerchant, type RuleLike } from "./categorize";
+import { dedupeKey, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -37,6 +37,50 @@ async function accountLabel(accountId: string | null | undefined): Promise<strin
   const [a] = await requireDb().select().from(s.accounts).where(eq(s.accounts.id, accountId));
   if (!a) return null;
   return a.mask ? `${a.name} ••${a.mask}` : a.name;
+}
+
+// ---- categorization engine inputs ----
+async function loadRules(): Promise<RuleLike[]> {
+  const rows = await requireDb().select().from(s.categorizationRules);
+  return rows as unknown as RuleLike[];
+}
+async function loadMemory(): Promise<MemoryMap> {
+  const rows = await requireDb().select().from(s.merchantMemory);
+  const map: MemoryMap = new Map();
+  for (const r of rows) {
+    if (!r.categoryId) continue;
+    const arr = map.get(r.merchantKey) || [];
+    arr.push({ categoryId: r.categoryId, count: r.count, member: r.member });
+    map.set(r.merchantKey, arr);
+  }
+  return map;
+}
+
+/** Increment the learned memory for a merchant→category (the learning loop). */
+export async function learnMerchant(merchantKey: string, categoryId: string, member?: string | null, delta = 1) {
+  if (!merchantKey || !categoryId || categoryId === UNCATEGORIZED_ID) return;
+  const database = requireDb();
+  const [existing] = await database
+    .select()
+    .from(s.merchantMemory)
+    .where(and(eq(s.merchantMemory.merchantKey, merchantKey), eq(s.merchantMemory.categoryId, categoryId)));
+  if (existing) {
+    await database
+      .update(s.merchantMemory)
+      .set({ count: existing.count + delta, member: member ?? existing.member, updatedAt: new Date() })
+      .where(eq(s.merchantMemory.id, existing.id));
+  } else {
+    await database.insert(s.merchantMemory).values({ merchantKey, categoryId, member: member ?? null, count: delta });
+  }
+}
+
+/** Suggest categories for a batch of rows (used by the import preview). */
+export async function suggestCategories(
+  rows: { merchant: string; amount: number; accountId?: string | null; type?: string | null; isTransfer?: boolean }[]
+) {
+  const rules = await loadRules();
+  const memory = await loadMemory();
+  return rows.map((r) => scoreCategory(r, { rules, memory }));
 }
 
 // ====================================================================
@@ -91,6 +135,8 @@ export interface ImportRow {
   memberId?: string | null;
   isTransfer?: boolean;
   externalId?: string | null;
+  categorySource?: string | null; // engine source, or "manual" if user overrode
+  categoryConfidence?: number | null;
 }
 
 export async function commitImport(args: {
@@ -113,6 +159,7 @@ export async function commitImport(args: {
 
   const batchId = crypto.randomUUID();
   const inserts: (typeof s.transactions.$inferInsert)[] = [];
+  const learnQueue: { key: string; categoryId: string; member: string | null }[] = [];
   let skipped = 0;
 
   for (const r of args.rows) {
@@ -130,6 +177,11 @@ export async function commitImport(args: {
     seen.add(key);
     const cat = r.categoryId ? cats.get(r.categoryId) : undefined;
     const mem = r.memberId ? members.get(r.memberId) : undefined;
+    const conf = r.categoryConfidence ?? null;
+    const reviewed = r.categorySource === "manual" ? true : (conf ?? 0) >= REVIEW_THRESHOLD;
+    if (r.categorySource === "manual" && r.categoryId && r.categoryId !== UNCATEGORIZED_ID) {
+      learnQueue.push({ key: extractMerchant(r.merchant), categoryId: r.categoryId, member: mem?.id ?? r.memberId ?? null });
+    }
     inserts.push({
       date: r.date,
       accountId: args.accountId,
@@ -141,6 +193,9 @@ export async function commitImport(args: {
       merchant: r.merchant,
       amount: String(r.amount),
       income: r.income ?? r.amount > 0,
+      categorySource: r.categorySource ?? null,
+      categoryConfidence: conf != null ? String(conf) : null,
+      reviewed,
       // backfilled labels
       dateLabel: dateLabel(r.date),
       category: cat?.name ?? null,
@@ -162,6 +217,9 @@ export async function commitImport(args: {
     });
     if (inserts.length) await tx.insert(s.transactions).values(inserts);
   });
+
+  // Learn from rows the user explicitly categorized during import.
+  for (const l of learnQueue) await learnMerchant(l.key, l.categoryId, l.member);
 
   return { ok: true as const, batchId, imported: inserts.length, skipped };
 }
@@ -212,6 +270,7 @@ export interface TxnPatch {
   memberId?: string | null;
   isTransfer?: boolean;
   flagged?: boolean;
+  reviewed?: boolean;
   notes?: string | null;
 }
 
@@ -223,6 +282,10 @@ async function buildPatchValues(patch: TxnPatch) {
     const c = patch.categoryId ? cats.get(patch.categoryId) : undefined;
     values.category = c?.name ?? null;
     values.color = c?.color ?? null;
+    // A manual category set counts as reviewed + a confident, user-sourced choice.
+    values.categorySource = "manual";
+    values.categoryConfidence = "1.000";
+    values.reviewed = true;
   }
   if (patch.memberId !== undefined) {
     values.memberId = patch.memberId;
@@ -231,6 +294,7 @@ async function buildPatchValues(patch: TxnPatch) {
   }
   if (patch.isTransfer !== undefined) values.isTransfer = patch.isTransfer;
   if (patch.flagged !== undefined) values.flagged = patch.flagged;
+  if (patch.reviewed !== undefined) values.reviewed = patch.reviewed;
   if (patch.notes !== undefined) values.notes = patch.notes;
   return values;
 }
@@ -241,19 +305,40 @@ export async function updateTransaction(id: number, patch: TxnPatch, opts?: { le
   if (Object.keys(values).length) {
     await database.update(s.transactions).set(values).where(eq(s.transactions.id, id));
   }
-  // Learn a merchant→category rule from a manual recategorization.
+  // Learn merchant→category from a manual recategorization (the learning loop).
   if (opts?.learn && patch.categoryId) {
     const [row] = await database.select().from(s.transactions).where(eq(s.transactions.id, id));
-    if (row?.merchant) await learnRuleFromEdit(row.merchant, patch.categoryId);
+    if (row?.merchant) await learnMerchant(extractMerchant(row.merchant), patch.categoryId, patch.memberId ?? row.memberId ?? null);
   }
   return { ok: true as const };
 }
 
-export async function bulkUpdateTransactions(ids: number[], patch: TxnPatch) {
+export async function bulkUpdateTransactions(ids: number[], patch: TxnPatch, opts?: { learn?: boolean }) {
   if (!ids.length) return { ok: true as const };
+  const database = requireDb();
   const values = await buildPatchValues(patch);
   if (Object.keys(values).length) {
-    await requireDb().update(s.transactions).set(values).where(inArray(s.transactions.id, ids));
+    await database.update(s.transactions).set(values).where(inArray(s.transactions.id, ids));
+  }
+  if (opts?.learn && patch.categoryId) {
+    const rows = await database.select().from(s.transactions).where(inArray(s.transactions.id, ids));
+    for (const row of rows) {
+      if (row.merchant) await learnMerchant(extractMerchant(row.merchant), patch.categoryId, row.memberId ?? null);
+    }
+  }
+  return { ok: true as const };
+}
+
+/** Confirm suggestions without changing them — marks reviewed + reinforces learning. */
+export async function confirmTransactions(ids: number[]) {
+  if (!ids.length) return { ok: true as const };
+  const database = requireDb();
+  const rows = await database.select().from(s.transactions).where(inArray(s.transactions.id, ids));
+  await database.update(s.transactions).set({ reviewed: true }).where(inArray(s.transactions.id, ids));
+  for (const row of rows) {
+    if (row.merchant && row.categoryId && row.categoryId !== UNCATEGORIZED_ID) {
+      await learnMerchant(extractMerchant(row.merchant), row.categoryId, row.memberId ?? null);
+    }
   }
   return { ok: true as const };
 }
@@ -390,45 +475,35 @@ export async function deleteRule(id: number) {
   return { ok: true as const };
 }
 
-/** Upsert a learned merchant→category rule (lower priority than manual rules). */
-export async function learnRuleFromEdit(merchant: string, categoryId: string) {
+/**
+ * Run the full engine over existing transactions. By default only re-scores
+ * rows that haven't been manually reviewed (so it never clobbers your choices).
+ */
+export async function recategorizeAll(opts?: { onlyUnreviewed?: boolean }) {
   const database = requireDb();
-  const norm = normalizeMerchant(merchant);
-  if (!norm) return { ok: true as const };
-  const existing = await database
-    .select()
-    .from(s.categorizationRules)
-    .where(and(eq(s.categorizationRules.field, "merchant"), eq(s.categorizationRules.matchValue, norm)));
-  if (existing.length) {
-    await database.update(s.categorizationRules).set({ categoryId }).where(eq(s.categorizationRules.id, existing[0].id));
-  } else {
-    await database.insert(s.categorizationRules).values({
-      matchType: "contains",
-      matchValue: norm,
-      field: "merchant",
-      categoryId,
-      priority: 200, // learned rules lose to manual (default 100)
-      source: "learned",
-    });
-  }
-  return { ok: true as const };
-}
-
-/** Re-run rules over existing transactions (optionally only uncategorized). */
-export async function applyRulesToPast(opts?: { onlyUncategorized?: boolean }) {
-  const database = requireDb();
-  const rules = (await database.select().from(s.categorizationRules)) as unknown as RuleLike[];
+  const onlyUnreviewed = opts?.onlyUnreviewed ?? true;
+  const rules = await loadRules();
+  const memory = await loadMemory();
   const cats = await catMap();
   const rows = await database.select().from(s.transactions);
   let updated = 0;
   for (const t of rows) {
-    if (opts?.onlyUncategorized && t.categoryId && t.categoryId !== UNCATEGORIZED_ID) continue;
-    const m = matchRules({ merchant: t.merchant, amount: Number(t.amount), accountId: t.accountId }, rules);
-    if (m?.categoryId && m.categoryId !== t.categoryId) {
-      const c = cats.get(m.categoryId);
+    if (onlyUnreviewed && t.reviewed) continue;
+    const sug = scoreCategory(
+      { merchant: t.merchant, amount: Number(t.amount), accountId: t.accountId, isTransfer: t.isTransfer },
+      { rules, memory }
+    );
+    if (sug.categoryId && sug.categoryId !== t.categoryId) {
+      const c = cats.get(sug.categoryId);
       await database
         .update(s.transactions)
-        .set({ categoryId: m.categoryId, category: c?.name ?? null, color: c?.color ?? null })
+        .set({
+          categoryId: sug.categoryId,
+          category: c?.name ?? null,
+          color: c?.color ?? null,
+          categorySource: sug.source,
+          categoryConfidence: String(sug.confidence),
+        })
         .where(eq(s.transactions.id, t.id));
       updated++;
     }
@@ -436,9 +511,17 @@ export async function applyRulesToPast(opts?: { onlyUncategorized?: boolean }) {
   return { ok: true as const, updated };
 }
 
-export async function previewCategorize(
-  rows: { merchant: string; amount: number; accountId?: string | null }[]
-) {
-  const rules = (await requireDb().select().from(s.categorizationRules)) as unknown as RuleLike[];
-  return rows.map((r) => matchRules(r, rules));
+/** Rebuild learned memory from everything already categorized + reviewed. */
+export async function rebuildMemoryFromHistory() {
+  const database = requireDb();
+  await database.delete(s.merchantMemory);
+  const rows = await database.select().from(s.transactions);
+  let learned = 0;
+  for (const t of rows) {
+    if (t.reviewed && t.merchant && t.categoryId && t.categoryId !== UNCATEGORIZED_ID) {
+      await learnMerchant(extractMerchant(t.merchant), t.categoryId, t.memberId ?? null);
+      learned++;
+    }
+  }
+  return { ok: true as const, learned };
 }

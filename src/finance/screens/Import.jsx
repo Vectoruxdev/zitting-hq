@@ -119,6 +119,8 @@ function ZHQImport({ onNavigate }) {
           isTransfer,
           categoryId: isTransfer ? 'transfer' : 'uncategorized',
           memberId: defaultMember,
+          source: isTransfer ? 'transfer' : 'none',
+          confidence: isTransfer ? 0.9 : 0,
           include: Boolean(iso) && amount !== 0,
           duplicate: false,
           dkey: iso ? dedupeKey({ externalId, date: iso, amount, merchant, accountId }) : '',
@@ -134,13 +136,16 @@ function ZHQImport({ onNavigate }) {
     setBusy(true);
     try {
       // auto-categorize (server rules) + dedupe in parallel-ish (sequential to be safe)
-      if (API.previewCategorize) {
-        const cz = await API.previewCategorize(normalized.map((r) => ({ merchant: r.merchant, amount: r.amount, accountId })));
+      if (API.suggestCategories) {
+        const cz = await API.suggestCategories(normalized.map((r) => ({ merchant: r.merchant, amount: r.amount, accountId, isTransfer: r.isTransfer })));
         normalized.forEach((r, i) => {
-          const hit = cz[i];
-          if (hit && hit.categoryId) {
-            r.categoryId = hit.categoryId;
-            if (hit.member) r.memberId = hit.member;
+          const sug = cz[i];
+          if (sug) {
+            if (sug.categoryId) r.categoryId = sug.categoryId;
+            if (sug.member) r.memberId = sug.member;
+            r.source = sug.source;
+            r.confidence = sug.confidence;
+            if (sug.source === 'transfer') r.isTransfer = true;
           }
         });
       }
@@ -175,6 +180,7 @@ function ZHQImport({ onNavigate }) {
         rows: include.map((r) => ({
           date: r.date, merchant: r.merchant, amount: r.amount, income: r.income,
           categoryId: r.categoryId, memberId: r.memberId, isTransfer: r.isTransfer, externalId: r.externalId,
+          categorySource: r.source, categoryConfidence: r.confidence,
         })),
       });
       setResult(res);
@@ -329,8 +335,16 @@ function ZHQImport({ onNavigate }) {
                 </span>
               ) },
               { key: 'categoryId', header: 'Category', render: (r) => (
-                <Select value={r.categoryId} onChange={(v) => patchRow(r.idx, { categoryId: v })} options={catOpts} style={{ minWidth: 150 }} />
+                <Select value={r.categoryId} onChange={(v) => patchRow(r.idx, { categoryId: v, source: 'manual', confidence: 1 })} options={catOpts} style={{ minWidth: 150 }} />
               ) },
+              { key: 'conf', header: 'Auto', render: (r) => {
+                if (r.source === 'manual') return <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>you</span>;
+                const low = (r.confidence || 0) < 0.7;
+                return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: low ? 'var(--warning)' : 'var(--text-tertiary)' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 999, background: low ? 'var(--warning)' : 'var(--accent)' }} />
+                  {Math.round((r.confidence || 0) * 100)}%
+                </span>;
+              } },
               { key: 'memberId', header: 'Person', render: (r) => (
                 <Select value={r.memberId} onChange={(v) => patchRow(r.idx, { memberId: v })} options={memberOpts} style={{ minWidth: 120 }} />
               ) },

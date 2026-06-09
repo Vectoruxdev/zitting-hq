@@ -134,7 +134,10 @@ function ZHQTransactions({ onNavigate }) {
   const [busy, setBusy] = React.useState(false);
 
   const all = D.txns || [];
-  const rows = scope === 'Flagged' ? all.filter((t) => t.flagged) : scope === 'Income' ? all.filter((t) => t.income) : all;
+  const rows = scope === 'Review' ? all.filter((t) => !t.reviewed)
+    : scope === 'Flagged' ? all.filter((t) => t.flagged)
+    : scope === 'Income' ? all.filter((t) => t.income) : all;
+  const reviewCount = all.filter((t) => !t.reviewed).length;
   const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
 
   async function run(fn) {
@@ -151,6 +154,7 @@ function ZHQTransactions({ onNavigate }) {
   });
   const markTransfer = (ids) => run(async () => { await API.bulkUpdateTransactions(ids, { isTransfer: true, categoryId: 'transfer' }); });
   const toggleTransfer = (txn) => run(async () => { await API.markTransfer(txn.id, !txn.isTransfer); });
+  const confirmIds = (idsArg) => run(async () => { await API.confirmTransactions(idsArg); });
 
   const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const ids = [...selected];
@@ -177,8 +181,13 @@ function ZHQTransactions({ onNavigate }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 220 }}>
           <Icon name="search" size={16} /><span style={{ fontSize: 13 }}>Search merchant, amount…</span>
         </div>
+        {reviewCount > 0 ? (
+          <button onClick={() => setScope('Review')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', background: scope === 'Review' ? 'var(--surface-raised)' : 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-pill)', color: 'var(--warning)', font: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {reviewCount} to review
+          </button>
+        ) : null}
         <div style={{ flex: 1 }} />
-        <SegmentedControl options={['All', 'Income', 'Flagged']} value={scope} onChange={setScope} size="sm" />
+        <SegmentedControl options={['All', 'Review', 'Income', 'Flagged']} value={scope} onChange={setScope} size="sm" />
         <Button variant="primary" size="sm" iconLeft={<Icon name="arrowDown" size={15} />} onClick={() => onNavigate && onNavigate('import')}>Import</Button>
       </div>
 
@@ -189,6 +198,7 @@ function ZHQTransactions({ onNavigate }) {
           <span style={{ flex: 1 }} />
           <Button variant="secondary" size="sm" onClick={() => setPicker({ kind: 'category', ids })} disabled={busy}>Set category</Button>
           <Button variant="secondary" size="sm" onClick={() => setPicker({ kind: 'person', ids })} disabled={busy}>Set person</Button>
+          <Button variant="secondary" size="sm" onClick={() => confirmIds(ids)} disabled={busy}>Confirm</Button>
           <Button variant="secondary" size="sm" onClick={() => markTransfer(ids)} disabled={busy}>Mark transfer</Button>
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
         </div>
@@ -208,8 +218,11 @@ function ZHQTransactions({ onNavigate }) {
               </span>
             ) },
             { key: 'cat', header: 'Category', render: (r) => (
-              <span onClick={(e) => { e.stopPropagation(); setPicker({ kind: 'category', ids: [r.id] }); }} style={{ cursor: 'pointer' }}>
-                <Tag color={r.color} editable size="sm">{r.cat}</Tag>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <span onClick={(e) => { e.stopPropagation(); setPicker({ kind: 'category', ids: [r.id] }); }} style={{ cursor: 'pointer' }}>
+                  <Tag color={r.color} editable size="sm">{r.cat}</Tag>
+                </span>
+                {!r.reviewed ? <span title={`${Math.round((r.confidence || 0) * 100)}% confident · ${r.source || 'auto'}`} style={{ width: 6, height: 6, borderRadius: 999, flex: 'none', background: (r.confidence || 0) >= 0.7 ? 'var(--accent)' : 'var(--warning)' }} /> : null}
               </span>
             ) },
             { key: 'who', header: 'Person', render: (r) => (

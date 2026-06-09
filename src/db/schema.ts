@@ -91,6 +91,10 @@ export const transactions = pgTable(
     transferPairId: integer("transfer_pair_id"),
     dedupeHash: text("dedupe_hash"),
     notes: text("notes"),
+    // Auto-categorization metadata
+    categorySource: text("category_source"), // rule | learned | merchant | keyword | income | transfer | manual | none
+    categoryConfidence: numeric("category_confidence", { precision: 4, scale: 3 }),
+    reviewed: boolean("reviewed").notNull().default(false),
     // Core fields
     merchant: text("merchant").notNull(),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
@@ -146,6 +150,24 @@ export const categorizationRules = pgTable(
     createdAt: timestamp("created_at").defaultNow(),
   },
   (t) => [index("idx_rules_enabled").on(t.enabled, t.priority)]
+);
+
+/**
+ * Learned merchant→category memory. Frequency-based: each time the user
+ * confirms/changes a category, the (merchantKey, categoryId) count is bumped.
+ * The categorization engine reads this as its strongest learned signal.
+ */
+export const merchantMemory = pgTable(
+  "merchant_memory",
+  {
+    id: serial("id").primaryKey(),
+    merchantKey: text("merchant_key").notNull(), // normalized, e.g. "netflix"
+    categoryId: text("category_id").references(() => categories.id),
+    member: text("member"),
+    count: integer("count").notNull().default(1),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [index("idx_merchant_memory_key").on(t.merchantKey)]
 );
 
 export const columnMappingTemplates = pgTable("column_mapping_templates", {

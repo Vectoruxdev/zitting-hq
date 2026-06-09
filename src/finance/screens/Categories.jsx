@@ -140,11 +140,17 @@ function ZHQCategories() {
     if (!window.confirm(`Delete "${c.name}"? Its transactions move to Uncategorized.`)) return;
     await API.deleteCategory(c.id); refresh();
   }
-  async function applyPast() {
-    setMsg('Applying…');
-    const res = await API.applyRulesToPast();
+  async function autoCategorize() {
+    setMsg('Auto-categorizing…');
+    const res = await API.recategorizeAll({ onlyUnreviewed: true });
     refresh();
-    setMsg(`Updated ${res?.updated ?? 0} transaction(s).`);
+    setMsg(`Auto-categorized ${res?.updated ?? 0} unreviewed transaction(s).`);
+  }
+  async function rebuildMemory() {
+    setMsg('Learning from history…');
+    const res = await API.rebuildMemoryFromHistory();
+    refresh();
+    setMsg(`Learned from ${res?.learned ?? 0} reviewed transaction(s).`);
   }
   async function toggleRule(r) { await API.updateRule(r.id, { enabled: !r.enabled }); refresh(); }
   async function delRule(r) { await API.deleteRule(r.id); refresh(); }
@@ -156,7 +162,11 @@ function ZHQCategories() {
         <span style={{ flex: 1 }} />
         {tab === 'Categories'
           ? <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={15} />} onClick={openNew}>New category</Button>
-          : <><Button variant="secondary" size="sm" onClick={applyPast}>Apply to past</Button><Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={15} />} onClick={() => setRuleModal(true)}>New rule</Button></>}
+          : <>
+              <Button variant="ghost" size="sm" onClick={rebuildMemory}>Rebuild memory</Button>
+              <Button variant="secondary" size="sm" onClick={autoCategorize}>Auto-categorize all</Button>
+              <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={15} />} onClick={() => setRuleModal(true)}>New rule</Button>
+            </>}
       </div>
 
       {tab === 'Categories' ? (

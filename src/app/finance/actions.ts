@@ -51,9 +51,11 @@ export async function findExistingHashes(accountId: string, hashes: string[]) {
   await ensureOwner();
   return m.findExistingHashes(accountId, hashes);
 }
-export async function previewCategorize(rows: { merchant: string; amount: number; accountId?: string | null }[]) {
+export async function suggestCategories(
+  rows: { merchant: string; amount: number; accountId?: string | null; type?: string | null; isTransfer?: boolean }[]
+) {
   await ensureOwner();
-  return m.previewCategorize(rows);
+  return m.suggestCategories(rows);
 }
 export async function listColumnTemplates(accountId?: string | null) {
   await ensureOwner();
@@ -73,7 +75,14 @@ export async function updateTransaction(id: number, patch: m.TxnPatch, opts?: { 
 }
 export async function bulkUpdateTransactions(ids: number[], patch: m.TxnPatch) {
   await ensureOwner();
-  const res = await m.bulkUpdateTransactions(ids, patch);
+  // Bulk setting a category is a manual choice → learn from it.
+  const res = await m.bulkUpdateTransactions(ids, patch, { learn: patch.categoryId != null });
+  refresh();
+  return res;
+}
+export async function confirmTransactions(ids: number[]) {
+  await ensureOwner();
+  const res = await m.confirmTransactions(ids);
   refresh();
   return res;
 }
@@ -135,9 +144,15 @@ export async function deleteRule(id: number) {
   refresh();
   return res;
 }
-export async function applyRulesToPast(opts?: { onlyUncategorized?: boolean }) {
+export async function recategorizeAll(opts?: { onlyUnreviewed?: boolean }) {
   await ensureOwner();
-  const res = await m.applyRulesToPast(opts);
+  const res = await m.recategorizeAll(opts);
+  refresh();
+  return res;
+}
+export async function rebuildMemoryFromHistory() {
+  await ensureOwner();
+  const res = await m.rebuildMemoryFromHistory();
   refresh();
   return res;
 }
