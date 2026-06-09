@@ -155,9 +155,15 @@ export async function createAccount(args: {
 
 export async function updateAccount(
   id: string,
-  patch: { name?: string; institution?: string; type?: string; mask?: string | null; who?: string; destLabel?: string | null }
+  patch: { name?: string; institution?: string; type?: string; mask?: string | null; who?: string; destLabel?: string | null; balance?: number }
 ) {
-  await requireDb().update(s.accounts).set(patch).where(eq(s.accounts.id, id));
+  // `balance` is the OPENING balance (numeric column stored as string).
+  const { balance, ...rest } = patch;
+  const values: Record<string, unknown> = { ...rest };
+  if (balance !== undefined && Number.isFinite(balance)) values.balance = String(balance);
+  if (Object.keys(values).length) {
+    await requireDb().update(s.accounts).set(values).where(eq(s.accounts.id, id));
+  }
   return { ok: true as const };
 }
 
@@ -630,6 +636,8 @@ export async function createBudget(args: {
     .values({
       name: labels.name,
       who: labels.who,
+      memberId: labels.memberId,
+      categoryId: labels.categoryId,
       icon: labels.icon,
       limitAmount: String(args.limit),
       spent: "0",
@@ -655,6 +663,8 @@ export async function updateBudget(
     });
     values.name = labels.name;
     values.who = labels.who;
+    values.memberId = labels.memberId;
+    values.categoryId = labels.categoryId;
     values.icon = labels.icon;
   }
   if (Object.keys(values).length) {

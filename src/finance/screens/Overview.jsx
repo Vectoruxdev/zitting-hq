@@ -1,5 +1,20 @@
 import React from 'react';
 /* Overview — the owner's command center dashboard (computed from real data). */
+
+function CashOp({ children }) {
+  return <span style={{ fontSize: 20, fontWeight: 400, color: 'var(--text-tertiary)', flex: 'none' }}>{children}</span>;
+}
+function CashStep({ label, value, sub, tone, strong }) {
+  const color = tone === 'pos' ? 'var(--accent)' : tone === 'neg' ? 'var(--text-primary)' : 'var(--text-primary)';
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div className="zt-eyebrow" style={{ marginBottom: 5 }}>{label}</div>
+      <div className="zt-num" style={{ fontSize: strong ? 24 : 20, fontWeight: 600, letterSpacing: '-0.02em', color }}>{value}</div>
+      {sub ? <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>{sub}</div> : null}
+    </div>
+  );
+}
+
 function ZHQOverview({ onNavigate }) {
   const {
     Card, SectionHeader, StatTile, Button, Icon, Avatar, Tag,
@@ -13,6 +28,7 @@ function ZHQOverview({ onNavigate }) {
   const cats = D.categories || [];
   const budgets = D.budgets || [];
   const upcoming = D.upcoming || [];
+  const cf = D.cashFlow || null;
 
   // ---- empty state ----
   if (!txns.length) {
@@ -76,6 +92,25 @@ function ZHQOverview({ onNavigate }) {
           </Card>
         ))}
       </div>
+
+      {/* Cash-flow reconciliation — makes the month's numbers visibly add up */}
+      {cf ? (
+        <Card>
+          <SectionHeader eyebrow={`${monthEyebrow} · checking + savings`} title="Where the cash went" />
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 18, paddingTop: 4 }}>
+            <CashStep label="Money in" value={cf.inFlowDisplay} tone="pos" />
+            <CashOp>−</CashOp>
+            <CashStep label="Spending" value={cf.outFlowDisplay} tone="neg" />
+            <CashOp>−</CashOp>
+            <CashStep label={cf.transfersDirection === 'in' ? 'Transfers in' : 'Transfers out'} value={cf.transfersOutDisplay} tone={cf.transfersDirection === 'in' ? 'pos' : 'neg'} sub="to savings, cards, etc." />
+            <CashOp>=</CashOp>
+            <CashStep label="Net change in cash" value={cf.netDisplay} tone={cf.net < 0 ? 'neg' : 'pos'} strong />
+          </div>
+          <p style={{ margin: '14px 0 0', fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+            Income and spending exclude transfers, so money moved to savings or used to pay a credit card shows up under transfers — not as spending. <b style={{ color: 'var(--text-secondary)' }}>Total cash</b> above is your running balance across every imported month (opening balance + all activity), not just {cf.month || 'this month'}.
+          </p>
+        </Card>
+      ) : null}
 
       {/* Money going + income vs spending */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.05fr', gap: 16 }}>

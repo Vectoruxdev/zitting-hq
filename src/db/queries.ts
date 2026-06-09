@@ -62,6 +62,7 @@ function emptyData(): FinanceData {
   d.members = [];
   d.catRules = [];
   d.stats = { totalCash: "$0", spending: "$0", income: "$0", transfers: "$0" };
+  d.cashFlow = { month: "", inFlow: 0, inFlowDisplay: "$0", outFlow: 0, outFlowDisplay: "$0", transfersOut: 0, transfersOutDisplay: "$0", transfersDirection: "out", net: 0, netDisplay: "$0" };
   d.trend = { income: [0, 0, 0, 0, 0, 0], spending: [0, 0, 0, 0, 0, 0], labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"] };
   d.member = null;
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
@@ -83,15 +84,19 @@ export async function getFinanceData(): Promise<FinanceData> {
     const catRows = await db.select().from(s.categories).orderBy(asc(s.categories.sortOrder));
     const catRuleRows = await db.select().from(s.categorizationRules).orderBy(asc(s.categorizationRules.priority));
     const txnRows = await db.select().from(s.transactions).orderBy(asc(s.transactions.id));
-    const splitRows = await db.select().from(s.transactionSplits).orderBy(asc(s.transactionSplits.sortOrder));
-    const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder));
-    const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder));
-    const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder));
-    const transferRows = await db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder));
-    const batchRows = await db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt));
-    const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder));
-    const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder));
-    const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder));
+    // Feature/auxiliary tables are read DEFENSIVELY (`.catch(() => [])`): a schema
+    // drift on one of them (a column the live DB doesn't have yet) degrades that
+    // ONE section to empty instead of throwing and wiping the entire dashboard.
+    // Core tables (accounts/members/categories/transactions) are left to hard-fail.
+    const splitRows = await db.select().from(s.transactionSplits).orderBy(asc(s.transactionSplits.sortOrder)).catch(() => []);
+    const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder)).catch(() => []);
+    const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder)).catch(() => []);
+    const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder)).catch(() => []);
+    const transferRows = await db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder)).catch(() => []);
+    const batchRows = await db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt)).catch(() => []);
+    const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder)).catch(() => []);
+    const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)).catch(() => []);
+    const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)).catch(() => []);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -160,6 +165,9 @@ export async function getFinanceData(): Promise<FinanceData> {
       acctNet.set(t.accountId, (acctNet.get(t.accountId) || 0) + n(t.amount));
     }
     const liveBalance = (a: (typeof accountRows)[number]) => n(a.balance) + (acctNet.get(a.id) || 0);
+    const cashAcctIds = new Set(
+      accountRows.filter((a) => a.type === "checking" || a.type === "savings").map((a) => a.id)
+    );
 
     // --- accounts (grouped) ---
     const byType = (t: string) =>
@@ -171,6 +179,7 @@ export async function getFinanceData(): Promise<FinanceData> {
           inst: a.institution,
           mask: a.mask,
           balance: liveBalance(a),
+          openingBalance: n(a.balance),
           who: a.who,
           synced: a.syncedLabel,
           status: a.status,
@@ -330,17 +339,59 @@ export async function getFinanceData(): Promise<FinanceData> {
       }
     }
 
-    // Budgets — uses the stored `spent` column. (Per-member / per-category
-    // targeting is a planned feature; it needs new budgets columns in the live
-    // DB first, so it's intentionally not wired here yet.)
-    data.budgets = budgetRows.map((b) => ({
-      id: b.id,
-      name: b.name,
-      who: b.who,
-      icon: b.icon ?? undefined,
-      spent: n(b.spent),
-      limit: n(b.limitAmount),
-    }));
+    // Cash-flow reconciliation for the target month (checking + savings only),
+    // so the dashboard's numbers visibly add up: every cash-account transaction
+    // is exactly one of income (non-transfer in), spending (non-transfer out),
+    // or a transfer. Net change = in − out − transfers out.
+    let cashIn = 0;
+    let cashOut = 0;
+    let cashTransfersNet = 0; // signed: positive = net into cash accounts
+    for (const t of txnRows) {
+      const dt = parseDate(t.date as string | null);
+      if (!dt || monthKey(dt) !== targetKey) continue;
+      if (!t.accountId || !cashAcctIds.has(t.accountId)) continue;
+      const amt = n(t.amount);
+      const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
+      if (t.isTransfer || cat?.kind === "transfer") {
+        cashTransfersNet += amt;
+      } else if (amt > 0) {
+        cashIn += amt;
+      } else {
+        cashOut += Math.abs(amt);
+      }
+    }
+    const cashNet = cashIn - cashOut + cashTransfersNet;
+    data.cashFlow = {
+      month: data.statsMonth,
+      inFlow: cashIn,
+      inFlowDisplay: money0(cashIn),
+      outFlow: cashOut,
+      outFlowDisplay: money0(cashOut),
+      transfersOut: -cashTransfersNet, // positive when money net-left cash accounts
+      transfersOutDisplay: money0(Math.abs(cashTransfersNet)),
+      transfersDirection: cashTransfersNet <= 0 ? "out" : "in",
+      net: cashNet,
+      netDisplay: (cashNet < 0 ? "−$" : "$") + Math.abs(Math.round(cashNet)).toLocaleString("en-US"),
+    };
+
+    // Budgets — `spent` is DERIVED from the current month's transactions:
+    // category budgets pull from that category's spend, allowances from that
+    // member's spend. Falls back to the stored column for untargeted rows.
+    data.budgets = budgetRows.map((b) => {
+      let spent = n(b.spent);
+      if (b.categoryId) spent = catTotals.get(b.categoryId) || 0;
+      else if (b.memberId) spent = memberTotals.get(b.memberId) || 0;
+      return {
+        id: b.id,
+        name: b.name,
+        who: b.who,
+        icon: b.icon ?? undefined,
+        categoryId: b.categoryId,
+        memberId: b.memberId,
+        spent,
+        limit: n(b.limitAmount),
+      };
+    });
 
     const palette = ["var(--green-500)", "var(--indigo-500)", "var(--amber-500)", "var(--green-600)", "var(--gray-500)"];
     const sortedCats = [...catTotals.entries()].sort((a, b) => b[1] - a[1]);

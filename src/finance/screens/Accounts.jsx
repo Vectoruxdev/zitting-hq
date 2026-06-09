@@ -43,6 +43,46 @@ function ZHQAccountCard({ acct, onOpen }) {
   );
 }
 
+function ZHQOpeningBalanceRow({ acct }) {
+  const { Icon, TextInput, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const opening = acct.openingBalance ?? 0;
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(String(opening));
+  const [busy, setBusy] = React.useState(false);
+
+  async function save() {
+    const num = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+    if (!API.updateAccount || isNaN(num)) { setEditing(false); return; }
+    setBusy(true);
+    try {
+      await API.updateAccount(acct.id, { balance: num });
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      setEditing(false);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border-hairline)' }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Opening balance</div>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Starting point before imported activity</div>
+      </div>
+      {editing ? (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <TextInput value={val} onChange={setVal} placeholder="0.00" style={{ width: 120 }} inputMode="decimal" />
+          <Button variant="primary" size="sm" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setVal(String(opening)); setEditing(false); }}>Cancel</Button>
+        </div>
+      ) : (
+        <button onClick={() => { setVal(String(opening)); setEditing(true); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 500, font: 'inherit' }}>
+          {ZHQMoney(opening, true)}<Icon name="pencil" size={13} style={{ color: 'var(--text-tertiary)' }} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ZHQAccountDetail({ acct, onBack }) {
   const { Card, Button, Icon, Avatar, Badge, AreaChart, DataTable, AmountCell, Tag, Toggle } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
@@ -66,6 +106,11 @@ function ZHQAccountDetail({ acct, onBack }) {
           </div>
           <div className="zt-eyebrow" style={{ marginBottom: 8 }}>{credit ? 'Current balance' : 'Available balance'}</div>
           <div className="zt-num" style={{ fontSize: 44, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>{ZHQMoney(acct.balance, true)}</div>
+          {acct.openingBalance != null && acct.balance !== acct.openingBalance ? (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+              {ZHQMoney(acct.openingBalance, false)} opening + {ZHQMoney(acct.balance - acct.openingBalance, false)} imported activity
+            </div>
+          ) : null}
           <div style={{ marginTop: 18 }}>
             <AreaChart data={acct.trend} labels={['Jan', '', 'Mar', '', 'May', 'Jun']} height={150} color={credit ? 'var(--gray-400)' : 'var(--accent)'} />
           </div>
@@ -80,6 +125,7 @@ function ZHQAccountDetail({ acct, onBack }) {
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 500 }}>{k === 'Mapped to' ? <Avatar name={v} size="xs" /> : null}{v}<Icon name="pencil" size={13} style={{ color: 'var(--text-tertiary)' }} /></span>
               </div>
             ))}
+            <ZHQOpeningBalanceRow acct={acct} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0 4px' }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Transfer destination</span>
               <Toggle defaultChecked={!!acct.dest} size="sm" />
