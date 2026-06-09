@@ -387,7 +387,8 @@ export async function deleteContribution(id: number) {
 export async function createPlaidLinkToken() {
   const u = await ensureOwner();
   try {
-    const token = await plaidDb.createLinkToken(u?.email || "owner");
+    // Plaid forbids PII (e.g. email) in client_user_id — use a non-PII id.
+    const token = await plaidDb.createLinkToken(u?.memberId || "owner");
     return { ok: true as const, token };
   } catch (e) {
     return { ok: false as const, error: (e as Error)?.message || "Plaid request failed" };
