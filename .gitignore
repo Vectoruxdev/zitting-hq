@@ -41,3 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# gstack QA artifacts (local only — screenshots contain real financial data; repo is public)
+.gstack/
