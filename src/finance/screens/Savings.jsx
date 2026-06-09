@@ -31,8 +31,11 @@ function ZHQGoalCard({ g }) {
 }
 
 function ZHQSavings() {
-  const { Button, Icon, StatTile } = window.ZittingHQDesignSystem_c9e528;
+  const { Button, Icon, StatTile, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
+  if (!(D.goals || []).length) {
+    return <EmptyState icon="target" title="No savings goals yet" body="Track progress toward big things like an emergency fund or a trip. Goal tracking is coming soon." />;
+  }
   const totalSaved = D.goals.reduce((s, g) => s + g.saved, 0);
   const totalContrib = D.goals.reduce((s, g) => s + g.contrib, 0);
   return (

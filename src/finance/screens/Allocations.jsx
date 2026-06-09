@@ -1,7 +1,7 @@
 import React from 'react';
 /* Allocations — the priority-ordered waterfall rule builder + live preview. */
 function ZHQAllocations({ onNavigate }) {
-  const { Card, Icon, Button, SegmentedControl, SectionHeader } = window.ZittingHQDesignSystem_c9e528;
+  const { Card, Icon, Button, SegmentedControl, SectionHeader, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
   const [amount, setAmount] = React.useState(4000);
 
@@ -21,6 +21,10 @@ function ZHQAllocations({ onNavigate }) {
   }, [amount]);
 
   const fmt = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!(D.rules || []).length) {
+    return <EmptyState icon="allocations" title="Give every dollar a job" body="Allocation rules pre-split incoming income across tithing, bills, savings, and allowances. Rule building is coming soon." />;
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, alignItems: 'start' }}>

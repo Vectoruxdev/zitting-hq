@@ -1,22 +1,27 @@
 import React from 'react';
 /* Bills & Recurring — auto-detected subscriptions and bills. */
 function ZHQBills() {
-  const { Card, SectionHeader, Button, Icon, Tag, Badge, StatTile, DataTable } = window.ZittingHQDesignSystem_c9e528;
+  const { Card, SectionHeader, Button, Icon, Tag, Badge, StatTile, DataTable, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
-  const bills = D.bills;
+  const [group, setGroup] = React.useState('next');
+  const bills = D.bills || [];
+  if (!bills.length) {
+    return <EmptyState icon="repeat" title="No recurring bills yet" body="Recurring bills and subscriptions are detected from your transactions. Import more history to surface them here." />;
+  }
   const monthly = bills.reduce((s, b) => s + b.amount, 0);
   const subs = bills.filter((b) => b.cat === 'Subscriptions').length;
+  const newCount = bills.filter((b) => b.badge === 'new').length;
   const dueSoon = bills.filter((b) => b.badge === 'due soon').length;
-  const [group, setGroup] = React.useState('next');
+  const dueSoonAmt = bills.filter((b) => b.badge === 'due soon').reduce((s, b) => s + b.amount, 0);
 
-  const sorted = [...bills].sort((a, b) => group === 'next' ? a.next.localeCompare(b.next) : a.cat.localeCompare(b.cat));
+  const sorted = [...bills].sort((a, b) => group === 'next' ? String(a.next).localeCompare(String(b.next)) : a.cat.localeCompare(b.cat));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ display: 'flex', gap: 40 }}>
         <StatTile label="Total monthly recurring" value={'$' + monthly.toLocaleString('en-US', { minimumFractionDigits: 2 })} />
-        <StatTile label="Subscriptions" value={String(subs)} sub="2 new this month" />
-        <StatTile label="Due in next 7 days" value={String(dueSoon + 1)} sub="$132.97" accent />
+        <StatTile label="Subscriptions" value={String(subs)} sub={newCount ? `${newCount} new this month` : undefined} />
+        <StatTile label="Due in next 7 days" value={String(dueSoon)} sub={dueSoon ? '$' + dueSoonAmt.toFixed(2) : undefined} accent />
       </div>
 
       <Card padding={6}>

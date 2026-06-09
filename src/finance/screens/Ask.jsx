@@ -3,9 +3,9 @@ import React from 'react';
 function ZHQAsk() {
   const { Card, Icon, Button, Avatar, AreaChart } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
-  const [msgs, setMsgs] = React.useState(D.ask.messages);
+  const [msgs, setMsgs] = React.useState((D.ask && D.ask.messages) || []);
   const [draft, setDraft] = React.useState('');
-  const send = (text) => { if (!text.trim()) return; setMsgs((m) => [...m, { role: 'user', text }, { role: 'ai', text: "Here's what I found — pulling from your last 90 days of transactions." }]); setDraft(''); };
+  const send = (text) => { if (!text.trim()) return; setMsgs((m) => [...m, { role: 'user', text }, { role: 'ai', text: "The AI money coach isn't connected yet — it's coming soon. Once it's on, I'll answer from your real transactions, budgets, and goals." }]); setDraft(''); };
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)' }}>

@@ -339,6 +339,19 @@ export async function getFinanceData(): Promise<FinanceData> {
     }
     data.trend = { income: incomeArr, spending: spendArr, labels };
 
+    // Neutralize the remaining presentational mock sections so no demo data
+    // leaks into the member (Spendable) and Ask views.
+    data.member = null;
+    data.ask = {
+      prompts: [
+        "How much did we spend on dining?",
+        "Where can we cut $300/month?",
+        "What changed in our bills this month?",
+      ],
+      messages: [],
+    };
+    data.permissions = null;
+
     return data;
   } catch (err) {
     console.error("[getFinanceData] DB read failed, using mock data:", err);

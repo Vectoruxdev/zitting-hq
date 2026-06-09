@@ -35,6 +35,7 @@ import {
   LoadingBar,
 } from "./components/feedback/Skeleton";
 import { Modal } from "./components/feedback/Modal";
+import { EmptyState } from "./components/feedback/EmptyState";
 import { FileDropzone } from "./components/data/FileDropzone";
 
 export const DS = {
@@ -68,6 +69,7 @@ export const DS = {
   Select,
   Checkbox,
   Modal,
+  EmptyState,
   FileDropzone,
 };
 

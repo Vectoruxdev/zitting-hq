@@ -24,10 +24,20 @@ function ZHQPhoneFrame({ children }) {
 }
 
 function ZHQSpendable() {
-  const { Icon, Avatar, ProgressBar, Tag } = window.ZittingHQDesignSystem_c9e528;
-  const M = window.ZHQ_DATA.member;
-  const left = M.allowance - M.spent;
-  const pct = Math.round((M.spent / M.allowance) * 100);
+  const { Icon, Avatar, ProgressBar } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA || {};
+  const user = window.ZHQ_USER || {};
+  const name = user.name || 'there';
+
+  // Their personal allowance budget, if one is set; else month-to-date spend.
+  const budgets = D.budgets || [];
+  const allowance = budgets.find((b) => b.who && b.who.toLowerCase() === String(name).toLowerCase());
+  const shared = budgets.filter((b) => !b.who);
+  const myTxns = (D.txns || []).filter((t) => t.who && t.who.toLowerCase() === String(name).toLowerCase() && !t.income);
+  const spentThisView = myTxns.reduce((s, t) => s + Math.abs(t.amt), 0);
+
+  const hasAllowance = !!allowance;
+  const left = hasAllowance ? allowance.limit - allowance.spent : 0;
 
   const tabs = [
     { icon: 'wallet', label: 'Spendable', on: true },
@@ -42,61 +52,74 @@ function ZHQSpendable() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px 20px' }}>
           {/* header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
-            <Avatar name="Sarah" size="md" />
+            <Avatar name={name} size="md" />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Good morning</div>
-              <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>Sarah</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Welcome back</div>
+              <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>{name}</div>
             </div>
-            <span style={{ position: 'relative', color: 'var(--text-secondary)' }}><Icon name="bell" size={22} /><span style={{ position: 'absolute', top: -1, right: -1, width: 8, height: 8, borderRadius: 999, background: 'var(--accent)', border: '2px solid var(--bg-app)' }} /></span>
           </div>
 
           {/* hero */}
-          <div style={{ textAlign: 'center', padding: '14px 0 26px' }}>
-            <div className="zt-eyebrow" style={{ marginBottom: 14 }}>You have left to spend</div>
-            <div className="zt-num" style={{ fontSize: 64, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--accent)' }}>${left}</div>
-            <div style={{ marginTop: 18, padding: '0 8px' }}>
-              <ProgressBar value={M.spent} max={M.allowance} height={10} />
+          {hasAllowance ? (
+            <div style={{ textAlign: 'center', padding: '14px 0 26px' }}>
+              <div className="zt-eyebrow" style={{ marginBottom: 14 }}>You have left to spend</div>
+              <div className="zt-num" style={{ fontSize: 64, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1, color: left < 0 ? 'var(--negative)' : 'var(--accent)' }}>${Math.abs(left)}</div>
+              <div style={{ marginTop: 18, padding: '0 8px' }}>
+                <ProgressBar value={allowance.spent} max={allowance.limit} height={10} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 12.5, color: 'var(--text-secondary)' }} className="zt-num">
+                <span>${allowance.spent} spent</span>
+                <span>${allowance.limit}/mo</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 12.5, color: 'var(--text-secondary)' }} className="zt-num">
-              <span>${M.spent} spent</span>
-              <span>${M.allowance} · {M.period}</span>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '14px 0 26px' }}>
+              <div className="zt-eyebrow" style={{ marginBottom: 14 }}>Spent this month</div>
+              <div className="zt-num" style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--text-primary)' }}>${Math.round(spentThisView).toLocaleString('en-US')}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 12 }}>No spending limit set yet.</div>
             </div>
-          </div>
+          )}
 
           {/* shared budgets */}
-          <div style={{ marginBottom: 22 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>Shared budgets</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {M.shared.map((b, i) => {
-                const bl = b.limit - b.spent;
-                return (
-                  <div key={i} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 15 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 11 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{b.name}</span>
-                      <span className="zt-num" style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', color: bl <= b.limit * 0.15 ? 'var(--warning)' : 'var(--text-primary)' }}>${bl} left</span>
+          {shared.length ? (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>Shared budgets</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {shared.map((b, i) => {
+                  const bl = b.limit - b.spent;
+                  return (
+                    <div key={i} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 15 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 11 }}>
+                        <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{b.name}</span>
+                        <span className="zt-num" style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', color: bl <= b.limit * 0.15 ? 'var(--warning)' : 'var(--text-primary)' }}>${bl} left</span>
+                      </div>
+                      <ProgressBar value={b.spent} max={b.limit} height={7} />
                     </div>
-                    <ProgressBar value={b.spent} max={b.limit} height={7} />
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {/* recent */}
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Your recent</div>
-            <div>
-              {M.txns.map((t, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: i === M.txns.length - 1 ? 'none' : '1px solid var(--border-hairline)' }}>
-                  <span style={{ width: 38, height: 38, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11, background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name="receipt" size={17} /></span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{t.merchant}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t.date} · {t.cat}</div>
+            {myTxns.length ? (
+              <div>
+                {myTxns.slice(0, 12).map((t, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: i === Math.min(myTxns.length, 12) - 1 ? 'none' : '1px solid var(--border-hairline)' }}>
+                    <span style={{ width: 38, height: 38, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11, background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name="receipt" size={17} /></span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.merchant}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t.date} · {t.cat}</div>
+                    </div>
+                    <span className="zt-num" style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-primary)' }}>−${Math.abs(t.amt).toFixed(2)}</span>
                   </div>
-                  <span className="zt-num" style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-primary)' }}>−${Math.abs(t.amt).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '20px 0', fontSize: 13, color: 'var(--text-tertiary)' }}>No transactions assigned to you yet.</div>
+            )}
           </div>
         </div>
 

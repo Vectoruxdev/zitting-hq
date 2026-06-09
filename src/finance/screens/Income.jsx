@@ -1,9 +1,12 @@
 import React from 'react';
 /* Income — combined trend + income streams with sparklines and status. */
 function ZHQIncome() {
-  const { Card, SectionHeader, Button, Icon, Badge, AreaChart, Sparkline, StatTile } = window.ZittingHQDesignSystem_c9e528;
+  const { Card, SectionHeader, Button, Icon, Badge, AreaChart, Sparkline, StatTile, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
-  const streams = D.incomeStreams;
+  const streams = D.incomeStreams || [];
+  if (!streams.length) {
+    return <EmptyState icon="trendingUp" title="No income streams yet" body="Income streams like paychecks and side income are detected from your transactions. Import income deposits to see them here." />;
+  }
   const totalMonthly = streams.reduce((s, x) => s + x.monthly, 0);
   const money = (n) => '$' + n.toLocaleString('en-US');
 
@@ -17,8 +20,6 @@ function ZHQIncome() {
           </div>
           <div style={{ display: 'flex', gap: 36 }}>
             <StatTile label="Streams" value={String(streams.length)} size="sm" />
-            <StatTile label="Expected next" value="$1,100" sub="Basement rental · Jun 3" size="sm" />
-            <StatTile label="Received this month" value="$9,250" delta={{ value: 650, percent: 7 }} size="sm" />
           </div>
         </div>
         <AreaChart data={D.trend.income} labels={D.trend.labels} height={200} />
