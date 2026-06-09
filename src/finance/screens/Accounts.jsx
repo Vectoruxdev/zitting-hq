@@ -24,6 +24,13 @@ function ZHQAccountCard({ acct, onOpen }) {
         {acct.dest ? <Badge tone="accent" size="sm">{acct.dest}</Badge> : null}
       </div>
 
+      {acct.managers && acct.managers.length ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+          <Icon name="users" size={12} />
+          <span>Managed by {acct.managers.map((m) => m.name).join(', ')}</span>
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div className="zt-num" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', color: credit ? 'var(--text-primary)' : 'var(--text-primary)' }}>{ZHQMoney(acct.balance, true)}</div>
@@ -84,7 +91,7 @@ function ZHQOpeningBalanceRow({ acct }) {
 }
 
 function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
-  const { Modal, TextInput, Select, Button, Icon } = window.ZittingHQDesignSystem_c9e528;
+  const { Modal, TextInput, Select, Button, Icon, Checkbox, Avatar } = window.ZittingHQDesignSystem_c9e528;
   const API = window.ZHQ_API || {};
   const members = window.ZHQ_DATA.members || [];
   const [name, setName] = React.useState(acct.name || '');
@@ -93,6 +100,7 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
   const [type, setType] = React.useState(acct.type || 'checking');
   const [who, setWho] = React.useState(acct.who || 'Household');
   const [dest, setDest] = React.useState(acct.dest || '');
+  const [managerIds, setManagerIds] = React.useState((acct.managers || []).map((m) => m.id));
   const [busy, setBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
 
@@ -100,8 +108,13 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
   React.useEffect(() => {
     setName(acct.name || ''); setInstitution(acct.inst || ''); setMask(acct.mask || '');
     setType(acct.type || 'checking'); setWho(acct.who || 'Household'); setDest(acct.dest || '');
+    setManagerIds((acct.managers || []).map((m) => m.id));
     setConfirmDelete(false);
   }, [acct.id]);
+
+  function toggleManager(id) {
+    setManagerIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : (cur.length >= 2 ? cur : [...cur, id]));
+  }
 
   async function save() {
     if (!name.trim() || !API.updateAccount) return;
@@ -115,6 +128,7 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
         who,
         destLabel: dest.trim() || null,
       });
+      if (API.setAccountMembers) await API.setAccountMembers(acct.id, managerIds);
       window.ZHQ_REFRESH && window.ZHQ_REFRESH();
       onClose();
     } finally { setBusy(false); }
@@ -166,6 +180,28 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
             <Select label="Mapped to" value={who} onChange={setWho} options={whoOpts} />
           </div>
           <TextInput label="Transfer destination tag (optional)" value={dest} onChange={setDest} placeholder="e.g. Savings target" />
+          <div>
+            <span className="zt-eyebrow" style={{ display: 'block', marginBottom: 8 }}>In charge of (up to 2)</span>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10 }}>These people can categorize this account's transactions from their own login.</div>
+            {members.length ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {members.map((mem) => {
+                  const checked = managerIds.includes(mem.id);
+                  const atCap = managerIds.length >= 2 && !checked;
+                  return (
+                    <label key={mem.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', cursor: atCap ? 'not-allowed' : 'pointer', opacity: atCap ? 0.45 : 1 }}>
+                      <Checkbox checked={checked} onChange={() => toggleManager(mem.id)} disabled={atCap} />
+                      <Avatar name={mem.name} size="xs" />
+                      <span style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{mem.name}</span>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{mem.role}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Add people in People &amp; Access first.</div>
+            )}
+          </div>
         </div>
       )}
     </Modal>
@@ -219,7 +255,7 @@ function ZHQAccountDetail({ acct, onBack }) {
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[['Nickname', acct.name], ['Mapped to', acct.who], ['Type', typeLabel], ['Institution', acct.inst || '—'], ['Transfer destination', acct.dest || 'None']].map(([k, v]) => (
+            {[['Nickname', acct.name], ['Mapped to', acct.who], ['In charge of', (acct.managers || []).map((m) => m.name).join(', ') || 'No one yet'], ['Type', typeLabel], ['Institution', acct.inst || '—'], ['Transfer destination', acct.dest || 'None']].map(([k, v]) => (
               <button key={k} onClick={() => setShowEdit(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: '1px solid var(--border-hairline)', background: 'none', border: 'none', borderBottomStyle: 'solid', width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                 <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{k}</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 500 }}>{k === 'Mapped to' ? <Avatar name={v} size="xs" /> : null}{v}<Icon name="pencil" size={13} style={{ color: 'var(--text-tertiary)' }} /></span>

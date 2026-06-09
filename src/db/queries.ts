@@ -14,9 +14,16 @@
  */
 import { asc } from "drizzle-orm";
 import { detectRecurring, detectIncomeStreams } from "./detect";
+import { computeMemberProgress } from "./allowance";
+import { projectGoal, canViewGoal } from "./savings";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
+
+export interface Viewer {
+  memberId: string | null;
+  role: "owner" | "partner" | "member";
+}
 
 const n = (v: unknown) => (v == null ? 0 : Number(v));
 const money0 = (v: number) => "$" + Math.round(v).toLocaleString("en-US");
@@ -51,6 +58,7 @@ function emptyData(): FinanceData {
   d.incomeStreams = [];
   d.bills = [];
   d.goals = [];
+  d.savingsStats = { totalSaved: 0, totalSavedDisplay: "$0", monthlyContrib: 0, monthlyContribDisplay: "$0", activeCount: 0, onTrackCount: 0 };
   d.upcoming = [];
   d.past = [];
   d.notifications = [];
@@ -66,6 +74,7 @@ function emptyData(): FinanceData {
   d.cashFlow = { month: "", inFlow: 0, inFlowDisplay: "$0", outFlow: 0, outFlowDisplay: "$0", transfersOut: 0, transfersOutDisplay: "$0", transfersDirection: "out", net: 0, netDisplay: "$0" };
   d.trend = { income: [0, 0, 0, 0, 0, 0], spending: [0, 0, 0, 0, 0, 0], labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"] };
   d.member = null;
+  d.memberHome = null;
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
   d.permissions = null;
   return d;
@@ -74,13 +83,26 @@ function emptyData(): FinanceData {
 // On a deployed environment, never show the curated mock — show empty instead.
 const fallbackData = (): FinanceData => (process.env.VERCEL ? emptyData() : MOCK_FINANCE_DATA);
 
-export async function getFinanceData(): Promise<FinanceData> {
+export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
   if (!isDbConfigured || !db) return fallbackData();
 
   try {
     // --- sequential reads (pooler-safe) ---
     const accountRows = await db.select().from(s.accounts).orderBy(asc(s.accounts.sortOrder));
-    const memberRows = await db.select().from(s.familyMembers).orderBy(asc(s.familyMembers.name));
+    // Column-explicit (no `allowance`) so a not-yet-migrated allowance column
+    // can't break this CORE read; allowance is read separately + defensively.
+    const memberRows = await db
+      .select({
+        id: s.familyMembers.id,
+        name: s.familyMembers.name,
+        role: s.familyMembers.role,
+        email: s.familyMembers.email,
+        authId: s.familyMembers.authId,
+        status: s.familyMembers.status,
+        color: s.familyMembers.color,
+      })
+      .from(s.familyMembers)
+      .orderBy(asc(s.familyMembers.name));
     const groupRows = await db.select().from(s.categoryGroups).orderBy(asc(s.categoryGroups.sortOrder));
     const catRows = await db.select().from(s.categories).orderBy(asc(s.categories.sortOrder));
     const catRuleRows = await db.select().from(s.categorizationRules).orderBy(asc(s.categorizationRules.priority));
@@ -93,11 +115,22 @@ export async function getFinanceData(): Promise<FinanceData> {
     const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder)).catch(() => []);
     const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder)).catch(() => []);
     const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder)).catch(() => []);
-    const transferRows = await db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder)).catch(() => []);
+    const goalMemberRows = await db.select().from(s.savingsGoalMembers).catch(() => [] as { goalId: string; memberId: string }[]);
+    const contribRows = await db.select().from(s.savingsContributions).orderBy(asc(s.savingsContributions.id)).catch(() => []);
+    // The old display-only `transfers` table is deprecated; upcoming/past now
+    // come from transfer_instances (real, account-linked).
+    const instanceRows = await db.select().from(s.transferInstances).orderBy(asc(s.transferInstances.id)).catch(() => []);
     const batchRows = await db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt)).catch(() => []);
     const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder)).catch(() => []);
     const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)).catch(() => []);
     const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)).catch(() => []);
+    // Member-managed accounts + per-member allowance (migration 0005) — defensive
+    // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
+    const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
+    const allowanceRows = await db
+      .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; allowance: string | null }[]);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -114,6 +147,23 @@ export async function getFinanceData(): Promise<FinanceData> {
     }
     const accountLabel = (a: (typeof accountRows)[number] | undefined, fallback?: string | null) =>
       a ? (a.mask ? `${a.name} ••${a.mask}` : a.name) : fallback ?? "—";
+
+    // --- account ↔ member assignment (who's "in charge of" each account) ---
+    const allowanceById = new Map(allowanceRows.map((r) => [r.id, n(r.allowance)]));
+    const managersByAccount = new Map<string, { id: string; name: string; color: string | null }[]>();
+    const accountsByMember = new Map<string, Set<string>>();
+    for (const am of acctMemberRows) {
+      const mem = memberById.get(am.memberId);
+      const arr = managersByAccount.get(am.accountId) || [];
+      arr.push({ id: am.memberId, name: mem?.name ?? "Member", color: mem?.color ?? null });
+      managersByAccount.set(am.accountId, arr);
+      const set = accountsByMember.get(am.memberId) || new Set<string>();
+      set.add(am.accountId);
+      accountsByMember.set(am.memberId, set);
+    }
+    const isMemberView = viewer?.role === "member" && !!viewer.memberId;
+    const visibleAcctIds = isMemberView ? accountsByMember.get(viewer!.memberId!) ?? new Set<string>() : null;
+    const canSeeAccount = (id: string | null | undefined) => !visibleAcctIds || (id != null && visibleAcctIds.has(id));
 
     // --- taxonomy + roster (for Import / Categories / pickers) ---
     data.categoryGroups = groupRows.map((g) => ({ id: g.id, name: g.name, sortOrder: g.sortOrder }));
@@ -134,6 +184,7 @@ export async function getFinanceData(): Promise<FinanceData> {
       email: m.email,
       status: m.status,
       color: m.color,
+      allowance: allowanceById.get(m.id) ?? 0,
     }));
     data.catRules = catRuleRows.map((r) => ({
       id: r.id,
@@ -147,13 +198,16 @@ export async function getFinanceData(): Promise<FinanceData> {
       enabled: r.enabled,
       source: r.source,
     }));
-    data.accountsFlat = accountRows.map((a) => ({
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      mask: a.mask,
-      label: accountLabel(a),
-    }));
+    data.accountsFlat = accountRows
+      .filter((a) => canSeeAccount(a.id))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        mask: a.mask,
+        label: accountLabel(a),
+        managers: managersByAccount.get(a.id) ?? [],
+      }));
 
     // --- account balances ---
     // `accounts.balance` is the OPENING balance; the live balance is that plus
@@ -173,7 +227,7 @@ export async function getFinanceData(): Promise<FinanceData> {
     // --- accounts (grouped) ---
     const byType = (t: string) =>
       accountRows
-        .filter((a) => a.type === t)
+        .filter((a) => a.type === t && canSeeAccount(a.id))
         .map((a) => ({
           id: a.id,
           name: a.name,
@@ -182,6 +236,7 @@ export async function getFinanceData(): Promise<FinanceData> {
           balance: liveBalance(a),
           openingBalance: n(a.balance),
           who: a.who,
+          managers: managersByAccount.get(a.id) ?? [],
           synced: a.syncedLabel,
           status: a.status,
           trend: a.trend ?? [],
@@ -199,7 +254,7 @@ export async function getFinanceData(): Promise<FinanceData> {
       const partnerLabel = partner.accountId ? accountLabel(acctById.get(partner.accountId)) : partner.accountLabel ?? "—";
       return (n(t.amount) < 0 ? "→ " : "← ") + partnerLabel;
     };
-    data.txns = txnRows.map((t) => {
+    data.txns = txnRows.filter((t) => canSeeAccount(t.accountId)).map((t) => {
       const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
       const member = t.memberId ? memberById.get(t.memberId) : undefined;
       const acct = t.accountId ? acctById.get(t.accountId) : undefined;
@@ -242,6 +297,7 @@ export async function getFinanceData(): Promise<FinanceData> {
         const dt = parseDate(t.date as string | null);
         return {
           id: t.id,
+          inflowId: partner?.id ?? null, // the +leg; used to dedupe vs transfer_instances
           fromAccount: fromAcct ? accountLabel(fromAcct) : t.accountLabel ?? "—",
           toAccount: toAcct ? accountLabel(toAcct) : partner?.accountLabel ?? "—",
           amount: money2(Math.abs(n(t.amount))),
@@ -259,28 +315,175 @@ export async function getFinanceData(): Promise<FinanceData> {
       method: r.method,
       value: r.value == null ? null : n(r.value),
       dest: r.dest,
+      from: r.fromAccountId ? accountLabel(acctById.get(r.fromAccountId)) : null,
+      fromAccountId: r.fromAccountId ?? null,
+      toAccountId: r.toAccountId ?? null,
+      memberId: r.memberId ?? null,
+      member: r.memberId ? memberById.get(r.memberId)?.name ?? null : null,
+      trigger: r.trigger ?? "on_income",
+      enabled: r.enabled ?? true,
+      incomeMatch: r.incomeMatch ?? null,
       icon: r.icon,
     }));
     // incomeStreams are derived from transactions (below, in the derived section).
-    data.goals = goalRows.map((g) => ({
-      id: g.id,
-      name: g.name,
-      saved: n(g.saved),
-      target: n(g.target),
-      date: g.dateLabel,
-      account: g.accountLabel,
-      contrib: n(g.contrib),
-    }));
-    const mapTransfer = (row: (typeof transferRows)[number]) => ({
-      to: row.toLabel,
-      from: row.fromLabel,
-      amount: money2(n(row.amount)),
-      due: row.dueLabel,
-      state: row.state,
-      icon: row.icon,
-    });
-    data.upcoming = transferRows.filter((t) => t.kind === "upcoming").map(mapTransfer);
-    data.past = transferRows.filter((t) => t.kind === "past").map(mapTransfer);
+
+    // --- savings goals ---
+    // `saved` is DERIVED from the contributions ledger (sum per goal), falling
+    // back to the legacy stored column for goals with no ledger rows. Goals are
+    // visibility-filtered HERE (server-side) via canViewGoal, so a private goal
+    // never reaches a browser that isn't allowed to see it.
+    const savedByGoal = new Map<string, number>();
+    const contributionsByGoal = new Map<string, { id: number; amount: number; date: string | null; kind: string; member: string | null; note: string | null }[]>();
+    for (const c of contribRows) {
+      savedByGoal.set(c.goalId, (savedByGoal.get(c.goalId) || 0) + n(c.amount));
+      const arr = contributionsByGoal.get(c.goalId) || [];
+      const dt = parseDate(c.date as string | null);
+      arr.push({
+        id: c.id,
+        amount: n(c.amount),
+        date: dt ? dayLabel(dt) : (c.date as string | null),
+        kind: c.kind,
+        member: c.memberId ? memberById.get(c.memberId)?.name ?? null : null,
+        note: c.note,
+      });
+      contributionsByGoal.set(c.goalId, arr);
+    }
+    const goalMemberIds = new Map<string, string[]>();
+    const goalMembersDisplay = new Map<string, { id: string; name: string; color: string | null }[]>();
+    for (const gm of goalMemberRows) {
+      const ids = goalMemberIds.get(gm.goalId) || [];
+      ids.push(gm.memberId);
+      goalMemberIds.set(gm.goalId, ids);
+      const mem = memberById.get(gm.memberId);
+      const arr = goalMembersDisplay.get(gm.goalId) || [];
+      arr.push({ id: gm.memberId, name: mem?.name ?? "Member", color: mem?.color ?? null });
+      goalMembersDisplay.set(gm.goalId, arr);
+    }
+    const goalNow = new Date();
+    const targetMonthLabel = (iso: string | null) => {
+      if (!iso) return null;
+      const d = new Date(iso + "T00:00:00");
+      return isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    };
+    data.goals = goalRows
+      .filter((g) =>
+        canViewGoal({ visibility: g.visibility, memberIds: goalMemberIds.get(g.id) ?? [] }, viewer)
+      )
+      .map((g) => {
+        const saved = savedByGoal.has(g.id) ? savedByGoal.get(g.id)! : n(g.saved);
+        const target = n(g.target);
+        const autoContrib = n(g.autoContrib);
+        const proj = projectGoal({ saved, target, targetDate: g.targetDate, autoContrib }, goalNow);
+        const acct = g.accountId ? acctById.get(g.accountId) : undefined;
+        return {
+          id: g.id,
+          name: g.name,
+          saved,
+          target,
+          pct: proj.pct,
+          remaining: proj.remaining,
+          date: g.targetDate ? targetMonthLabel(g.targetDate) : g.dateLabel,
+          targetDate: g.targetDate,
+          account: acct ? accountLabel(acct) : g.accountLabel,
+          accountId: g.accountId,
+          contrib: autoContrib,
+          autoContrib,
+          icon: g.icon,
+          color: g.color ?? "var(--accent)",
+          goalType: g.goalType,
+          visibility: g.visibility,
+          members: goalMembersDisplay.get(g.id) ?? [],
+          contributions: (contributionsByGoal.get(g.id) ?? []).slice().reverse(), // newest first
+          monthsLeft: proj.monthsLeft,
+          requiredPerMonth: proj.requiredPerMonth,
+          status: proj.status,
+          archived: !!g.archivedAt,
+        };
+      });
+    // Savings summary (active goals only) for the tab header.
+    {
+      const active = data.goals.filter((g: any) => !g.archived);
+      const totalSaved = active.reduce((sum: number, g: any) => sum + g.saved, 0);
+      const monthlyContrib = active.reduce((sum: number, g: any) => sum + g.autoContrib, 0);
+      data.savingsStats = {
+        totalSaved,
+        totalSavedDisplay: money0(totalSaved),
+        monthlyContrib,
+        monthlyContribDisplay: money0(monthlyContrib),
+        activeCount: active.length,
+        onTrackCount: active.filter((g: any) => g.status === "on-track" || g.status === "ahead" || g.status === "complete").length,
+      };
+    }
+    // --- transfers (real instances: pending checklist + history) ---
+    const acctLabelById = (id: string | null | undefined) => {
+      const a = id ? acctById.get(id) : undefined;
+      return a ? accountLabel(a) : "—";
+    };
+    const mapInstance = (r: (typeof instanceRows)[number]) => {
+      const dt = parseDate(r.plannedDate as string | null);
+      const mem = r.memberId ? memberById.get(r.memberId)?.name ?? null : null;
+      const toLabel = acctLabelById(r.toAccountId);
+      const state = r.status === "auto" ? "auto" : r.status === "done" ? "done" : "todo";
+      const completed = r.completedAt ? new Date(r.completedAt).getTime() : 0;
+      return {
+        id: r.id,
+        to: mem ? `${toLabel} · ${mem}` : toLabel,
+        from: acctLabelById(r.fromAccountId),
+        amount: money2(n(r.amount)),
+        due: dt ? (r.status === "pending" ? `Due ${dayLabel(dt)}` : dayLabel(dt)) : r.status === "pending" ? "Pending" : "",
+        state,
+        icon: r.method === "manual" ? "transfers" : "repeat",
+        member: mem,
+        status: r.status,
+        fromAccountId: r.fromAccountId,
+        toAccountId: r.toAccountId,
+        memberId: r.memberId,
+        completedTxnId: r.completedTxnId,
+        _t: completed || (dt ? dt.getTime() : 0),
+      };
+    };
+
+    const pendingInstances = instanceRows.filter((r) => r.status === "pending");
+    data.upcoming = pendingInstances.map(mapInstance);
+
+    // History = completed/auto instances + detected transfer pairs not already
+    // represented by an instance (deduped by the inflow leg id), newest first.
+    const claimedInflowIds = new Set(
+      instanceRows.map((r) => r.completedTxnId).filter((x): x is number => x != null)
+    );
+    const historyFromInstances = instanceRows
+      .filter((r) => r.status === "done" || r.status === "auto")
+      .map(mapInstance);
+    type DetectedTransfer = {
+      id: number;
+      inflowId: number | null;
+      fromAccount: string;
+      toAccount: string;
+      amount: string;
+      date: string;
+      dateTime: number;
+    };
+    const historyFromDetected = (data.accountTransfers as DetectedTransfer[])
+      .filter((d) => d.inflowId == null || !claimedInflowIds.has(d.inflowId))
+      .map((d) => ({
+        id: `t${d.id}`,
+        to: d.toAccount,
+        from: d.fromAccount,
+        amount: d.amount,
+        due: d.date,
+        state: "done",
+        icon: "transfers",
+        member: null,
+        status: "detected",
+        detected: true,
+        _t: d.dateTime,
+      }));
+    data.past = [...historyFromInstances, ...historyFromDetected].sort((a, b) => b._t - a._t);
+
+    // Pending banner (derived — count + total $ to move).
+    const pendingTotal = pendingInstances.reduce((sum, r) => sum + n(r.amount), 0);
+    data.transfersPending = pendingInstances.length;
+    data.transfersPendingTotal = money2(pendingTotal);
     data.notifications = notifRows.map((notif) => ({
       id: notif.id,
       type: notif.type,
@@ -448,16 +651,12 @@ export async function getFinanceData(): Promise<FinanceData> {
     // is cash + savings − card debt.
     const netWorth = accountRows.reduce((sum, a) => sum + liveBalance(a), 0);
     const signedMoney = (v: number) => (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
-    const upcomingTotal = transferRows
-      .filter((t) => t.kind === "upcoming")
-      .reduce((sum, t) => sum + n(t.amount), 0);
-
     data.stats = {
       totalCash: money0(totalCash),
       netWorth: signedMoney(netWorth),
       spending: money0(monthSpending),
       income: money0(monthIncome),
-      transfers: money0(upcomingTotal),
+      transfers: money0(pendingTotal), // total $ still pending to move
     };
 
     // 6-month trend (by real date)
@@ -535,6 +734,46 @@ export async function getFinanceData(): Promise<FinanceData> {
       messages: [],
     };
     data.permissions = null;
+
+    // --- member home (categorize tasks + allowance gating for the viewer) ---
+    if (viewer?.memberId) {
+      const mid = viewer.memberId;
+      const managedIds = [...(accountsByMember.get(mid) ?? [])];
+      const prog = computeMemberProgress(
+        txnRows.map((t) => ({ accountId: t.accountId, date: t.date as string | null, reviewed: t.reviewed })),
+        managedIds,
+        now
+      );
+      const managedSet = new Set(managedIds);
+      const managedAccounts = managedIds.map((id) => {
+        const a = acctById.get(id);
+        const p = prog.perAccount.get(id) || { total: 0, reviewed: 0, remaining: 0, done: false };
+        return { id, name: a?.name ?? "Account", label: a ? accountLabel(a) : "—", total: p.total, reviewed: p.reviewed, remaining: p.remaining, done: p.done };
+      });
+      const allowance = allowanceById.get(mid) ?? 0;
+      const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      data.memberHome = {
+        memberId: mid,
+        name: memberById.get(mid)?.name ?? "there",
+        allowance,
+        allowanceLabel: money0(allowance),
+        monthLabel: now.toLocaleString("en-US", { month: "long" }),
+        prevMonthLabel: prevDate.toLocaleString("en-US", { month: "long" }),
+        managedAccounts,
+        totalRemaining: prog.totalRemaining,
+        allCaughtUp: prog.allCaughtUp,
+        prevMonthRemaining: prog.prevMonthRemaining,
+        allowanceUnlocked: prog.allowanceUnlocked,
+        // unreviewed txns on the member's accounts, newest first (drives the
+        // Categorize tab) — same row shape as data.txns.
+        reviewQueue: (data.txns as { id: number; reviewed: boolean; accountId: string | null }[])
+          .filter((t) => !t.reviewed && t.accountId != null && managedSet.has(t.accountId))
+          .slice()
+          .reverse(),
+      };
+    } else {
+      data.memberHome = null;
+    }
 
     return data;
   } catch (err) {

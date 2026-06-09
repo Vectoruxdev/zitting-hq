@@ -8,6 +8,7 @@ export interface CurrentUser {
   email: string;
   name: string;
   role: Role;
+  memberId: string | null; // the family_members row id linked by email, if any
 }
 
 /**
@@ -35,19 +36,25 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   const email = (user.email ?? "").toLowerCase();
   let role: Role = roleForEmail(email);
+  let memberId: string | null = null;
   let name =
     (user.user_metadata?.name as string | undefined) ||
     (user.user_metadata?.full_name as string | undefined) ||
     (email ? email.split("@")[0] : "there");
 
-  // Sync role + display name from the family_members roster (by email).
+  // Sync role + display name + member id from the family_members roster (by
+  // email). Column-explicit select so a not-yet-migrated `allowance` column
+  // can't break auth.
   try {
     if (db && email) {
-      const rows = await db.select().from(familyMembers);
+      const rows = await db
+        .select({ id: familyMembers.id, name: familyMembers.name, role: familyMembers.role, email: familyMembers.email })
+        .from(familyMembers);
       const m = rows.find((r) => (r.email ?? "").toLowerCase() === email);
       if (m) {
         role = (m.role as Role) || role;
         name = m.name || name;
+        memberId = m.id;
       } else if (OWNER_EMAILS.includes(email)) {
         role = "owner";
       }
@@ -56,5 +63,5 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     /* DB unavailable — fall back to allowlist role */
   }
 
-  return { email, name, role };
+  return { email, name, role, memberId };
 }

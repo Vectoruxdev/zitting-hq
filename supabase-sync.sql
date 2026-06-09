@@ -113,3 +113,41 @@ ALTER TABLE family_members ADD COLUMN IF NOT EXISTS color text;
 -- ---- budgets: link to a person (allowance) or category (0004) ----
 ALTER TABLE budgets ADD COLUMN IF NOT EXISTS member_id text;
 ALTER TABLE budgets ADD COLUMN IF NOT EXISTS category_id text;
+
+-- ---- member-managed accounts + allowance (0005) ----
+ALTER TABLE family_members ADD COLUMN IF NOT EXISTS allowance numeric(14,2);
+CREATE TABLE IF NOT EXISTS account_members (
+  account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  member_id  text NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
+  PRIMARY KEY (account_id, member_id)
+);
+CREATE INDEX IF NOT EXISTS idx_acctmem_member ON account_members (member_id);
+
+-- ---- transfers engine: allocation_rules columns + transfer_instances (0006) ----
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS from_account_id text;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS to_account_id text;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS member_id text;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS trigger text NOT NULL DEFAULT 'on_income';
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS income_match text;
+CREATE TABLE IF NOT EXISTS transfer_instances (
+  id serial PRIMARY KEY,
+  rule_id text,
+  from_account_id text,
+  to_account_id text,
+  member_id text,
+  amount numeric(14,2) NOT NULL,
+  method text,
+  planned_date date,
+  status text NOT NULL DEFAULT 'pending',
+  triggered_by text,
+  trigger_income_txn_id integer,
+  completed_txn_id integer,
+  completed_at timestamp,
+  note text,
+  created_at timestamp DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ti_status ON transfer_instances (status);
+CREATE INDEX IF NOT EXISTS idx_ti_rule ON transfer_instances (rule_id);
+CREATE INDEX IF NOT EXISTS idx_ti_income ON transfer_instances (trigger_income_txn_id);
+CREATE INDEX IF NOT EXISTS idx_ti_accounts ON transfer_instances (from_account_id, to_account_id, status);

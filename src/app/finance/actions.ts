@@ -13,6 +13,25 @@ async function ensureOwner() {
   return u;
 }
 
+/**
+ * Authorize a transaction edit. Owner/partner may edit anything; a member may
+ * only edit transactions on accounts they're in charge of. Used for all
+ * transaction-level edits so members can categorize their own accounts.
+ */
+async function ensureCanEditTxns(ids: number[]) {
+  if (!isAuthConfigured) return; // local dev / no auth → allow
+  const u = await getCurrentUser();
+  if (!u) throw new Error("Not authorized");
+  if (u.role === "owner" || u.role === "partner") return u;
+  if (!u.memberId) throw new Error("Not authorized");
+  const managed = await m.managedAccountIds(u.memberId);
+  const touched = await m.accountIdsForTxns(ids);
+  for (const acctId of touched) {
+    if (!managed.has(acctId)) throw new Error("Not authorized");
+  }
+  return u;
+}
+
 const refresh = () => revalidatePath("/finance");
 
 // ---- people / members ----
@@ -98,6 +117,19 @@ export async function deleteAccount(id: string) {
   refresh();
   return res;
 }
+export async function setAccountMembers(accountId: string, memberIds: string[]) {
+  await ensureOwner();
+  if (memberIds.length > 2) throw new Error("At most 2 people can manage an account");
+  const res = await m.setAccountMembers(accountId, memberIds);
+  refresh();
+  return res;
+}
+export async function setMemberAllowance(memberId: string, amount: number | null) {
+  await ensureOwner();
+  const res = await m.setMemberAllowance(memberId, amount);
+  refresh();
+  return res;
+}
 
 // ---- import ----
 export async function commitImport(args: Parameters<typeof m.commitImport>[0]) {
@@ -133,26 +165,26 @@ export async function saveColumnTemplate(args: Parameters<typeof m.saveColumnTem
 
 // ---- transaction edits ----
 export async function updateTransaction(id: number, patch: m.TxnPatch, opts?: { learn?: boolean }) {
-  await ensureOwner();
+  await ensureCanEditTxns([id]);
   const res = await m.updateTransaction(id, patch, opts);
   refresh();
   return res;
 }
 export async function bulkUpdateTransactions(ids: number[], patch: m.TxnPatch) {
-  await ensureOwner();
+  await ensureCanEditTxns(ids);
   // Bulk setting a category is a manual choice → learn from it.
   const res = await m.bulkUpdateTransactions(ids, patch, { learn: patch.categoryId != null });
   refresh();
   return res;
 }
 export async function confirmTransactions(ids: number[]) {
-  await ensureOwner();
+  await ensureCanEditTxns(ids);
   const res = await m.confirmTransactions(ids);
   refresh();
   return res;
 }
 export async function markTransfer(id: number, isTransfer: boolean) {
-  await ensureOwner();
+  await ensureCanEditTxns([id]);
   const res = await m.markTransfer(id, isTransfer);
   refresh();
   return res;
@@ -164,19 +196,19 @@ export async function autoLinkTransfers() {
   return res;
 }
 export async function unlinkTransfer(id: number) {
-  await ensureOwner();
+  await ensureCanEditTxns([id]);
   const res = await m.unlinkTransfer(id);
   refresh();
   return res;
 }
 export async function splitTransaction(id: number, splits: { categoryId: string; amount: number }[]) {
-  await ensureOwner();
+  await ensureCanEditTxns([id]);
   const res = await m.splitTransaction(id, splits);
   refresh();
   return res;
 }
 export async function unsplitTransaction(id: number) {
-  await ensureOwner();
+  await ensureCanEditTxns([id]);
   const res = await m.unsplitTransaction(id);
   refresh();
   return res;
@@ -250,6 +282,102 @@ export async function recategorizeAll(opts?: { onlyUnreviewed?: boolean }) {
 export async function rebuildMemoryFromHistory() {
   await ensureOwner();
   const res = await m.rebuildMemoryFromHistory();
+  refresh();
+  return res;
+}
+
+// ---- allocation / transfer rules ----
+export async function createAllocationRule(args: Parameters<typeof m.createAllocationRule>[0]) {
+  await ensureOwner();
+  const res = await m.createAllocationRule(args);
+  refresh();
+  return res;
+}
+export async function updateAllocationRule(id: string, patch: Parameters<typeof m.updateAllocationRule>[1]) {
+  await ensureOwner();
+  const res = await m.updateAllocationRule(id, patch);
+  refresh();
+  return res;
+}
+export async function deleteAllocationRule(id: string) {
+  await ensureOwner();
+  const res = await m.deleteAllocationRule(id);
+  refresh();
+  return res;
+}
+
+// ---- transfers (instances) ----
+export async function createManualTransfer(args: Parameters<typeof m.createManualTransfer>[0]) {
+  await ensureOwner();
+  const res = await m.createManualTransfer(args);
+  refresh();
+  return res;
+}
+export async function markTransferInstance(id: number, done: boolean) {
+  await ensureOwner();
+  const res = await m.markTransferInstance(id, done);
+  refresh();
+  return res;
+}
+export async function skipTransferInstance(id: number) {
+  await ensureOwner();
+  const res = await m.skipTransferInstance(id);
+  refresh();
+  return res;
+}
+export async function deleteTransferInstance(id: number) {
+  await ensureOwner();
+  const res = await m.deleteTransferInstance(id);
+  refresh();
+  return res;
+}
+export async function generateTransfersForIncome(incomeTxnId: number) {
+  await ensureOwner();
+  const res = await m.generateTransfersForIncome(incomeTxnId);
+  refresh();
+  return res;
+}
+export async function reconcilePendingTransfers() {
+  await ensureOwner();
+  const res = await m.reconcilePendingTransfers();
+  refresh();
+  return res;
+}
+
+// ---- savings goals ----
+export async function createSavingsGoal(args: m.SavingsGoalInput) {
+  const u = await ensureOwner();
+  const res = await m.createSavingsGoal({ ...args, createdBy: args.createdBy ?? u?.email ?? null });
+  refresh();
+  return res;
+}
+export async function updateSavingsGoal(id: string, patch: Parameters<typeof m.updateSavingsGoal>[1]) {
+  await ensureOwner();
+  const res = await m.updateSavingsGoal(id, patch);
+  refresh();
+  return res;
+}
+export async function deleteSavingsGoal(id: string) {
+  await ensureOwner();
+  const res = await m.deleteSavingsGoal(id);
+  refresh();
+  return res;
+}
+export async function archiveSavingsGoal(id: string, archived: boolean) {
+  await ensureOwner();
+  const res = await m.archiveSavingsGoal(id, archived);
+  refresh();
+  return res;
+}
+export async function addContribution(goalId: string, args: Parameters<typeof m.addContribution>[1]) {
+  await ensureOwner();
+  const res = await m.addContribution(goalId, args);
+  refresh();
+  return res;
+}
+export async function deleteContribution(id: number) {
+  await ensureOwner();
+  const res = await m.deleteContribution(id);
   refresh();
   return res;
 }

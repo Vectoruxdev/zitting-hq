@@ -18,6 +18,6 @@ export default async function FinancePage() {
   // with no Supabase env), fall through as owner so the app stays usable.
   if (isAuthConfigured && !user) redirect("/login?redirect=/finance");
 
-  const data = await getFinanceData();
+  const data = await getFinanceData({ memberId: user?.memberId ?? null, role: user?.role ?? "owner" });
   return <FinanceClient data={data} role={user?.role ?? "owner"} name={user?.name} />;
 }

@@ -26,6 +26,10 @@ export const MOCK_FINANCE_DATA: any = {
     transfers: '$4,000',
   },
 
+  // Derived live (getFinanceData): pending transfer count + total to move.
+  transfersPending: 0,
+  transfersPendingTotal: '$0',
+
   trend: {
     income:   [7600, 8200, 7900, 8800, 8600, 9250],
     spending: [6100, 6400, 5900, 6800, 6200, 6420],
@@ -128,12 +132,25 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 8, name: 'Gym — VASA', cat: 'Health', color: 'var(--green-600)', amount: 38.00, freq: 'Monthly', next: 'Jun 25', account: 'Amex ••3008' },
   ],
 
+  // The first entry carries `as` casts so the inferred element type allows the
+  // nullable fields getFinanceData emits (targetDate/account/icon/monthsLeft…).
   goals: [
-    { id: 'ef', name: 'Emergency Fund', saved: 48200, target: 60000, date: 'Dec 2026', account: 'Ally ••3390', contrib: 1200 },
-    { id: 'trip', name: 'Family trip — Hawaii', saved: 3400, target: 9000, date: 'Mar 2027', account: 'Ally ••3390', contrib: 400 },
-    { id: 'car', name: 'New van', saved: 14800, target: 38000, date: 'Aug 2027', account: 'Ally ••3390', contrib: 600 },
-    { id: 'mission', name: 'Mission fund — Caleb', saved: 6200, target: 12000, date: '2028', account: 'Ally ••3390', contrib: 250 },
+    {
+      id: 'ef', name: 'Emergency Fund', saved: 48200, target: 60000, pct: 80, remaining: 11800,
+      date: 'Dec 2026' as string | null, targetDate: '2026-12-31' as string | null,
+      account: 'Ally ••3390' as string | null, accountId: 'emergency' as string | null,
+      contrib: 1200, autoContrib: 1200, icon: '🛟' as string | null, color: 'var(--accent)',
+      goalType: 'emergency', visibility: 'household',
+      members: [] as { id: string; name: string; color: string | null }[],
+      contributions: [] as { id: number; amount: number; date: string | null; kind: string; member: string | null; note: string | null }[],
+      monthsLeft: 6 as number | null, requiredPerMonth: 1967 as number | null,
+      status: 'on-track', archived: false,
+    },
+    { id: 'trip', name: 'Family trip — Hawaii', saved: 3400, target: 9000, pct: 38, remaining: 5600, date: 'Mar 2027', targetDate: '2027-03-31', account: 'Ally ••3390', accountId: 'emergency', contrib: 400, autoContrib: 400, icon: '🌴', color: 'var(--indigo-500)', goalType: 'vacation', visibility: 'household', members: [], contributions: [], monthsLeft: 9, requiredPerMonth: 623, status: 'at-risk', archived: false },
+    { id: 'car', name: 'New van', saved: 14800, target: 38000, pct: 39, remaining: 23200, date: 'Aug 2027', targetDate: '2027-08-31', account: 'Ally ••3390', accountId: 'emergency', contrib: 600, autoContrib: 600, icon: '🚐', color: 'var(--amber-500)', goalType: 'car', visibility: 'household', members: [], contributions: [], monthsLeft: 14, requiredPerMonth: 1658, status: 'at-risk', archived: false },
+    { id: 'mission', name: 'Mission fund — Caleb', saved: 6200, target: 12000, pct: 52, remaining: 5800, date: '2028', targetDate: '2028-01-31', account: 'Ally ••3390', accountId: 'emergency', contrib: 250, autoContrib: 250, icon: '✈️', color: 'var(--green-600)', goalType: 'sinking', visibility: 'private', members: [], contributions: [], monthsLeft: 20, requiredPerMonth: 290, status: 'on-track', archived: false },
   ],
+  savingsStats: { totalSaved: 72600, totalSavedDisplay: '$72,600', monthlyContrib: 2450, monthlyContribDisplay: '$2,450', activeCount: 4, onTrackCount: 2 },
 
   notifications: [
     { id: 1, type: 'transfers', icon: 'transfers', tone: 'accent', title: 'Transfers ready', body: '$4,000 income arrived — 5 transfers totaling $4,000 are ready to send.', time: 'Just now', unread: true },

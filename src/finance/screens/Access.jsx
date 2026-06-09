@@ -49,6 +49,39 @@ function AddPersonModal({ open, onClose, onResult }) {
   );
 }
 
+function MemberAllowanceCell({ m }) {
+  const { TextInput, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const cur = Number(m.allowance || 0);
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(String(cur || ''));
+  const [busy, setBusy] = React.useState(false);
+  async function save() {
+    if (!API.setMemberAllowance) { setEditing(false); return; }
+    const raw = String(val).replace(/[^0-9.-]/g, '');
+    const num = raw === '' ? null : parseFloat(raw);
+    setBusy(true);
+    try {
+      await API.setMemberAllowance(m.id, num != null && isNaN(num) ? null : num);
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      setEditing(false);
+    } finally { setBusy(false); }
+  }
+  if (editing) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <TextInput value={val} onChange={setVal} placeholder="0" inputMode="decimal" style={{ width: 84 }} />
+        <Button variant="primary" size="sm" onClick={save} disabled={busy}>{busy ? '…' : 'Save'}</Button>
+      </span>
+    );
+  }
+  return (
+    <button onClick={() => { setVal(String(cur || '')); setEditing(true); }} title="Monthly allowance" style={{ background: 'none', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', cursor: 'pointer', font: 'inherit', fontSize: 12.5, color: cur ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+      {cur ? `$${cur.toLocaleString('en-US')}/mo` : 'Set allowance'}
+    </button>
+  );
+}
+
 function ZHQAccess() {
   const { Card, Button, Icon, Avatar, Badge, Select, Modal } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
@@ -103,6 +136,7 @@ function ZHQAccess() {
             </div>
             <span style={{ flex: 1 }} />
             {statusBadge(m)}
+            {isOwner ? <MemberAllowanceCell m={m} /> : null}
             {isOwner ? (
               <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 132 }} />
             ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}

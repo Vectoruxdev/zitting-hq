@@ -11,6 +11,7 @@ import { db } from "./index";
 import * as s from "./schema";
 import { dedupeKey, markDuplicates, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
+import { generateInstances, reconcileInstances } from "./allocate";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -173,8 +174,53 @@ export async function deleteAccount(id: string) {
   await database.transaction(async (tx) => {
     await tx.delete(s.transactions).where(eq(s.transactions.accountId, id));
     await tx.delete(s.importBatches).where(eq(s.importBatches.accountId, id));
+    await tx.delete(s.accountMembers).where(eq(s.accountMembers.accountId, id));
     await tx.delete(s.accounts).where(eq(s.accounts.id, id));
   });
+  return { ok: true as const };
+}
+
+// ---- member ↔ account assignment + allowance ----
+
+/** Accounts a member is "in charge of". Fail-closed (empty set) on any error. */
+export async function managedAccountIds(memberId: string): Promise<Set<string>> {
+  try {
+    const rows = await requireDb()
+      .select({ accountId: s.accountMembers.accountId })
+      .from(s.accountMembers)
+      .where(eq(s.accountMembers.memberId, memberId));
+    return new Set(rows.map((r) => r.accountId));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Accounts touched by a set of transaction ids (null accountId → "__none__"
+ *  sentinel so a member can never be authorized for an unowned/legacy row). */
+export async function accountIdsForTxns(ids: number[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await requireDb()
+    .select({ accountId: s.transactions.accountId })
+    .from(s.transactions)
+    .where(inArray(s.transactions.id, ids));
+  return new Set(rows.map((r) => r.accountId ?? "__none__"));
+}
+
+/** Replace the set of members in charge of an account (≤2, deduped). */
+export async function setAccountMembers(accountId: string, memberIds: string[]) {
+  const database = requireDb();
+  const unique = Array.from(new Set(memberIds)).slice(0, 2);
+  await database.transaction(async (tx) => {
+    await tx.delete(s.accountMembers).where(eq(s.accountMembers.accountId, accountId));
+    if (unique.length) await tx.insert(s.accountMembers).values(unique.map((memberId) => ({ accountId, memberId })));
+  });
+  return { ok: true as const };
+}
+
+/** Set (or clear) a member's fixed monthly allowance. */
+export async function setMemberAllowance(memberId: string, amount: number | null) {
+  const value = amount == null || !Number.isFinite(amount) ? null : String(amount);
+  await requireDb().update(s.familyMembers).set({ allowance: value }).where(eq(s.familyMembers.id, memberId));
   return { ok: true as const };
 }
 
@@ -302,7 +348,35 @@ export async function commitImport(args: {
   // double-counted. Runs after the insert commits so it sees the full picture.
   const linked = await autoLinkTransfers();
 
-  return { ok: true as const, batchId, imported: inserts.length, skipped, linkedTransfers: linked.linked };
+  // Generate pending transfers from any genuine income just imported (run the
+  // allocation waterfall per income txn), then auto-complete any pending
+  // transfers whose real transaction just landed.
+  let generated = 0;
+  const incomeRows = await database
+    .select({ id: s.transactions.id })
+    .from(s.transactions)
+    .where(
+      and(
+        eq(s.transactions.importBatchId, batchId),
+        eq(s.transactions.income, true),
+        eq(s.transactions.isTransfer, false)
+      )
+    );
+  for (const row of incomeRows) {
+    const g = await generateTransfersForIncome(row.id);
+    generated += g.created;
+  }
+  const reconciled = await reconcilePendingTransfers();
+
+  return {
+    ok: true as const,
+    batchId,
+    imported: inserts.length,
+    skipped,
+    linkedTransfers: linked.linked,
+    generatedTransfers: generated,
+    reconciledTransfers: reconciled.matched,
+  };
 }
 
 export async function deleteImport(batchId: string) {
@@ -519,6 +593,289 @@ export async function unlinkTransfer(id: number) {
         reviewed: false,
       })
       .where(inArray(s.transactions.id, ids));
+  });
+  return { ok: true as const };
+}
+
+// ====================================================================
+// Allocation / transfer rules (the unified engine)
+// ====================================================================
+export async function createAllocationRule(args: {
+  name: string;
+  method: string; // "%" | "Fixed" | "Remainder"
+  value?: number | null;
+  fromAccountId?: string | null;
+  toAccountId: string;
+  memberId?: string | null;
+  trigger?: string;
+  enabled?: boolean;
+  incomeMatch?: string | null;
+  icon?: string | null;
+}) {
+  const database = requireDb();
+  const id = crypto.randomUUID();
+  const dest = (await accountLabel(args.toAccountId)) ?? args.name;
+  const existing = await database.select({ so: s.allocationRules.sortOrder }).from(s.allocationRules);
+  const sortOrder = existing.reduce((mx, r) => Math.max(mx, r.so), -1) + 1;
+  await database.insert(s.allocationRules).values({
+    id,
+    name: args.name,
+    method: args.method,
+    value: args.value == null ? null : String(args.value),
+    dest,
+    fromAccountId: args.fromAccountId ?? null,
+    toAccountId: args.toAccountId,
+    memberId: args.memberId ?? null,
+    trigger: args.trigger ?? "on_income",
+    enabled: args.enabled ?? true,
+    incomeMatch: args.incomeMatch ?? null,
+    icon: args.icon ?? "transfers",
+    sortOrder,
+  });
+  return { ok: true as const, id };
+}
+
+export async function updateAllocationRule(
+  id: string,
+  patch: {
+    name?: string;
+    method?: string;
+    value?: number | null;
+    fromAccountId?: string | null;
+    toAccountId?: string;
+    memberId?: string | null;
+    trigger?: string;
+    enabled?: boolean;
+    incomeMatch?: string | null;
+    icon?: string | null;
+    sortOrder?: number;
+  }
+) {
+  const database = requireDb();
+  const values: Record<string, unknown> = {};
+  if (patch.name !== undefined) values.name = patch.name;
+  if (patch.method !== undefined) values.method = patch.method;
+  if (patch.value !== undefined) values.value = patch.value == null ? null : String(patch.value);
+  if (patch.fromAccountId !== undefined) values.fromAccountId = patch.fromAccountId;
+  if (patch.toAccountId !== undefined) {
+    values.toAccountId = patch.toAccountId;
+    values.dest = (await accountLabel(patch.toAccountId)) ?? undefined;
+  }
+  if (patch.memberId !== undefined) values.memberId = patch.memberId;
+  if (patch.trigger !== undefined) values.trigger = patch.trigger;
+  if (patch.enabled !== undefined) values.enabled = patch.enabled;
+  if (patch.incomeMatch !== undefined) values.incomeMatch = patch.incomeMatch;
+  if (patch.icon !== undefined) values.icon = patch.icon;
+  if (patch.sortOrder !== undefined) values.sortOrder = patch.sortOrder;
+  if (Object.keys(values).length) {
+    await database.update(s.allocationRules).set(values).where(eq(s.allocationRules.id, id));
+  }
+  return { ok: true as const };
+}
+
+export async function deleteAllocationRule(id: string) {
+  const database = requireDb();
+  await database.transaction(async (tx) => {
+    // detach any generated instances so the FK doesn't block the delete
+    await tx.update(s.transferInstances).set({ ruleId: null }).where(eq(s.transferInstances.ruleId, id));
+    await tx.delete(s.allocationRules).where(eq(s.allocationRules.id, id));
+  });
+  return { ok: true as const };
+}
+
+// ====================================================================
+// Transfer instances (pending checklist + history)
+// ====================================================================
+export async function createManualTransfer(args: {
+  fromAccountId: string;
+  toAccountId: string;
+  memberId?: string | null;
+  amount: number;
+  plannedDate?: string | null; // YYYY-MM-DD
+  note?: string | null;
+}) {
+  const database = requireDb();
+  const [row] = await database
+    .insert(s.transferInstances)
+    .values({
+      ruleId: null,
+      fromAccountId: args.fromAccountId,
+      toAccountId: args.toAccountId,
+      memberId: args.memberId ?? null,
+      amount: String(args.amount),
+      method: "manual",
+      plannedDate: args.plannedDate ?? null,
+      status: "pending",
+      triggeredBy: "manual",
+      note: args.note ?? null,
+    })
+    .returning({ id: s.transferInstances.id });
+  return { ok: true as const, id: row?.id };
+}
+
+export async function markTransferInstance(id: number, done: boolean) {
+  const database = requireDb();
+  await database
+    .update(s.transferInstances)
+    .set({
+      status: done ? "done" : "pending",
+      completedAt: done ? new Date() : null,
+      ...(done ? {} : { completedTxnId: null }),
+    })
+    .where(eq(s.transferInstances.id, id));
+  return { ok: true as const };
+}
+
+export async function skipTransferInstance(id: number) {
+  await requireDb().update(s.transferInstances).set({ status: "skipped" }).where(eq(s.transferInstances.id, id));
+  return { ok: true as const };
+}
+
+export async function deleteTransferInstance(id: number) {
+  await requireDb().delete(s.transferInstances).where(eq(s.transferInstances.id, id));
+  return { ok: true as const };
+}
+
+/**
+ * Generate pending transfers from the enabled on-income rules for a single
+ * income transaction (the waterfall). Idempotent: keyed by the income txn id, so
+ * re-importing the same paycheck never double-generates.
+ */
+export async function generateTransfersForIncome(incomeTxnId: number) {
+  const database = requireDb();
+  const [txn] = await database.select().from(s.transactions).where(eq(s.transactions.id, incomeTxnId));
+  if (!txn) return { ok: true as const, created: 0 };
+  const amount = Number(txn.amount ?? 0);
+  if (!txn.income || txn.isTransfer || amount <= 0) return { ok: true as const, created: 0 };
+
+  const already = await database
+    .select({ id: s.transferInstances.id })
+    .from(s.transferInstances)
+    .where(eq(s.transferInstances.triggerIncomeTxnId, incomeTxnId));
+  if (already.length) return { ok: true as const, created: 0 };
+
+  const merchantKey = extractMerchant(txn.merchant);
+  const ruleRows = await database.select().from(s.allocationRules);
+  const rules = ruleRows
+    .filter((r) => r.enabled && r.trigger === "on_income" && r.toAccountId)
+    .filter((r) => !r.incomeMatch || r.incomeMatch === merchantKey)
+    .map((r) => ({
+      id: r.id,
+      method: r.method,
+      value: r.value == null ? null : Number(r.value),
+      fromAccountId: r.fromAccountId,
+      toAccountId: r.toAccountId,
+      memberId: r.memberId,
+      sortOrder: r.sortOrder,
+    }));
+  if (!rules.length) return { ok: true as const, created: 0 };
+
+  const { instances } = generateInstances(amount, rules);
+  if (!instances.length) return { ok: true as const, created: 0 };
+  await database.insert(s.transferInstances).values(
+    instances.map((i) => ({
+      ruleId: i.ruleId,
+      fromAccountId: i.fromAccountId,
+      toAccountId: i.toAccountId,
+      memberId: i.memberId,
+      amount: String(i.amount),
+      method: i.method,
+      plannedDate: (txn.date as string | null) ?? null,
+      status: "pending",
+      triggeredBy: `income:${incomeTxnId}`,
+      triggerIncomeTxnId: incomeTxnId,
+    }))
+  );
+  return { ok: true as const, created: instances.length };
+}
+
+/**
+ * Auto-complete pending transfers whose real transaction has been imported.
+ * Builds resolved pairs from the persisted transfer links (set by
+ * autoLinkTransfers), then matches them to pending instances by account + amount
+ * + date. Only touches `pending` rows, so it's safe to re-run after every import.
+ */
+export async function reconcilePendingTransfers() {
+  const database = requireDb();
+  const pendingRows = await database
+    .select()
+    .from(s.transferInstances)
+    .where(eq(s.transferInstances.status, "pending"));
+  if (!pendingRows.length) return { ok: true as const, matched: 0 };
+
+  const txnRows = await database
+    .select({
+      id: s.transactions.id,
+      accountId: s.transactions.accountId,
+      amount: s.transactions.amount,
+      date: s.transactions.date,
+      transferPairId: s.transactions.transferPairId,
+    })
+    .from(s.transactions);
+  const byId = new Map(txnRows.map((t) => [t.id, t]));
+
+  // Each linked transfer appears as two legs; canonicalize on the outflow leg.
+  const resolved = [] as Parameters<typeof reconcileInstances>[1];
+  for (const t of txnRows) {
+    if (t.transferPairId == null) continue;
+    if (Number(t.amount ?? 0) >= 0) continue; // outflow leg only
+    const inn = byId.get(t.transferPairId);
+    if (!inn) continue;
+    resolved.push({
+      outId: t.id,
+      outAccountId: t.accountId,
+      inId: inn.id,
+      inAccountId: inn.accountId,
+      amount: Math.abs(Number(inn.amount ?? 0)),
+      inDate: (inn.date as string | null) ?? null,
+    });
+  }
+  if (!resolved.length) return { ok: true as const, matched: 0 };
+
+  const pending = pendingRows.map((r) => ({
+    id: r.id,
+    fromAccountId: r.fromAccountId,
+    toAccountId: r.toAccountId,
+    amount: Number(r.amount),
+    plannedDate: (r.plannedDate as string | null) ?? null,
+  }));
+  const recs = reconcileInstances(pending, resolved);
+  if (!recs.length) return { ok: true as const, matched: 0 };
+
+  await database.transaction(async (tx) => {
+    for (const rec of recs) {
+      await tx
+        .update(s.transferInstances)
+        .set({ status: "auto", completedTxnId: rec.completedTxnId, completedAt: new Date() })
+        .where(eq(s.transferInstances.id, rec.instanceId));
+    }
+  });
+  return { ok: true as const, matched: recs.length };
+}
+
+// ====================================================================
+// Notifications
+// ====================================================================
+export async function createNotification(args: {
+  type: string;
+  tone?: string; // info | accent | warning | negative
+  title: string;
+  body?: string | null;
+  icon?: string | null;
+  timeLabel?: string | null;
+}) {
+  const database = requireDb();
+  const existing = await database.select({ so: s.notifications.sortOrder }).from(s.notifications);
+  const sortOrder = existing.reduce((mx, n) => Math.max(mx, n.so), -1) + 1;
+  await database.insert(s.notifications).values({
+    type: args.type,
+    tone: args.tone ?? "info",
+    title: args.title,
+    body: args.body ?? null,
+    icon: args.icon ?? "transfers",
+    timeLabel: args.timeLabel ?? null,
+    unread: true,
+    sortOrder,
   });
   return { ok: true as const };
 }
@@ -798,4 +1155,145 @@ export async function rebuildMemoryFromHistory() {
     }
   }
   return { ok: true as const, learned };
+}
+
+// ====================================================================
+// Savings goals
+// ====================================================================
+
+const dateOnly = (iso?: string | null) => (iso ? String(iso).slice(0, 10) : null);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+export interface SavingsGoalInput {
+  name: string;
+  target: number;
+  targetDate?: string | null; // ISO YYYY-MM-DD
+  accountId?: string | null; // optional linked savings account
+  autoContrib?: number; // planned recurring monthly contribution
+  icon?: string | null;
+  color?: string | null;
+  goalType?: string; // emergency | vacation | home | car | sinking | custom
+  visibility?: string; // household | private
+  memberIds?: string[]; // assigned members (private goals)
+  notes?: string | null;
+  initialSaved?: number; // optional starting balance → an "initial" contribution
+  createdBy?: string | null;
+}
+
+/** Replace the member rows for a private goal (no-op cleanup for household). */
+async function setGoalMembers(goalId: string, visibility: string, memberIds: string[] | undefined) {
+  const database = requireDb();
+  await database.delete(s.savingsGoalMembers).where(eq(s.savingsGoalMembers.goalId, goalId));
+  if (visibility === "private" && memberIds?.length) {
+    await database
+      .insert(s.savingsGoalMembers)
+      .values(memberIds.map((memberId) => ({ goalId, memberId })));
+  }
+}
+
+export async function createSavingsGoal(args: SavingsGoalInput) {
+  const database = requireDb();
+  const id = crypto.randomUUID();
+  const visibility = args.visibility === "private" ? "private" : "household";
+  const label = await accountLabel(args.accountId);
+  const existing = await database.select({ so: s.savingsGoals.sortOrder }).from(s.savingsGoals);
+  const sortOrder = existing.reduce((mx, g) => Math.max(mx, g.so), -1) + 1;
+
+  await database.insert(s.savingsGoals).values({
+    id,
+    name: args.name,
+    target: String(args.target),
+    targetDate: args.targetDate || null,
+    accountId: args.accountId ?? null,
+    accountLabel: label,
+    autoContrib: String(args.autoContrib ?? 0),
+    icon: args.icon ?? null,
+    color: args.color || "var(--accent)",
+    goalType: args.goalType ?? "custom",
+    visibility,
+    notes: args.notes ?? null,
+    createdBy: args.createdBy ?? null,
+    sortOrder,
+  });
+
+  await setGoalMembers(id, visibility, args.memberIds);
+
+  if (args.initialSaved && args.initialSaved > 0) {
+    await database.insert(s.savingsContributions).values({
+      goalId: id,
+      amount: String(args.initialSaved),
+      date: todayISO(),
+      kind: "initial",
+      note: "Starting balance",
+    });
+  }
+  return { ok: true as const, id };
+}
+
+export async function updateSavingsGoal(
+  id: string,
+  patch: Partial<SavingsGoalInput> & { sortOrder?: number }
+) {
+  const database = requireDb();
+  const values: Record<string, unknown> = {};
+  if (patch.name !== undefined) values.name = patch.name;
+  if (patch.target !== undefined) values.target = String(patch.target);
+  if (patch.targetDate !== undefined) values.targetDate = patch.targetDate || null;
+  if (patch.autoContrib !== undefined) values.autoContrib = String(patch.autoContrib ?? 0);
+  if (patch.icon !== undefined) values.icon = patch.icon;
+  if (patch.color !== undefined) values.color = patch.color || "var(--accent)";
+  if (patch.goalType !== undefined) values.goalType = patch.goalType;
+  if (patch.notes !== undefined) values.notes = patch.notes;
+  if (patch.sortOrder !== undefined) values.sortOrder = patch.sortOrder;
+  if (patch.accountId !== undefined) {
+    values.accountId = patch.accountId;
+    values.accountLabel = await accountLabel(patch.accountId);
+  }
+  const visibility = patch.visibility === "private" ? "private" : patch.visibility === "household" ? "household" : undefined;
+  if (visibility !== undefined) values.visibility = visibility;
+
+  if (Object.keys(values).length) {
+    await database.update(s.savingsGoals).set(values).where(eq(s.savingsGoals.id, id));
+  }
+  // Re-set members when visibility or the member list was provided.
+  if (visibility !== undefined || patch.memberIds !== undefined) {
+    const vis = visibility ?? "private"; // memberIds only meaningful for private
+    await setGoalMembers(id, vis, patch.memberIds);
+  }
+  return { ok: true as const };
+}
+
+export async function deleteSavingsGoal(id: string) {
+  // FK onDelete cascade removes members + contributions.
+  await requireDb().delete(s.savingsGoals).where(eq(s.savingsGoals.id, id));
+  return { ok: true as const };
+}
+
+export async function archiveSavingsGoal(id: string, archived: boolean) {
+  await requireDb()
+    .update(s.savingsGoals)
+    .set({ archivedAt: archived ? new Date() : null })
+    .where(eq(s.savingsGoals.id, id));
+  return { ok: true as const };
+}
+
+export async function addContribution(
+  goalId: string,
+  args: { amount: number; date?: string | null; kind?: string; memberId?: string | null; accountId?: string | null; note?: string | null }
+) {
+  await requireDb().insert(s.savingsContributions).values({
+    goalId,
+    amount: String(args.amount),
+    date: dateOnly(args.date) ?? todayISO(),
+    kind: args.kind ?? "manual",
+    memberId: args.memberId ?? null,
+    accountId: args.accountId ?? null,
+    note: args.note ?? null,
+  });
+  return { ok: true as const };
+}
+
+export async function deleteContribution(id: number) {
+  await requireDb().delete(s.savingsContributions).where(eq(s.savingsContributions.id, id));
+  return { ok: true as const };
 }

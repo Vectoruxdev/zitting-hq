@@ -20,6 +20,7 @@ import {
   timestamp,
   date,
   index,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const familyMembers = pgTable("family_members", {
@@ -30,6 +31,7 @@ export const familyMembers = pgTable("family_members", {
   authId: text("auth_id"), // Supabase auth user id, once invited/created
   status: text("status").notNull().default("none"), // none | invited | active
   color: text("color"), // avatar tone
+  allowance: numeric("allowance", { precision: 14, scale: 2 }), // monthly spending money (owner-set); null = none
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -66,6 +68,17 @@ export const accounts = pgTable("accounts", {
   trend: jsonb("trend").$type<number[]>().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+// Which members are "in charge of" an account (categorize its transactions).
+// Up to 2 per account (enforced in the UI). Household-shared — not split per person.
+export const accountMembers = pgTable(
+  "account_members",
+  {
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.memberId] }), index("idx_acctmem_member").on(t.memberId)]
+);
 
 // ---- Import batches -----------------------------------------------------
 
@@ -197,15 +210,59 @@ export const budgets = pgTable("budgets", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+/**
+ * Allocation / transfer rules — the unified engine for "where money should move".
+ * The Allocations tab configures these; the Transfers tab generates `transfer_instances`
+ * from them (waterfall over an income amount). `dest` is a denormalized display label
+ * kept in sync from the linked accounts/member on write.
+ */
 export const allocationRules = pgTable("allocation_rules", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   method: text("method").notNull(), // "%" | "Fixed" | "Remainder"
   value: numeric("value", { precision: 14, scale: 2 }), // null for Remainder
-  dest: text("dest").notNull(),
+  dest: text("dest").notNull(), // denormalized label (derived from toAccount/member)
+  fromAccountId: text("from_account_id").references(() => accounts.id), // source
+  toAccountId: text("to_account_id").references(() => accounts.id), // destination (required in mutation)
+  memberId: text("member_id").references(() => familyMembers.id), // optional person tag
+  trigger: text("trigger").notNull().default("on_income"), // manual | on_income | scheduled
+  enabled: boolean("enabled").notNull().default(true),
+  incomeMatch: text("income_match"), // optional merchant/stream key; null = any income
   icon: text("icon"),
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+/**
+ * A real transfer occurrence — the pending checklist AND the history. Generated
+ * from a rule when income arrives, or created manually. Auto-completed when the
+ * actual transfer transaction is detected on import (completedTxnId).
+ */
+export const transferInstances = pgTable(
+  "transfer_instances",
+  {
+    id: serial("id").primaryKey(),
+    ruleId: text("rule_id").references(() => allocationRules.id), // null = manual one-off
+    fromAccountId: text("from_account_id").references(() => accounts.id),
+    toAccountId: text("to_account_id").references(() => accounts.id),
+    memberId: text("member_id").references(() => familyMembers.id),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    method: text("method"), // %|Fixed|Remainder|manual (snapshot at generation)
+    plannedDate: date("planned_date"),
+    status: text("status").notNull().default("pending"), // pending | done | auto | skipped
+    triggeredBy: text("triggered_by"), // manual | income:<txnId> | import:<batchId>
+    triggerIncomeTxnId: integer("trigger_income_txn_id"), // idempotency key
+    completedTxnId: integer("completed_txn_id").references(() => transactions.id),
+    completedAt: timestamp("completed_at"),
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [
+    index("idx_ti_status").on(t.status),
+    index("idx_ti_rule").on(t.ruleId),
+    index("idx_ti_income").on(t.triggerIncomeTxnId),
+    index("idx_ti_accounts").on(t.fromAccountId, t.toAccountId, t.status),
+  ]
+);
 
 export const incomeStreams = pgTable("income_streams", {
   id: text("id").primaryKey(),
@@ -234,16 +291,67 @@ export const bills = pgTable("bills", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+/**
+ * Savings goals — a target to save toward (emergency fund, trip, car…). `saved`
+ * is DERIVED at read time from the savings_contributions ledger (the stored
+ * column is just a legacy fallback), mirroring how account balances and budget
+ * spend are derived. A goal is `household` (everyone sees it) or `private` (only
+ * the linked savingsGoalMembers + owners can see it — filtered server-side).
+ */
 export const savingsGoals = pgTable("savings_goals", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  saved: numeric("saved", { precision: 14, scale: 2 }).notNull().default("0"),
+  saved: numeric("saved", { precision: 14, scale: 2 }).notNull().default("0"), // legacy fallback; derived from contributions
   target: numeric("target", { precision: 14, scale: 2 }).notNull(),
-  dateLabel: text("date_label"),
+  dateLabel: text("date_label"), // legacy free-form label; superseded by targetDate
+  targetDate: date("target_date"), // real date for the projection math
+  accountId: text("account_id").references(() => accounts.id), // optional linked savings account
   accountLabel: text("account_label"),
-  contrib: numeric("contrib", { precision: 14, scale: 2 }).notNull().default("0"),
+  contrib: numeric("contrib", { precision: 14, scale: 2 }).notNull().default("0"), // legacy; superseded by autoContrib
+  autoContrib: numeric("auto_contrib", { precision: 14, scale: 2 }).notNull().default("0"), // planned recurring monthly contribution
+  icon: text("icon"), // emoji or DS icon name
+  color: text("color").notNull().default("var(--accent)"),
+  goalType: text("goal_type").notNull().default("custom"), // emergency | vacation | home | car | sinking | custom
+  visibility: text("visibility").notNull().default("household"), // household | private
+  notes: text("notes"),
+  createdBy: text("created_by"), // email
+  archivedAt: timestamp("archived_at"), // set when completed/archived
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+/** Members a private goal belongs to. Empty for household goals. */
+export const savingsGoalMembers = pgTable(
+  "savings_goal_members",
+  {
+    id: serial("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => savingsGoals.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [index("idx_goal_members_goal").on(t.goalId)]
+);
+
+/** Funding ledger — `saved` per goal is the sum of these (signed: + deposit, − withdrawal/reallocation). */
+export const savingsContributions = pgTable(
+  "savings_contributions",
+  {
+    id: serial("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => savingsGoals.id, { onDelete: "cascade" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    date: date("date"),
+    kind: text("kind").notNull().default("manual"), // manual | auto | initial | reallocation
+    memberId: text("member_id").references(() => familyMembers.id), // who contributed (optional)
+    accountId: text("account_id").references(() => accounts.id), // source account (optional)
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [index("idx_contrib_goal").on(t.goalId)]
+);
 
 export const transfers = pgTable("transfers", {
   id: serial("id").primaryKey(),
