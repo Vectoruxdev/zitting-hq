@@ -38,6 +38,13 @@ describe("extractMerchant", () => {
     const b = extractMerchant("Debit Card purch COMMENT: Netflix.com ***-***9999 CA");
     expect(a).toBe(b);
   });
+  it("strips a bare Debit/Credit prefix (formats without 'card purch'/'comment')", () => {
+    expect(extractMerchant("Debit Costco Whse #0456 UT")).toContain("costco");
+    expect(extractMerchant("Debit Costco Whse #0456 UT")).not.toContain("debit");
+    expect(extractMerchant("Debit Klarna")).toBe("klarna");
+    expect(extractMerchant("Debit Card Withdrawal Spotify")).toContain("spotify");
+    expect(extractMerchant("POS Debit Walmart UT")).toBe("walmart"); // two prefixes stripped
+  });
 });
 
 describe("cleanDescription", () => {

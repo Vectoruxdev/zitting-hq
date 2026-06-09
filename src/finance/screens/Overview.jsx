@@ -84,8 +84,8 @@ function ZHQOverview({ onNavigate }) {
   const tiles = [
     { label: 'Net worth', value: D.stats.netWorth ?? D.stats.totalCash, sub: 'cash + savings − card debt', nav: 'accounts' },
     { label: 'Total cash', value: D.stats.totalCash },
-    { label: spendLabel, value: D.stats.spending },
-    { label: incomeLabel, value: D.stats.income },
+    { label: spendLabel, value: D.stats.spending, sub: 'all accounts, incl. cards' },
+    { label: incomeLabel, value: D.stats.income, sub: 'all accounts' },
     { label: 'Transfers to make', value: D.transfersPendingTotal ?? D.stats.transfers, sub: (D.transfersPending ?? upcoming.length) ? `${D.transfersPending ?? upcoming.length} pending` : 'none pending', accent: true, icon: 'transfers', nav: 'transfers' },
   ];
 
@@ -115,14 +115,14 @@ function ZHQOverview({ onNavigate }) {
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 18, paddingTop: 4 }}>
             <CashStep label="Money in" value={cf.inFlowDisplay} tone="pos" />
             <CashOp>−</CashOp>
-            <CashStep label="Spending" value={cf.outFlowDisplay} tone="neg" />
+            <CashStep label="Spent from bank" value={cf.outFlowDisplay} tone="neg" />
             <CashOp>−</CashOp>
             <CashStep label={cf.transfersDirection === 'in' ? 'Transfers in' : 'Transfers out'} value={cf.transfersOutDisplay} tone={cf.transfersDirection === 'in' ? 'pos' : 'neg'} sub="to savings, cards, etc." />
             <CashOp>=</CashOp>
             <CashStep label="Net change in cash" value={cf.netDisplay} tone={cf.net < 0 ? 'neg' : 'pos'} strong />
           </div>
           <p style={{ margin: '14px 0 0', fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-            Income and spending exclude transfers, so money moved to savings or used to pay a credit card shows up under transfers — not as spending. <b style={{ color: 'var(--text-secondary)' }}>Total cash</b> above is your running balance across every imported month (opening balance + all activity), not just {cf.month || 'this month'}.
+            This card tracks only money through <b style={{ color: 'var(--text-secondary)' }}>checking + savings</b>, so it won't match the spending tile above — that one counts every account, including credit-card purchases (which show here only when you pay the card). Transfers are kept separate from spending. <b style={{ color: 'var(--text-secondary)' }}>Total cash</b> is your running balance across every imported month, not just {cf.month || 'this month'}.
           </p>
         </Card>
       ) : null}

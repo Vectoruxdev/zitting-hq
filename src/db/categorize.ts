@@ -41,7 +41,7 @@ export const REVIEW_THRESHOLD = 0.7;
 // ---------------------------------------------------------------------------
 
 const NOISE_PREFIX =
-  /^(debit card purch(ase)?|credit card|card purchase|ach withdrawal|ach deposit|deposit ach|withdrawal transfer to|home banking|withdrawal|deposit|pos|purchase|online|recurring|payment|external|web|transfer to|transfer from|to|from)\b/;
+  /^(debit( card)?( purch(ase)?| withdrawal)?|credit( card)?|card purchase|ach withdrawal|ach deposit|deposit ach|withdrawal transfer to|home banking|withdrawal|deposit|pos|purchase|online|recurring|payment|external|web|transfer to|transfer from|to|from)\b/;
 const STOPWORDS = new Set(["the", "of", "llc", "inc", "co", "corp", "company", "the", "and", "type", "comment", "ach", "ppd", "web"]);
 
 /** Loose normalizer (lower, strip punctuation, collapse) — used for dedupe + rule "contains". */
