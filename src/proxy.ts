@@ -5,7 +5,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABAS
 const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// Plaid's webhook + the nightly cron are machine-to-machine (no session) and
+// carry their own guards, so they must bypass the login redirect.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/plaid/webhook", "/api/plaid/cron-sync"];
 
 /**
  * Next 16 Proxy (formerly Middleware). Refreshes the Supabase session cookie on

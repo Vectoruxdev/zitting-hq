@@ -327,6 +327,57 @@ function ZHQAddAccountModal({ open, onClose }) {
   );
 }
 
+function ZHQConnectedBanks() {
+  const { Card, Button, Icon, Badge } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const [banks, setBanks] = React.useState(null);
+  const [busy, setBusy] = React.useState(null); // itemId mid-action
+
+  const load = React.useCallback(async () => {
+    if (!API.listPlaidBanks) { setBanks([]); return; }
+    try { setBanks(await API.listPlaidBanks()); } catch { setBanks([]); }
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  if (!banks || !banks.length) return null; // nothing connected yet → header button handles it
+
+  async function syncNow(itemId) {
+    setBusy(itemId || 'all');
+    try { await (window.ZHQ_PLAID && window.ZHQ_PLAID.sync()); await load(); } finally { setBusy(null); }
+  }
+  async function disconnect(itemId, name) {
+    if (!window.confirm(`Disconnect ${name || 'this bank'}? Imported transactions stay; new ones stop syncing.`)) return;
+    setBusy(itemId);
+    try { await API.removePlaidBank(itemId); await load(); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } finally { setBusy(null); }
+  }
+
+  return (
+    <Card padding={18}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span className="zt-eyebrow">Connected banks · auto-sync</span>
+        <Button variant="ghost" size="sm" iconLeft={<Icon name="repeat" size={14} />} onClick={() => syncNow()} disabled={busy === 'all'}>{busy === 'all' ? 'Syncing…' : 'Sync now'}</Button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {banks.map((b) => (
+          <div key={b.itemId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+            <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name="bank" size={15} /></span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{b.institutionName || 'Bank'}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+                {b.lastSyncedAt ? `Last synced ${new Date(b.lastSyncedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Not synced yet'}
+              </div>
+            </div>
+            {b.status !== 'good' ? <Badge tone="warning" size="sm">{b.status === 'login_required' ? 'Reconnect' : 'Error'}</Badge> : <Badge tone="positive" size="sm">Active</Badge>}
+            <button onClick={() => disconnect(b.itemId, b.institutionName)} disabled={busy === b.itemId} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-tertiary)', font: 'inherit' }}>
+              {busy === b.itemId ? '…' : 'Disconnect'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function ZHQAccounts({ onNavigate }) {
   const { Card, Button, Icon, StatTile } = window.ZittingHQDesignSystem_c9e528;
   const A = window.ZHQ_DATA.accounts || { checking: [], savings: [], credit: [] };
@@ -355,9 +406,12 @@ function ZHQAccounts({ onNavigate }) {
         <div style={{ display: 'grid', placeItems: 'center', padding: '60px 20px' }}>
           <div style={{ textAlign: 'center', maxWidth: 380 }}>
             <span style={{ display: 'inline-flex', width: 52, height: 52, borderRadius: 999, placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-tertiary)', marginBottom: 14 }}><Icon name="wallet" size={24} /></span>
-            <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 600 }}>Add your first account</h2>
-            <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', fontSize: 14 }}>Create an account, then import its transactions from a CSV.</p>
-            <Button variant="primary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setShowAdd(true)}>Add account</Button>
+            <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 600 }}>Connect your first account</h2>
+            <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', fontSize: 14 }}>Connect a bank to import transactions automatically — or add one manually and import a CSV.</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <Button variant="primary" iconLeft={<Icon name="bank" size={16} />} onClick={() => window.ZHQ_PLAID && window.ZHQ_PLAID.connect()}>Connect bank</Button>
+              <Button variant="secondary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setShowAdd(true)}>Add manually</Button>
+            </div>
           </div>
         </div>
         <ZHQAddAccountModal open={showAdd} onClose={() => setShowAdd(false)} />
@@ -374,10 +428,13 @@ function ZHQAccounts({ onNavigate }) {
           <StatTile label="Net worth" value={ZHQMoney(cash + debt, false)} accent />
         </div>
         <div style={{ display: 'flex', gap: 10, flex: 'none' }}>
-          <Button variant="secondary" iconLeft={<Icon name="arrowDown" size={16} />} onClick={() => onNavigate && onNavigate('import')}>Import</Button>
-          <Button variant="primary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setShowAdd(true)}>Add account</Button>
+          <Button variant="ghost" iconLeft={<Icon name="arrowDown" size={16} />} onClick={() => onNavigate && onNavigate('import')}>Import CSV</Button>
+          <Button variant="secondary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setShowAdd(true)}>Add manually</Button>
+          <Button variant="primary" iconLeft={<Icon name="bank" size={16} />} onClick={() => window.ZHQ_PLAID && window.ZHQ_PLAID.connect()}>Connect bank</Button>
         </div>
       </div>
+
+      <ZHQConnectedBanks />
 
       {groups.map(([title, list]) => (
         <div key={title}>

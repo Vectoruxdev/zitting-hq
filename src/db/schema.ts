@@ -394,3 +394,38 @@ export const receiptItems = pgTable("receipt_items", {
   total: numeric("total", { precision: 14, scale: 2 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+// ---- Plaid (automatic bank sync) -----------------------------------------
+// A connected bank login (one Plaid Item = one institution login). The
+// access_token is sensitive — it lives here server-side only, never sent to
+// the client.
+export const plaidItems = pgTable("plaid_items", {
+  id: text("id").primaryKey(), // uuid
+  itemId: text("item_id").notNull().unique(), // Plaid item_id
+  accessToken: text("access_token").notNull(),
+  institutionId: text("institution_id"),
+  institutionName: text("institution_name"),
+  cursor: text("cursor"), // /transactions/sync cursor (incremental)
+  status: text("status").notNull().default("good"), // good | login_required | error
+  error: text("error"),
+  createdBy: text("created_by"), // owner email
+  createdAt: timestamp("created_at").defaultNow(),
+  lastSyncedAt: timestamp("last_synced_at"),
+});
+
+// Maps a Plaid account to one of our accounts (created on first connect).
+export const plaidAccounts = pgTable(
+  "plaid_accounts",
+  {
+    id: serial("id").primaryKey(),
+    itemId: text("item_id").notNull(), // → plaid_items.item_id
+    plaidAccountId: text("plaid_account_id").notNull().unique(),
+    accountId: text("account_id").references(() => accounts.id), // our account
+    name: text("name"),
+    mask: text("mask"),
+    type: text("type"),
+    subtype: text("subtype"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [index("idx_plaid_acct_item").on(t.itemId)]
+);

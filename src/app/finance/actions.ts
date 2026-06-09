@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient, SITE_URL } from "@/lib/supabase/admin";
 import * as m from "@/db/mutations";
+import * as plaidDb from "@/db/plaid";
 
 async function ensureOwner() {
   if (!isAuthConfigured) return; // local dev / no auth → allow
@@ -378,6 +379,35 @@ export async function addContribution(goalId: string, args: Parameters<typeof m.
 export async function deleteContribution(id: number) {
   await ensureOwner();
   const res = await m.deleteContribution(id);
+  refresh();
+  return res;
+}
+
+// ---- Plaid (automatic bank sync) ----
+export async function createPlaidLinkToken() {
+  const u = await ensureOwner();
+  const token = await plaidDb.createLinkToken(u?.email || "owner");
+  return { ok: true as const, token };
+}
+export async function exchangePlaidPublicToken(publicToken: string) {
+  const u = await ensureOwner();
+  const res = await plaidDb.exchangePublicToken(publicToken, u?.email ?? null);
+  refresh();
+  return res;
+}
+export async function syncPlaid() {
+  await ensureOwner();
+  const res = await plaidDb.syncAllItems();
+  refresh();
+  return res;
+}
+export async function listPlaidBanks() {
+  await ensureOwner();
+  return plaidDb.listPlaidItems();
+}
+export async function removePlaidBank(itemId: string) {
+  await ensureOwner();
+  const res = await plaidDb.removePlaidItem(itemId);
   refresh();
   return res;
 }

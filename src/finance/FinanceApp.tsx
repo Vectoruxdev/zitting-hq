@@ -44,6 +44,7 @@ import "./screens/Spendable.jsx";
 import "./screens/Onboarding.jsx";
 import "./screens/Import.jsx";
 import "./screens/Categories.jsx";
+import "./plaidLink.js";
 
 const w = (typeof window !== "undefined" ? window : {}) as any;
 
