@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { signIn, type SignInState } from "./actions";
+import { PasswordInput } from "@/components/password-input";
 
 export function LoginForm({ redirectTo }: { redirectTo: string }) {
   const [state, formAction, pending] = useActionState<SignInState, FormData>(signIn, {});
@@ -34,9 +35,8 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <span className="zt-eyebrow">Password</span>
-        <input
+        <PasswordInput
           name="password"
-          type="password"
           autoComplete="current-password"
           required
           placeholder="••••••••"

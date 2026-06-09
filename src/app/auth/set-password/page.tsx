@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { PasswordInput } from "@/components/password-input";
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -64,8 +65,8 @@ export default function SetPasswordPage() {
             <>
               <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "var(--text-secondary)" }}>Choose a password to finish setting up your Family HQ login.</p>
               <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <input type="password" placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} style={field} autoComplete="new-password" />
-                <input type="password" placeholder="Confirm password" value={pw2} onChange={(e) => setPw2(e.target.value)} style={field} autoComplete="new-password" />
+                <PasswordInput placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} style={field} autoComplete="new-password" />
+                <PasswordInput placeholder="Confirm password" value={pw2} onChange={(e) => setPw2(e.target.value)} style={field} autoComplete="new-password" />
                 {error ? <p style={{ margin: 0, fontSize: 13, color: "var(--negative)" }}>{error}</p> : null}
                 <button type="submit" disabled={busy} style={{ height: 44, marginTop: 4, borderRadius: "var(--radius-pill, 999px)", border: "1px solid transparent", background: "var(--btn-primary-bg)", color: "var(--btn-primary-fg)", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
                   {busy ? "Saving…" : "Set password & continue"}
