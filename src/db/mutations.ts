@@ -270,9 +270,18 @@ export async function commitImport(args: {
   // Learn from rows the user explicitly categorized during import.
   for (const l of learnQueue) await learnMerchant(l.key, l.categoryId, l.member);
 
-  // Update the account's balance from the CSV's latest running balance.
+  // `accounts.balance` is the OPENING balance; the displayed balance is
+  // opening + the net of all the account's transactions (see getFinanceData).
+  // The CSV gives the latest RUNNING balance, so back out the transaction net
+  // and store opening such that (opening + net) reconciles to the bank figure.
   if (args.accountBalance != null && Number.isFinite(args.accountBalance)) {
-    await database.update(s.accounts).set({ balance: String(args.accountBalance) }).where(eq(s.accounts.id, args.accountId));
+    const balRows = await database
+      .select({ a: s.transactions.amount })
+      .from(s.transactions)
+      .where(eq(s.transactions.accountId, args.accountId));
+    const net = balRows.reduce((sum, r) => sum + Number(r.a ?? 0), 0);
+    const opening = args.accountBalance - net;
+    await database.update(s.accounts).set({ balance: String(opening) }).where(eq(s.accounts.id, args.accountId));
   }
 
   return { ok: true as const, batchId, imported: inserts.length, skipped };

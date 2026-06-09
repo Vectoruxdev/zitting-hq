@@ -149,6 +149,18 @@ export async function getFinanceData(): Promise<FinanceData> {
       label: accountLabel(a),
     }));
 
+    // --- account balances ---
+    // `accounts.balance` is the OPENING balance; the live balance is that plus
+    // the net of every transaction in the account. So Total Cash always
+    // reconciles with the income/spending derived from the same transactions
+    // (rather than sitting at $0 when no opening balance was ever set).
+    const acctNet = new Map<string, number>();
+    for (const t of txnRows) {
+      if (!t.accountId) continue;
+      acctNet.set(t.accountId, (acctNet.get(t.accountId) || 0) + n(t.amount));
+    }
+    const liveBalance = (a: (typeof accountRows)[number]) => n(a.balance) + (acctNet.get(a.id) || 0);
+
     // --- accounts (grouped) ---
     const byType = (t: string) =>
       accountRows
@@ -158,7 +170,7 @@ export async function getFinanceData(): Promise<FinanceData> {
           name: a.name,
           inst: a.institution,
           mask: a.mask,
-          balance: n(a.balance),
+          balance: liveBalance(a),
           who: a.who,
           synced: a.syncedLabel,
           status: a.status,
@@ -344,10 +356,10 @@ export async function getFinanceData(): Promise<FinanceData> {
       data.categories.push({ label: "Other", value: restTotal, display: money0(restTotal), color: "var(--gray-500)" });
     }
 
-    // Total cash = checking + savings balances
+    // Total cash = live (opening + transaction net) checking + savings balances
     const totalCash = accountRows
       .filter((a) => a.type === "checking" || a.type === "savings")
-      .reduce((sum, a) => sum + n(a.balance), 0);
+      .reduce((sum, a) => sum + liveBalance(a), 0);
     const upcomingTotal = transferRows
       .filter((t) => t.kind === "upcoming")
       .reduce((sum, t) => sum + n(t.amount), 0);
