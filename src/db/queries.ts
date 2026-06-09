@@ -42,6 +42,18 @@ function dayLabel(dt: Date): string {
 function monthKey(dt: Date): string {
   return `${dt.getFullYear()}-${dt.getMonth()}`;
 }
+/** Human "2m ago" / "3h ago" / "Jun 4" style label for a notification time. */
+function relTime(dt: Date, now: Date): string {
+  const secs = Math.max(0, Math.round((now.getTime() - dt.getTime()) / 1000));
+  if (secs < 60) return "Just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return dayLabel(dt);
+}
 
 export type FinanceData = typeof MOCK_FINANCE_DATA;
 
@@ -489,19 +501,37 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const pendingTotal = pendingInstances.reduce((sum, r) => sum + n(r.amount), 0);
     data.transfersPending = pendingInstances.length;
     data.transfersPendingTotal = money2(pendingTotal);
-    data.notifications = notifRows.map((notif) => ({
+    // Scope to the viewer: a member sees only their own + household-wide
+    // alerts; owner/partner see owner + household-wide. Newest first (by real
+    // createdAt, falling back to sortOrder for legacy rows).
+    const visibleNotif = notifRows
+      .filter((notif) => {
+        const aud = (notif.audience as string) || "owners";
+        if (aud === "all") return true;
+        if (isMemberView) return aud === "member" && notif.memberId === viewer!.memberId;
+        return aud === "owners";
+      })
+      .sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : a.sortOrder;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : b.sortOrder;
+        return tb - ta;
+      });
+    const notifNow = new Date();
+    data.notifications = visibleNotif.map((notif) => ({
       id: notif.id,
       type: notif.type,
       icon: notif.icon,
       tone: notif.tone,
       title: notif.title,
       body: notif.body,
-      time: notif.timeLabel,
+      time: notif.createdAt ? relTime(new Date(notif.createdAt), notifNow) : notif.timeLabel,
       unread: notif.unread,
+      linkTo: notif.linkTo ?? null,
     }));
     // Surface pending transfers as a derived (unstored) alert so the bell badges
     // and the feed shows what needs moving — without a stale stored row.
-    if (data.transfersPending > 0) {
+    // Owners/partners only — members don't manage household transfers.
+    if (data.transfersPending > 0 && !isMemberView) {
       data.notifications = [
         {
           id: "transfers-pending",
@@ -512,6 +542,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           body: `${data.transfersPendingTotal} ready to move across your accounts.`,
           time: "Now",
           unread: true,
+          linkTo: "transfers",
         },
         ...data.notifications,
       ];

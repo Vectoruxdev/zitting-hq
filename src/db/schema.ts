@@ -366,17 +366,28 @@ export const transfers = pgTable("transfers", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
-export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  type: text("type").notNull(),
-  icon: text("icon"),
-  tone: text("tone").notNull().default("info"),
-  title: text("title").notNull(),
-  body: text("body"),
-  timeLabel: text("time_label"),
-  unread: boolean("unread").notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0),
-});
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    type: text("type").notNull(),
+    icon: text("icon"),
+    tone: text("tone").notNull().default("info"),
+    title: text("title").notNull(),
+    body: text("body"),
+    timeLabel: text("time_label"), // legacy fallback; superseded by createdAt
+    unread: boolean("unread").notNull().default(true),
+    // Recipient routing: 'owners' (owner+partner), 'member' (the linked
+    // memberId only), or 'all' (everyone). Scoped server-side in getFinanceData.
+    audience: text("audience").notNull().default("owners"),
+    memberId: text("member_id").references(() => familyMembers.id, { onDelete: "cascade" }),
+    linkTo: text("link_to"), // optional route id the alert deep-links to
+    dedupeKey: text("dedupe_key"), // idempotency — skip insert if one exists
+    createdAt: timestamp("created_at").defaultNow(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("idx_notif_member").on(t.memberId), index("idx_notif_dedupe").on(t.dedupeKey)]
+);
 
 export const notificationRules = pgTable("notification_rules", {
   id: serial("id").primaryKey(),

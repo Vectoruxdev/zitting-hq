@@ -151,7 +151,7 @@ export default function FinanceApp({
     allocations: { title: "Allocations", render: (nav) => React.createElement(w.ZHQAllocations, { onNavigate: nav }) },
     savings: { title: "Savings", render: () => React.createElement(w.ZHQSavings) },
     receipts: { title: "Receipts", render: () => React.createElement(w.ZHQReceipts) },
-    notifications: { title: "Notifications", render: () => React.createElement(w.ZHQNotifications) },
+    notifications: { title: "Notifications", render: (nav) => React.createElement(w.ZHQNotifications, { onNavigate: nav }) },
     ask: { title: "Ask AI", render: () => React.createElement(w.ZHQAsk) },
     settings: { title: "Access & permissions", render: () => React.createElement(w.ZHQAccess) },
   };

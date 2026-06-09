@@ -12,7 +12,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { getPlaid, PLAID_PRODUCTS, PLAID_COUNTRY_CODES, PLAID_WEBHOOK_URL } from "@/lib/plaid";
-import { commitImport, suggestCategories } from "./mutations";
+import { commitImport, suggestCategories, createNotification } from "./mutations";
 import { looksLikeTransfer, dedupeKey } from "./categorize";
 
 function requireDb() {
@@ -195,6 +195,8 @@ export async function syncItem(itemId: string) {
   // 4) Insert added + modified via the import pipeline (per account).
   const toInsert = [...added, ...modified].filter((t) => ourByPlaid.get(t.account_id));
   let imported = 0;
+  // What actually landed per account (post-dedup) → drives notifications.
+  const freshByAccount = new Map<string, InsertedRow[]>();
   if (toInsert.length) {
     // Auto-categorize with our engine (same as CSV import).
     const sugg = await suggestCategories(
@@ -241,8 +243,15 @@ export async function syncItem(itemId: string) {
         rows,
       });
       imported += res.imported;
+      // Collect what actually landed (post-dedup) for notifications below.
+      for (const ir of res.insertedRows) {
+        freshByAccount.set(accountId, [...(freshByAccount.get(accountId) || []), ir]);
+      }
     }
   }
+
+  // 5) In-app notifications for what just arrived (owners + managing members).
+  await emitSyncNotifications(item.institutionName, freshByAccount, ourByPlaid, paRows);
 
   await database
     .update(s.plaidItems)
@@ -250,6 +259,117 @@ export async function syncItem(itemId: string) {
     .where(eq(s.plaidItems.itemId, itemId));
 
   return { imported, added: added.length, modified: modified.length, removed: removedIds.length };
+}
+
+const LARGE_CHARGE = 200; // $ outflow that earns its own owner alert
+const fmtUsd = (v: number) => "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
+
+/**
+ * Write in-app notifications for the rows that just synced. Owners get a
+ * household feed (large charges individually, the rest as a single/batch
+ * summary); members who manage an account get a "new to categorize" nudge.
+ * All keyed by stable dedupe hashes so the webhook + nightly cron can't
+ * double-post. Best-effort — never throws into the sync path.
+ */
+async function emitSyncNotifications(
+  institutionName: string | null,
+  freshByAccount: Map<string, InsertedRow[]>,
+  _ourByPlaid: Map<string, string | null>,
+  paRows: { plaidAccountId: string; accountId: string | null; name: string | null; mask: string | null }[]
+) {
+  try {
+    const database = requireDb();
+    const acctIds = [...freshByAccount.keys()];
+    // Internal transfers between own accounts aren't "news".
+    const fresh = acctIds
+      .flatMap((aid) => freshByAccount.get(aid)!.map((r) => ({ ...r, accountId: aid })))
+      .filter((r) => !r.isTransfer);
+    if (!fresh.length) return;
+    const bank = institutionName || "your bank";
+
+    // Owners — large charges, surfaced individually.
+    const large = fresh.filter((r) => r.amount < 0 && Math.abs(r.amount) >= LARGE_CHARGE);
+    const largeIds = new Set(large.map((r) => r.externalId));
+    for (const r of large) {
+      await createNotification({
+        type: "large-charge",
+        tone: "warning",
+        icon: "alert",
+        audience: "owners",
+        title: `Large charge · ${fmtUsd(r.amount)}`,
+        body: `${r.merchant} — posted at ${bank}.`,
+        linkTo: "transactions",
+        dedupeKey: r.externalId ? `plaid:large:${r.externalId}` : undefined,
+      });
+    }
+
+    // Owners — the rest, as a single line or a batch summary.
+    const rest = fresh.filter((r) => !largeIds.has(r.externalId));
+    if (rest.length === 1) {
+      const r = rest[0];
+      await createNotification({
+        type: "new-transaction",
+        tone: "info",
+        icon: "transactions",
+        audience: "owners",
+        title: `New transaction · ${fmtUsd(r.amount)}`,
+        body: `${r.merchant} — ${r.income ? "deposit at" : "from"} ${bank}.`,
+        linkTo: "transactions",
+        dedupeKey: r.externalId ? `plaid:txn:${r.externalId}` : undefined,
+      });
+    } else if (rest.length > 1) {
+      const spent = rest.reduce((sum, r) => sum + (r.amount < 0 ? Math.abs(r.amount) : 0), 0);
+      const ids = rest.map((r) => r.externalId || "").sort().join(",");
+      await createNotification({
+        type: "new-transactions",
+        tone: "info",
+        icon: "transactions",
+        audience: "owners",
+        title: `${rest.length} new transactions`,
+        body: `${fmtUsd(spent)} in spending synced from ${bank}.`,
+        linkTo: "transactions",
+        dedupeKey: `plaid:sync:${ids}`,
+      });
+    }
+
+    // Members — nudge whoever is in charge of each account with new rows.
+    const memberRows = await database
+      .select()
+      .from(s.accountMembers)
+      .where(inArray(s.accountMembers.accountId, acctIds))
+      .catch(() => [] as { accountId: string; memberId: string }[]);
+    if (!memberRows.length) return;
+    const managersByAccount = new Map<string, string[]>();
+    for (const am of memberRows) {
+      managersByAccount.set(am.accountId, [...(managersByAccount.get(am.accountId) || []), am.memberId]);
+    }
+    const labelById = new Map<string, string>();
+    for (const p of paRows) {
+      if (p.accountId) labelById.set(p.accountId, p.mask ? `${p.name || "account"} ••${p.mask}` : p.name || "your account");
+    }
+    for (const aid of acctIds) {
+      const managers = managersByAccount.get(aid);
+      if (!managers?.length) continue;
+      const rows = (freshByAccount.get(aid) || []).filter((r) => !r.isTransfer);
+      if (!rows.length) continue;
+      const ids = rows.map((r) => r.externalId || "").sort().join(",");
+      const label = labelById.get(aid) || "your account";
+      for (const memberId of managers) {
+        await createNotification({
+          type: "categorize-nudge",
+          tone: "accent",
+          icon: "transactions",
+          audience: "member",
+          memberId,
+          title: rows.length === 1 ? "1 new transaction to categorize" : `${rows.length} new transactions to categorize`,
+          body: `New activity on ${label}. Tap to review and confirm.`,
+          dedupeKey: `plaid:mnudge:${memberId}:${aid}:${ids}`,
+        });
+      }
+    }
+  } catch {
+    /* notifications are best-effort — never break the sync */
+  }
 }
 
 /** Sync every connected item (used by the nightly cron + webhook fan-out). */
@@ -307,6 +427,14 @@ interface PlaidTxn {
   amount: number;
   name: string;
   merchant_name?: string | null;
+}
+interface InsertedRow {
+  merchant: string;
+  amount: number;
+  date: string | null;
+  externalId: string | null; // stable dedupe hash → notification idempotency
+  isTransfer: boolean;
+  income: boolean;
 }
 interface ImportRowLite {
   date: string;

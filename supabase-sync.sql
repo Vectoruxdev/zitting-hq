@@ -211,3 +211,23 @@ CREATE INDEX IF NOT EXISTS idx_plaid_acct_item ON plaid_accounts (item_id);
 
 -- ---- import_batches: tag source csv|plaid (0009) ----
 ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'csv';
+
+-- ---- notifications: recipient routing + timestamps + dedup (0010) ----
+CREATE TABLE IF NOT EXISTS notifications (
+  id serial PRIMARY KEY,
+  type text NOT NULL,
+  icon text,
+  tone text NOT NULL DEFAULT 'info',
+  title text NOT NULL,
+  body text,
+  time_label text,
+  unread boolean NOT NULL DEFAULT true,
+  sort_order integer NOT NULL DEFAULT 0
+);
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS audience   text NOT NULL DEFAULT 'owners';
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS member_id  text REFERENCES family_members(id) ON DELETE CASCADE;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS link_to    text;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dedupe_key text;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();
+CREATE INDEX IF NOT EXISTS idx_notif_member ON notifications (member_id);
+CREATE INDEX IF NOT EXISTS idx_notif_dedupe ON notifications (dedupe_key);

@@ -6,9 +6,10 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
+import { computeMemberProgress } from "./allowance";
 import { dedupeKey, markDuplicates, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
@@ -378,6 +379,16 @@ export async function commitImport(args: {
     linkedTransfers: linked.linked,
     generatedTransfers: generated,
     reconciledTransfers: reconciled.matched,
+    // Lightweight summary of what actually landed (post-dedup) — lets callers
+    // (e.g. Plaid sync) build notifications without re-querying.
+    insertedRows: inserts.map((i) => ({
+      merchant: i.merchant,
+      amount: Number(i.amount),
+      date: i.date ?? null,
+      externalId: i.dedupeHash ?? null,
+      isTransfer: Boolean(i.isTransfer),
+      income: Boolean(i.income),
+    })),
   };
 }
 
@@ -865,8 +876,21 @@ export async function createNotification(args: {
   body?: string | null;
   icon?: string | null;
   timeLabel?: string | null;
+  audience?: "owners" | "member" | "all"; // who sees it (default owners)
+  memberId?: string | null; // recipient when audience === "member"
+  linkTo?: string | null; // optional route id to deep-link to
+  dedupeKey?: string | null; // idempotency — skip if one already exists
 }) {
   const database = requireDb();
+  // Idempotency: never double-post the same logical alert (webhook + cron, etc.)
+  if (args.dedupeKey) {
+    const dup = await database
+      .select({ id: s.notifications.id })
+      .from(s.notifications)
+      .where(eq(s.notifications.dedupeKey, args.dedupeKey))
+      .limit(1);
+    if (dup.length) return { ok: true as const, skipped: true as const };
+  }
   const existing = await database.select({ so: s.notifications.sortOrder }).from(s.notifications);
   const sortOrder = existing.reduce((mx, n) => Math.max(mx, n.so), -1) + 1;
   await database.insert(s.notifications).values({
@@ -874,12 +898,78 @@ export async function createNotification(args: {
     tone: args.tone ?? "info",
     title: args.title,
     body: args.body ?? null,
-    icon: args.icon ?? "transfers",
+    icon: args.icon ?? "bell",
     timeLabel: args.timeLabel ?? null,
     unread: true,
+    audience: args.audience ?? "owners",
+    memberId: args.memberId ?? null,
+    linkTo: args.linkTo ?? null,
+    dedupeKey: args.dedupeKey ?? null,
     sortOrder,
   });
   return { ok: true as const };
+}
+
+/**
+ * Mark notifications read, scoped to what this viewer is allowed to see (so a
+ * member can't clear owner alerts). With `ids`, only those (intersected with
+ * visibility); without, every visible unread alert ("Mark all read").
+ */
+export async function markNotificationsRead(
+  viewer: { memberId: string | null; role: string },
+  ids?: number[]
+) {
+  const database = requireDb();
+  const isMember = viewer.role === "member" && !!viewer.memberId;
+  const visible = isMember
+    ? or(
+        eq(s.notifications.audience, "all"),
+        and(eq(s.notifications.audience, "member"), eq(s.notifications.memberId, viewer.memberId!))
+      )
+    : or(eq(s.notifications.audience, "all"), eq(s.notifications.audience, "owners"));
+  const where = ids && ids.length ? and(inArray(s.notifications.id, ids), visible) : visible;
+  await database.update(s.notifications).set({ unread: false }).where(where);
+  return { ok: true as const };
+}
+
+/**
+ * After a member edits/confirms, notify the owners ONCE per month if that
+ * member has now reviewed every current-month transaction on the accounts they
+ * manage. Deduped by member+month so re-confirming doesn't re-alert.
+ */
+export async function notifyOwnersIfMemberCaughtUp(memberId: string | null | undefined) {
+  if (!memberId) return;
+  try {
+    const database = requireDb();
+    const managed = [...(await managedAccountIds(memberId))];
+    if (!managed.length) return;
+    const txns = await database
+      .select({ accountId: s.transactions.accountId, date: s.transactions.date, reviewed: s.transactions.reviewed })
+      .from(s.transactions)
+      .where(inArray(s.transactions.accountId, managed));
+    const prog = computeMemberProgress(txns, managed, new Date());
+    // Only when there was work this month and it's all done.
+    let currentTotal = 0;
+    for (const p of prog.perAccount.values()) currentTotal += p.total;
+    if (currentTotal === 0 || !prog.allCaughtUp) return;
+    const [mem] = await database
+      .select({ name: s.familyMembers.name })
+      .from(s.familyMembers)
+      .where(eq(s.familyMembers.id, memberId));
+    const name = mem?.name ?? "A member";
+    await createNotification({
+      type: "member-complete",
+      tone: "accent",
+      icon: "check",
+      audience: "owners",
+      title: `${name} finished categorizing`,
+      body: `${name} has reviewed every transaction on their accounts for this month.`,
+      linkTo: "transactions",
+      dedupeKey: `member-caughtup:${memberId}:${prog.monthKey}`,
+    });
+  } catch {
+    /* notifications are best-effort — never block the edit */
+  }
 }
 
 // ---- splits ----

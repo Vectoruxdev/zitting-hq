@@ -166,21 +166,24 @@ export async function saveColumnTemplate(args: Parameters<typeof m.saveColumnTem
 
 // ---- transaction edits ----
 export async function updateTransaction(id: number, patch: m.TxnPatch, opts?: { learn?: boolean }) {
-  await ensureCanEditTxns([id]);
+  const u = await ensureCanEditTxns([id]);
   const res = await m.updateTransaction(id, patch, opts);
+  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;
 }
 export async function bulkUpdateTransactions(ids: number[], patch: m.TxnPatch) {
-  await ensureCanEditTxns(ids);
+  const u = await ensureCanEditTxns(ids);
   // Bulk setting a category is a manual choice → learn from it.
   const res = await m.bulkUpdateTransactions(ids, patch, { learn: patch.categoryId != null });
+  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;
 }
 export async function confirmTransactions(ids: number[]) {
-  await ensureCanEditTxns(ids);
+  const u = await ensureCanEditTxns(ids);
   const res = await m.confirmTransactions(ids);
+  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;
 }
@@ -341,6 +344,16 @@ export async function generateTransfersForIncome(incomeTxnId: number) {
 export async function reconcilePendingTransfers() {
   await ensureOwner();
   const res = await m.reconcilePendingTransfers();
+  refresh();
+  return res;
+}
+
+// ---- notifications ----
+/** Mark alerts read for the current viewer (all visible, or a specific set). */
+export async function markNotificationsRead(ids?: number[]) {
+  const u = isAuthConfigured ? await getCurrentUser() : null;
+  const viewer = { memberId: u?.memberId ?? null, role: u?.role ?? "owner" };
+  const res = await m.markNotificationsRead(viewer, ids);
   refresh();
   return res;
 }
