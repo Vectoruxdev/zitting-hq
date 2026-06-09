@@ -269,9 +269,15 @@ function ZHQImport({ onNavigate }) {
         <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <FileDropzone onFile={onFile} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select label="Import into account" value={accountId} onChange={setAccountId} options={accounts.map((a) => ({ value: a.id, label: a.label }))} placeholder="Choose account" />
+            <Select label="Import into account" value={accountId} onChange={setAccountId} options={accounts.map((a) => ({ value: a.id, label: a.plaidLinked ? `${a.label} (auto-synced)` : a.label }))} placeholder="Choose account" />
             <Select label="Default person" value={defaultMember} onChange={setDefaultMember} options={memberOpts} placeholder="Choose person" />
           </div>
+          {accounts.find((a) => a.id === accountId)?.plaidLinked ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 12px', background: 'var(--amber-glow, var(--surface-sunken))', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              <Icon name="alert" size={15} style={{ color: 'var(--warning)', flexShrink: 0, marginTop: 1 }} />
+              <span>This account <b style={{ color: 'var(--text-primary)' }}>auto-syncs from your bank</b> via Plaid. Importing a CSV here will likely create duplicate transactions — only do this for history older than the connection.</span>
+            </div>
+          ) : null}
           {headers.length ? (
             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               Parsed <b style={{ color: 'var(--text-primary)' }}>{raw.length}</b> rows · {headers.length} columns{mapping?.bank ? ` · detected ${mapping.bank}` : ''}
@@ -290,13 +296,14 @@ function ZHQImport({ onNavigate }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(D.importBatches || []).map((b) => (
                   <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
-                    <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>
-                      <Icon name="arrowDown" size={15} />
+                    <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--surface-raised)', color: b.source === 'plaid' ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                      <Icon name={b.source === 'plaid' ? 'bank' : 'arrowDown'} size={15} />
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {b.filename || 'Import'}
                         {b.account ? <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}> · {b.account}</span> : null}
+                        <span style={{ marginLeft: 7, fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: b.source === 'plaid' ? 'var(--accent)' : 'var(--text-tertiary)' }}>{b.source === 'plaid' ? 'Auto' : 'CSV'}</span>
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
                         {b.coversFrom ? (b.coversFrom === b.coversTo ? b.coversFrom : `${b.coversFrom} – ${b.coversTo}`) : 'no dated rows'}

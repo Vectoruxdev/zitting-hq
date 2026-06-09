@@ -208,3 +208,6 @@ CREATE TABLE IF NOT EXISTS plaid_accounts (
   created_at timestamp DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_plaid_acct_item ON plaid_accounts (item_id);
+
+-- ---- import_batches: tag source csv|plaid (0009) ----
+ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'csv';

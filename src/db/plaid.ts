@@ -237,6 +237,7 @@ export async function syncItem(itemId: string) {
         filename: `${item.institutionName || "Bank"} · auto-sync`,
         createdBy: item.createdBy,
         accountBalance,
+        source: "plaid",
         rows,
       });
       imported += res.imported;

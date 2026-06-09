@@ -245,6 +245,7 @@ export async function commitImport(args: {
   filename?: string | null;
   createdBy?: string | null;
   accountBalance?: number | null; // latest running balance from the CSV
+  source?: "csv" | "plaid"; // how the rows arrived (default csv)
   rows: ImportRow[];
 }) {
   const database = requireDb();
@@ -321,6 +322,7 @@ export async function commitImport(args: {
       rowsTotal: args.rows.length,
       rowsImported: inserts.length,
       rowsSkipped: skipped,
+      source: args.source ?? "csv",
       createdBy: args.createdBy ?? null,
     });
     if (inserts.length) await tx.insert(s.transactions).values(inserts);

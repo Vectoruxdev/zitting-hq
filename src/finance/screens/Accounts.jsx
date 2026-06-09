@@ -21,7 +21,10 @@ function ZHQAccountCard({ acct, onOpen }) {
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }} className="zt-num">{acct.inst} ••{acct.mask}</div>
           </div>
         </div>
-        {acct.dest ? <Badge tone="accent" size="sm">{acct.dest}</Badge> : null}
+        <div style={{ display: 'inline-flex', gap: 6, flexShrink: 0 }}>
+          {acct.plaidLinked ? <Badge tone="positive" size="sm">Auto-sync</Badge> : null}
+          {acct.dest ? <Badge tone="accent" size="sm">{acct.dest}</Badge> : null}
+        </div>
       </div>
 
       {acct.managers && acct.managers.length ? (

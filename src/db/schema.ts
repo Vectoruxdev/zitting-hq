@@ -89,6 +89,7 @@ export const importBatches = pgTable("import_batches", {
   rowsTotal: integer("rows_total").notNull().default(0),
   rowsImported: integer("rows_imported").notNull().default(0),
   rowsSkipped: integer("rows_skipped").notNull().default(0),
+  source: text("source").notNull().default("csv"), // csv | plaid — how the rows arrived
   createdAt: timestamp("created_at").defaultNow(),
   createdBy: text("created_by"), // email
   undoneAt: timestamp("undone_at"),

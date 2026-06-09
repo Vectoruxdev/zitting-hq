@@ -127,6 +127,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Member-managed accounts + per-member allowance (migration 0005) — defensive
     // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
     const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
+    // Which of our accounts are linked to a Plaid (auto-syncing) bank.
+    const plaidAcctRows = await db.select({ accountId: s.plaidAccounts.accountId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null }[]);
+    const plaidLinkedIds = new Set(plaidAcctRows.map((r) => r.accountId).filter(Boolean) as string[]);
     const allowanceRows = await db
       .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
       .from(s.familyMembers)
@@ -207,6 +210,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         mask: a.mask,
         label: accountLabel(a),
         managers: managersByAccount.get(a.id) ?? [],
+        plaidLinked: plaidLinkedIds.has(a.id),
       }));
 
     // --- account balances ---
@@ -237,6 +241,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           openingBalance: n(a.balance),
           who: a.who,
           managers: managersByAccount.get(a.id) ?? [],
+          plaidLinked: plaidLinkedIds.has(a.id),
           synced: a.syncedLabel,
           status: a.status,
           trend: a.trend ?? [],
@@ -730,6 +735,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         id: b.id,
         filename: b.filename,
         account: acct ? acct.name : null,
+        source: (b as { source?: string }).source ?? "csv",
         rowsImported: b.rowsImported,
         rowsSkipped: b.rowsSkipped,
         coversFrom: range ? rangeLabel(range.min) : null,
