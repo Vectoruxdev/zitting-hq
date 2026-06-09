@@ -42,10 +42,19 @@ function ZHQOverview({ onNavigate }) {
   const catTotal = cats.reduce((s, c) => s + c.value, 0);
   const fmtK = (v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${Math.round(v)}`);
 
+  // Stats reflect the most recent month that has data (D.statsMonth). When that
+  // is the current calendar month, "This month" reads naturally; otherwise show
+  // the actual month so it's clear the figures are from the latest import.
+  const curMonthName = now.toLocaleString('en-US', { month: 'long' });
+  const statsIsCurrent = !D.statsMonth || D.statsMonth === curMonthName;
+  const monthEyebrow = statsIsCurrent ? 'This month' : D.statsMonth;
+  const spendLabel = statsIsCurrent ? 'This-month spending' : `${D.statsMonth} spending`;
+  const incomeLabel = statsIsCurrent ? 'This-month income' : `${D.statsMonth} income`;
+
   const tiles = [
     { label: 'Total cash', value: D.stats.totalCash },
-    { label: 'This-month spending', value: D.stats.spending },
-    { label: 'This-month income', value: D.stats.income },
+    { label: spendLabel, value: D.stats.spending },
+    { label: incomeLabel, value: D.stats.income },
     { label: 'Transfers to make', value: D.stats.transfers, sub: upcoming.length ? `${upcoming.length} to send` : 'none pending', accent: true, icon: 'transfers', nav: 'transfers' },
   ];
 
@@ -71,7 +80,7 @@ function ZHQOverview({ onNavigate }) {
       {/* Money going + income vs spending */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.05fr', gap: 16 }}>
         <Card>
-          <SectionHeader eyebrow="This month" title="Where's our money going"
+          <SectionHeader eyebrow={monthEyebrow} title="Where's our money going"
             action={<Button variant="ghost" size="sm" onClick={() => onNavigate('categories')}>Categories</Button>} />
           {cats.length ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
@@ -79,7 +88,7 @@ function ZHQOverview({ onNavigate }) {
               <div style={{ flex: 1 }}><DonutLegend segments={cats} /></div>
             </div>
           ) : (
-            <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>No spending categorized this month yet.</div>
+            <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>No spending categorized {statsIsCurrent ? 'this month' : `in ${D.statsMonth}`} yet.</div>
           )}
         </Card>
         <Card>

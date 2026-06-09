@@ -39,7 +39,7 @@ function autoDetect(headers) {
     return {
       dateCol: 'Posting Date', merchantCol: 'Description', amountMode: 'signed',
       amountCol: 'Amount', debitCol: '', creditCol: '', externalIdCol: 'Transaction ID',
-      typeCol: 'Type', dateFormat: 'M/D/Y', invertSign: false, bank: 'Mountain America CU',
+      typeCol: 'Type', balanceCol: 'Balance', dateFormat: 'M/D/Y', invertSign: false, bank: 'Mountain America CU',
     };
   }
   const debit = find(/debit|withdrawal/i);
@@ -49,7 +49,7 @@ function autoDetect(headers) {
     amountMode: debit && credit ? 'debitCredit' : 'signed',
     amountCol: find(/^amount$|amount/i), debitCol: debit, creditCol: credit,
     externalIdCol: find(/transaction id|trans id|\bid\b/i), typeCol: find(/type/i),
-    dateFormat: 'M/D/Y', invertSign: false, bank: '',
+    balanceCol: find(/balance/i), dateFormat: 'M/D/Y', invertSign: false, bank: '',
   };
 }
 
@@ -109,11 +109,13 @@ function ZHQImport({ onNavigate }) {
         const typeVal = map.typeCol ? r[map.typeCol] : '';
         const externalId = map.externalIdCol ? r[map.externalIdCol] : null;
         const isTransfer = looksLikeTransfer(merchant, typeVal);
+        const balance = map.balanceCol && r[map.balanceCol] != null && String(r[map.balanceCol]).trim() !== '' ? num(r[map.balanceCol]) : null;
         return {
           idx: i,
           date: iso,
           merchant,
           amount,
+          balance,
           income: amount > 0,
           externalId,
           isTransfer,
@@ -174,9 +176,17 @@ function ZHQImport({ onNavigate }) {
     if (!include.length || !API.commitImport) return;
     setBusy(true);
     try {
+      // Latest running balance from the file → updates the account balance.
+      const withBalance = rows.filter((r) => r.balance != null && r.date);
+      let accountBalance = null;
+      if (withBalance.length) {
+        const latest = withBalance.reduce((a, b) => (a.date >= b.date ? a : b));
+        accountBalance = latest.balance;
+      }
       const res = await API.commitImport({
         accountId,
         filename,
+        accountBalance,
         rows: include.map((r) => ({
           date: r.date, merchant: r.merchant, amount: r.amount, income: r.income,
           categoryId: r.categoryId, memberId: r.memberId, isTransfer: r.isTransfer, externalId: r.externalId,
@@ -199,6 +209,18 @@ function ZHQImport({ onNavigate }) {
       setBusy(false);
     }
     reset();
+  }
+
+  const [removing, setRemoving] = React.useState(null);
+  async function removeBatch(id) {
+    if (!API.deleteImport) return;
+    setRemoving(id);
+    try {
+      await API.deleteImport(id);
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+    } finally {
+      setRemoving(null);
+    }
   }
   function reset() {
     setStep('upload'); setFilename(null); setHeaders([]); setRaw([]); setMapping(null); setRows([]); setResult(null);
@@ -257,6 +279,42 @@ function ZHQImport({ onNavigate }) {
               Continue
             </Button>
           </div>
+
+          {/* import history log */}
+          {(D.importBatches || []).length ? (
+            <div style={{ marginTop: 14 }}>
+              <span className="zt-eyebrow" style={{ display: 'block', marginBottom: 10 }}>Recent imports</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(D.importBatches || []).map((b) => (
+                  <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                    <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>
+                      <Icon name="arrowDown" size={15} />
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {b.filename || 'Import'}
+                        {b.account ? <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}> · {b.account}</span> : null}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        {b.coversFrom ? (b.coversFrom === b.coversTo ? b.coversFrom : `${b.coversFrom} – ${b.coversTo}`) : 'no dated rows'}
+                        {' · '}{b.rowsImported} imported{b.rowsSkipped ? ` · ${b.rowsSkipped} skipped` : ''}
+                      </div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>{b.createdAt}</div>
+                      <button
+                        onClick={() => removeBatch(b.id)}
+                        disabled={removing === b.id}
+                        style={{ marginTop: 3, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5, color: 'var(--danger, var(--text-tertiary))', opacity: removing === b.id ? 0.5 : 1 }}
+                      >
+                        {removing === b.id ? 'Removing…' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -283,6 +341,7 @@ function ZHQImport({ onNavigate }) {
               </>
             )}
             <Select label="Type column (optional)" value={mapping.typeCol} onChange={(v) => setMapping({ ...mapping, typeCol: v })} options={headerOptsOpt} />
+            <Select label="Balance column (sets account balance)" value={mapping.balanceCol || ''} onChange={(v) => setMapping({ ...mapping, balanceCol: v })} options={headerOptsOpt} />
           </div>
           <Toggle label="Flip amount signs (if expenses are positive)" checked={mapping.invertSign} onChange={(v) => setMapping({ ...mapping, invertSign: v })} />
 

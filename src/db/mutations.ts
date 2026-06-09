@@ -191,6 +191,7 @@ export async function commitImport(args: {
   accountId: string;
   filename?: string | null;
   createdBy?: string | null;
+  accountBalance?: number | null; // latest running balance from the CSV
   rows: ImportRow[];
 }) {
   const database = requireDb();
@@ -268,6 +269,11 @@ export async function commitImport(args: {
 
   // Learn from rows the user explicitly categorized during import.
   for (const l of learnQueue) await learnMerchant(l.key, l.categoryId, l.member);
+
+  // Update the account's balance from the CSV's latest running balance.
+  if (args.accountBalance != null && Number.isFinite(args.accountBalance)) {
+    await database.update(s.accounts).set({ balance: String(args.accountBalance) }).where(eq(s.accounts.id, args.accountId));
+  }
 
   return { ok: true as const, batchId, imported: inserts.length, skipped };
 }
@@ -557,6 +563,104 @@ export async function recategorizeAll(opts?: { onlyUnreviewed?: boolean }) {
     }
   }
   return { ok: true as const, updated };
+}
+
+// ====================================================================
+// Budgets
+// ====================================================================
+
+/** Resolve the denormalized display fields (name/who/icon) for a budget from
+ *  its linked member (allowance) or category. */
+async function resolveBudgetLabels(args: {
+  kind: "allowance" | "category";
+  memberId?: string | null;
+  categoryId?: string | null;
+  name?: string | null;
+  icon?: string | null;
+}): Promise<{ name: string; who: string | null; icon: string | null; memberId: string | null; categoryId: string | null }> {
+  if (args.kind === "allowance" && args.memberId) {
+    const members = await memberMap();
+    const mem = members.get(args.memberId);
+    return {
+      name: mem?.name ?? args.name ?? "Allowance",
+      who: mem?.name ?? args.name ?? "Member",
+      icon: args.icon ?? "wallet",
+      memberId: args.memberId,
+      categoryId: null,
+    };
+  }
+  if (args.kind === "category" && args.categoryId) {
+    const cats = await catMap();
+    const cat = cats.get(args.categoryId);
+    return {
+      name: cat?.name ?? args.name ?? "Category",
+      who: null,
+      icon: args.icon ?? cat?.icon ?? "pie",
+      memberId: null,
+      categoryId: args.categoryId,
+    };
+  }
+  // Fallback: a free-form named budget with no linked target.
+  return { name: args.name ?? "Budget", who: null, icon: args.icon ?? "pie", memberId: null, categoryId: null };
+}
+
+export async function createBudget(args: {
+  kind: "allowance" | "category";
+  memberId?: string | null;
+  categoryId?: string | null;
+  limit: number;
+  name?: string | null;
+  icon?: string | null;
+}) {
+  const database = requireDb();
+  const labels = await resolveBudgetLabels(args);
+  const existing = await database.select({ so: s.budgets.sortOrder }).from(s.budgets);
+  const sortOrder = existing.reduce((mx, b) => Math.max(mx, b.so), -1) + 1;
+  const [row] = await database
+    .insert(s.budgets)
+    .values({
+      name: labels.name,
+      who: labels.who,
+      memberId: labels.memberId,
+      categoryId: labels.categoryId,
+      icon: labels.icon,
+      limitAmount: String(args.limit),
+      spent: "0",
+      sortOrder,
+    })
+    .returning({ id: s.budgets.id });
+  return { ok: true as const, id: row?.id };
+}
+
+export async function updateBudget(
+  id: number,
+  patch: { kind?: "allowance" | "category"; memberId?: string | null; categoryId?: string | null; limit?: number }
+) {
+  const database = requireDb();
+  const values: Record<string, unknown> = {};
+  if (patch.limit !== undefined) values.limitAmount = String(patch.limit);
+  // Re-targeting the budget (switch person/category) re-resolves the labels.
+  if (patch.kind) {
+    const labels = await resolveBudgetLabels({
+      kind: patch.kind,
+      memberId: patch.memberId,
+      categoryId: patch.categoryId,
+    });
+    values.name = labels.name;
+    values.who = labels.who;
+    values.memberId = labels.memberId;
+    values.categoryId = labels.categoryId;
+    values.icon = labels.icon;
+  }
+  if (Object.keys(values).length) {
+    await database.update(s.budgets).set(values).where(eq(s.budgets.id, id));
+  }
+  return { ok: true as const };
+}
+
+export async function deleteBudget(id: number) {
+  await requireDb().delete(s.budgets).where(eq(s.budgets.id, id));
+  return { ok: true as const };
 }
 
 /** Rebuild learned memory from everything already categorized + reviewed. */

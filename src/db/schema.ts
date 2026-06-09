@@ -186,8 +186,12 @@ export const columnMappingTemplates = pgTable("column_mapping_templates", {
 export const budgets = pgTable("budgets", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  who: text("who"), // null = shared/category budget
+  who: text("who"), // member name (allowance) — null = shared/category budget
+  memberId: text("member_id").references(() => familyMembers.id), // allowance target
+  categoryId: text("category_id").references(() => categories.id), // category budget target
   icon: text("icon"),
+  // `spent` is derived from transactions at read time (getFinanceData); this
+  // stored column is just a fallback default for rows with no linked target.
   spent: numeric("spent", { precision: 14, scale: 2 }).notNull().default("0"),
   limitAmount: numeric("limit_amount", { precision: 14, scale: 2 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),

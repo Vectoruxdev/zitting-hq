@@ -13,7 +13,7 @@
  * (and pre-migration deploys) never break.
  */
 import { asc } from "drizzle-orm";
-import { detectRecurring } from "./detect";
+import { detectRecurring, detectIncomeStreams } from "./detect";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -86,9 +86,9 @@ export async function getFinanceData(): Promise<FinanceData> {
     const splitRows = await db.select().from(s.transactionSplits).orderBy(asc(s.transactionSplits.sortOrder));
     const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder));
     const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder));
-    const incomeRows = await db.select().from(s.incomeStreams).orderBy(asc(s.incomeStreams.sortOrder));
     const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder));
     const transferRows = await db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder));
+    const batchRows = await db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt));
     const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder));
     const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder));
     const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder));
@@ -197,14 +197,8 @@ export async function getFinanceData(): Promise<FinanceData> {
       };
     });
 
-    // --- budgets / rules / income / bills / goals / transfers / notifs ---
-    data.budgets = budgetRows.map((b) => ({
-      name: b.name,
-      who: b.who,
-      icon: b.icon ?? undefined,
-      spent: n(b.spent),
-      limit: n(b.limitAmount),
-    }));
+    // --- rules / income / bills / goals / transfers / notifs ---
+    // (budgets are mapped later, after per-category/per-member spend is derived)
     data.rules = ruleRows.map((r) => ({
       id: r.id,
       name: r.name,
@@ -213,17 +207,7 @@ export async function getFinanceData(): Promise<FinanceData> {
       dest: r.dest,
       icon: r.icon,
     }));
-    data.incomeStreams = incomeRows.map((i) => ({
-      id: i.id,
-      name: i.name,
-      sub: i.sub,
-      monthly: n(i.monthly),
-      cadence: i.cadence,
-      last: i.lastLabel,
-      next: i.nextLabel,
-      status: i.status,
-      spark: i.spark ?? [],
-    }));
+    // incomeStreams are derived from transactions (below, in the derived section).
     data.goals = goalRows.map((g) => ({
       id: g.id,
       name: g.name,
@@ -271,32 +255,46 @@ export async function getFinanceData(): Promise<FinanceData> {
     // Derived dashboard (stats / donut categories / 6-month trend)
     // ====================================================================
     const now = new Date();
+
+    // Shared detection input (recurring bills + income streams).
+    const detectInput = txnRows.map((t) => ({
+      merchant: t.merchant,
+      amount: n(t.amount),
+      date: t.date as string | null,
+      categoryName: t.categoryId ? catById.get(t.categoryId)?.name ?? null : t.category ?? null,
+      color: t.categoryId ? catById.get(t.categoryId)?.color ?? null : t.color ?? null,
+      accountLabel: t.accountId ? accountLabel(acctById.get(t.accountId)) : t.accountLabel ?? null,
+      isTransfer: t.isTransfer,
+      income: t.income,
+    }));
+    data.bills = detectRecurring(detectInput, now);
+    data.incomeStreams = detectIncomeStreams(detectInput, now);
+
+    // The "current" month for stats/donut: this calendar month if it has any
+    // transactions, else the most recent month that does — so imported history
+    // shows immediately instead of an empty "this month".
+    let maxTime = 0;
+    const monthsWithData = new Set<string>();
+    for (const t of txnRows) {
+      const dt = parseDate(t.date as string | null);
+      if (!dt) continue;
+      monthsWithData.add(monthKey(dt));
+      if (dt.getTime() > maxTime) maxTime = dt.getTime();
+    }
     const curKey = monthKey(now);
+    const targetDate = monthsWithData.has(curKey) || !maxTime ? now : new Date(maxTime);
+    const targetKey = monthKey(targetDate);
+    data.statsMonth = targetDate.toLocaleString("en-US", { month: "long" });
 
-    // Recurring bills/subscriptions detected from transaction history.
-    data.bills = detectRecurring(
-      txnRows.map((t) => ({
-        merchant: t.merchant,
-        amount: n(t.amount),
-        date: t.date as string | null,
-        categoryName: t.categoryId ? catById.get(t.categoryId)?.name ?? null : t.category ?? null,
-        color: t.categoryId ? catById.get(t.categoryId)?.color ?? null : t.color ?? null,
-        accountLabel: t.accountId ? accountLabel(acctById.get(t.accountId)) : t.accountLabel ?? null,
-        isTransfer: t.isTransfer,
-        income: t.income,
-      })),
-      now
-    );
-    const isExpenseTxn = (t: (typeof txnRows)[number]) =>
-      !t.isTransfer && (t.categoryId ? catById.get(t.categoryId)?.kind !== "transfer" : true);
-
-    // Spending breakdown by category (current month, splits-aware)
+    // Spending breakdown by category (current month, splits-aware) + per-member
+    // spend (for personal-allowance budgets).
     const catTotals = new Map<string, number>();
+    const memberTotals = new Map<string, number>();
     let monthSpending = 0;
     let monthIncome = 0;
     for (const t of txnRows) {
       const dt = parseDate(t.date as string | null);
-      if (!dt || monthKey(dt) !== curKey) continue;
+      if (!dt || monthKey(dt) !== targetKey) continue;
       if (t.isTransfer) continue;
       const amt = n(t.amount);
       const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
@@ -306,6 +304,7 @@ export async function getFinanceData(): Promise<FinanceData> {
       } else {
         const spend = Math.abs(amt);
         monthSpending += spend;
+        if (t.memberId) memberTotals.set(t.memberId, (memberTotals.get(t.memberId) || 0) + spend);
         const splits = splitsByTxn.get(t.id);
         if (t.hasSplit && splits?.length) {
           for (const sp of splits) {
@@ -318,6 +317,25 @@ export async function getFinanceData(): Promise<FinanceData> {
         }
       }
     }
+
+    // Budgets — `spent` is DERIVED from the current month's transactions:
+    // category budgets pull from that category's spend, allowances from that
+    // member's spend. Falls back to the stored column for untargeted rows.
+    data.budgets = budgetRows.map((b) => {
+      let spent = n(b.spent);
+      if (b.categoryId) spent = catTotals.get(b.categoryId) || 0;
+      else if (b.memberId) spent = memberTotals.get(b.memberId) || 0;
+      return {
+        id: b.id,
+        name: b.name,
+        who: b.who,
+        icon: b.icon ?? undefined,
+        categoryId: b.categoryId,
+        memberId: b.memberId,
+        spent,
+        limit: n(b.limitAmount),
+      };
+    });
 
     const palette = ["var(--green-500)", "var(--indigo-500)", "var(--amber-500)", "var(--green-600)", "var(--gray-500)"];
     const sortedCats = [...catTotals.entries()].sort((a, b) => b[1] - a[1]);
@@ -375,6 +393,41 @@ export async function getFinanceData(): Promise<FinanceData> {
       spendArr.push(Math.round(v.sp));
     }
     data.trend = { income: incomeArr, spending: spendArr, labels };
+
+    // Date range each import batch actually covers (from its transactions).
+    const batchRange = new Map<string, { min: string; max: string }>();
+    for (const t of txnRows) {
+      if (!t.importBatchId || !t.date) continue;
+      const iso = String(t.date).slice(0, 10);
+      const cur = batchRange.get(t.importBatchId);
+      if (!cur) batchRange.set(t.importBatchId, { min: iso, max: iso });
+      else {
+        if (iso < cur.min) cur.min = iso;
+        if (iso > cur.max) cur.max = iso;
+      }
+    }
+    const rangeLabel = (iso: string) => {
+      const d = new Date(iso + "T00:00:00");
+      return isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    };
+
+    // Import history (newest first).
+    data.importBatches = [...batchRows].reverse().map((b) => {
+      const acct = b.accountId ? acctById.get(b.accountId) : undefined;
+      const created = b.createdAt ? new Date(b.createdAt) : null;
+      const range = batchRange.get(b.id);
+      return {
+        id: b.id,
+        filename: b.filename,
+        account: acct ? acct.name : null,
+        rowsImported: b.rowsImported,
+        rowsSkipped: b.rowsSkipped,
+        coversFrom: range ? rangeLabel(range.min) : null,
+        coversTo: range ? rangeLabel(range.max) : null,
+        createdAt: created ? created.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null,
+        createdAtTime: created ? created.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null,
+      };
+    });
 
     // Neutralize the remaining presentational mock sections so no demo data
     // leaks into the member (Spendable) and Ask views.

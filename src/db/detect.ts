@@ -118,3 +118,72 @@ export function detectRecurring(txns: DetectTxn[], now: Date = new Date()): Dete
 
   return out.sort((a, b) => a.nextTime - b.nextTime).map((x) => x.bill);
 }
+
+export interface DetectedStream {
+  id: string;
+  name: string;
+  sub: string | null;
+  monthly: number;
+  cadence: string;
+  last: string | null;
+  next: string | null;
+  status: string; // on-track | late
+  spark: number[];
+}
+
+const CADENCE_LABEL: Record<string, string> = {
+  Weekly: "Weekly",
+  Biweekly: "Twice monthly",
+  Monthly: "Monthly",
+  Quarterly: "Quarterly",
+  Yearly: "Yearly",
+};
+
+/** Recurring INCOME streams (paychecks, side income) from transaction history. */
+export function detectIncomeStreams(txns: DetectTxn[], now: Date = new Date()): DetectedStream[] {
+  const groups = new Map<string, DetectTxn[]>();
+  for (const t of txns) {
+    if (t.isTransfer || t.amount <= 0 || !t.date) continue; // inflows only
+    const key = extractMerchant(t.merchant);
+    if (!key) continue;
+    const arr = groups.get(key) || [];
+    arr.push(t);
+    groups.set(key, arr);
+  }
+
+  const out: { stream: DetectedStream; lastTime: number }[] = [];
+  for (const [key, list] of groups) {
+    if (list.length < 2) continue;
+    const sorted = [...list].sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
+    const times = sorted.map((t) => new Date(t.date! + "T00:00:00").getTime());
+    const gaps: number[] = [];
+    for (let i = 1; i < times.length; i++) gaps.push((times[i] - times[i - 1]) / DAY);
+    const g = median(gaps);
+    const cad = CADENCES.find((c) => g >= c.lo && g <= c.hi);
+    if (!cad) continue;
+    const regular = gaps.filter((x) => Math.abs(x - cad.days) <= cad.days * 0.5).length >= Math.ceil(gaps.length * 0.6);
+    if (!regular) continue;
+
+    const lastTime = times[times.length - 1];
+    const lastAmt = Math.abs(sorted[sorted.length - 1].amount);
+    const monthly = Math.round(lastAmt * (30 / cad.days));
+    const lastDate = new Date(lastTime);
+    const nextTime = lastTime + cad.days * DAY;
+    const nextDate = new Date(nextTime);
+    out.push({
+      stream: {
+        id: key,
+        name: titleize(key),
+        sub: mode(sorted.map((t) => t.accountLabel).filter(Boolean) as string[]),
+        monthly,
+        cadence: CADENCE_LABEL[cad.freq] || cad.freq,
+        last: `${MONTHS[lastDate.getMonth()]} ${lastDate.getDate()}`,
+        next: `${MONTHS[nextDate.getMonth()]} ${nextDate.getDate()}`,
+        status: now.getTime() > nextTime + 5 * DAY ? "late" : "on-track",
+        spark: sorted.slice(-6).map((t) => Math.abs(t.amount)),
+      },
+      lastTime,
+    });
+  }
+  return out.sort((a, b) => b.lastTime - a.lastTime).map((x) => x.stream);
+}

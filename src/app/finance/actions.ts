@@ -190,6 +190,26 @@ export async function deleteCategory(id: string) {
   return res;
 }
 
+// ---- budgets ----
+export async function createBudget(args: Parameters<typeof m.createBudget>[0]) {
+  await ensureOwner();
+  const res = await m.createBudget(args);
+  refresh();
+  return res;
+}
+export async function updateBudget(id: number, patch: Parameters<typeof m.updateBudget>[1]) {
+  await ensureOwner();
+  const res = await m.updateBudget(id, patch);
+  refresh();
+  return res;
+}
+export async function deleteBudget(id: number) {
+  await ensureOwner();
+  const res = await m.deleteBudget(id);
+  refresh();
+  return res;
+}
+
 // ---- rules ----
 export async function createRule(args: Parameters<typeof m.createRule>[0]) {
   await ensureOwner();
