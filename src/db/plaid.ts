@@ -33,15 +33,21 @@ function mapAccountType(type: string, subtype: string | null | undefined): strin
 export async function createLinkToken(clientUserId: string): Promise<string> {
   const plaid = getPlaid();
   if (!plaid) throw new Error("Plaid is not configured");
-  const res = await plaid.linkTokenCreate({
-    user: { client_user_id: clientUserId },
-    client_name: "Family HQ",
-    products: PLAID_PRODUCTS,
-    country_codes: PLAID_COUNTRY_CODES,
-    language: "en",
-    webhook: PLAID_WEBHOOK_URL,
-  });
-  return res.data.link_token;
+  try {
+    const res = await plaid.linkTokenCreate({
+      user: { client_user_id: clientUserId },
+      client_name: "Family HQ",
+      products: PLAID_PRODUCTS,
+      country_codes: PLAID_COUNTRY_CODES,
+      language: "en",
+      webhook: PLAID_WEBHOOK_URL,
+    });
+    return res.data.link_token;
+  } catch (e) {
+    const data = (e as { response?: { data?: unknown } })?.response?.data;
+    console.error("[plaid linkTokenCreate] error:", JSON.stringify(data));
+    throw new Error(`Plaid: ${(data as { error_code?: string })?.error_code || "request failed"}`);
+  }
 }
 
 /** Exchange the public_token, store the item + accounts, run the first sync. */
