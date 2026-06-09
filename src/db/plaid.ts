@@ -44,9 +44,11 @@ export async function createLinkToken(clientUserId: string): Promise<string> {
     });
     return res.data.link_token;
   } catch (e) {
-    const data = (e as { response?: { data?: unknown } })?.response?.data;
+    const data = (e as { response?: { data?: unknown } })?.response?.data as
+      | { error_code?: string; error_message?: string }
+      | undefined;
     console.error("[plaid linkTokenCreate] error:", JSON.stringify(data));
-    throw new Error(`Plaid: ${(data as { error_code?: string })?.error_code || "request failed"}`);
+    throw new Error(`Plaid ${data?.error_code || "error"}: ${data?.error_message || "request failed"}`);
   }
 }
 
