@@ -83,16 +83,111 @@ function ZHQOpeningBalanceRow({ acct }) {
   );
 }
 
+function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
+  const { Modal, TextInput, Select, Button, Icon } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const members = window.ZHQ_DATA.members || [];
+  const [name, setName] = React.useState(acct.name || '');
+  const [institution, setInstitution] = React.useState(acct.inst || '');
+  const [mask, setMask] = React.useState(acct.mask || '');
+  const [type, setType] = React.useState(acct.type || 'checking');
+  const [who, setWho] = React.useState(acct.who || 'Household');
+  const [dest, setDest] = React.useState(acct.dest || '');
+  const [busy, setBusy] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+
+  // Re-seed when a different account is opened.
+  React.useEffect(() => {
+    setName(acct.name || ''); setInstitution(acct.inst || ''); setMask(acct.mask || '');
+    setType(acct.type || 'checking'); setWho(acct.who || 'Household'); setDest(acct.dest || '');
+    setConfirmDelete(false);
+  }, [acct.id]);
+
+  async function save() {
+    if (!name.trim() || !API.updateAccount) return;
+    setBusy(true);
+    try {
+      await API.updateAccount(acct.id, {
+        name: name.trim(),
+        institution: institution.trim(),
+        mask: mask.trim() || null,
+        type,
+        who,
+        destLabel: dest.trim() || null,
+      });
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      onClose();
+    } finally { setBusy(false); }
+  }
+
+  async function remove() {
+    if (!API.deleteAccount) return;
+    setBusy(true);
+    try {
+      await API.deleteAccount(acct.id);
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      onClose();
+      onDeleted && onDeleted();
+    } finally { setBusy(false); }
+  }
+
+  const typeOpts = [{ value: 'checking', label: 'Checking' }, { value: 'savings', label: 'Savings' }, { value: 'credit', label: 'Credit card' }];
+  const whoOpts = [{ value: 'Household', label: 'Household' }, ...members.map((m) => ({ value: m.name, label: m.name }))];
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit account" width={440}
+      footer={<>
+        <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={busy} style={{ color: 'var(--negative)', marginRight: 'auto' }}>Delete</Button>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" onClick={save} disabled={busy || !name.trim()}>Save changes</Button>
+      </>}>
+      {confirmDelete ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', gap: 11 }}>
+            <span style={{ flexShrink: 0, color: 'var(--negative)' }}><Icon name="alert" size={18} /></span>
+            <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Delete <b style={{ color: 'var(--text-primary)' }}>{acct.name}</b>? This also removes its imported transactions and import history. This can't be undone.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={busy}>Keep account</Button>
+            <Button variant="primary" onClick={remove} disabled={busy} style={{ background: 'var(--negative)' }}>{busy ? 'Deleting…' : 'Delete account'}</Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <TextInput label="Account name" value={name} onChange={setName} placeholder="Main Checking" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <TextInput label="Institution" value={institution} onChange={setInstitution} placeholder="Mountain America CU" />
+            <TextInput label="Last 4 (mask)" value={mask} onChange={setMask} placeholder="4021" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Select label="Type" value={type} onChange={setType} options={typeOpts} />
+            <Select label="Mapped to" value={who} onChange={setWho} options={whoOpts} />
+          </div>
+          <TextInput label="Transfer destination tag (optional)" value={dest} onChange={setDest} placeholder="e.g. Savings target" />
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function ZHQAccountDetail({ acct, onBack }) {
   const { Card, Button, Icon, Avatar, Badge, AreaChart, DataTable, AmountCell, Tag, Toggle } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
   const credit = acct.balance < 0;
+  const [showEdit, setShowEdit] = React.useState(false);
   const rows = (D.txns || []).filter((t) => t.accountId === acct.id || (acct.mask && t.account && t.account.includes(acct.mask))).slice(0, 8);
+  const typeLabel = acct.type === 'credit' ? 'Credit card' : acct.type === 'savings' ? 'Savings' : 'Checking';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <button onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none', border: 'none', color: 'var(--text-secondary)', font: 'inherit', fontSize: 13, cursor: 'pointer' }}>
-        <Icon name="chevronLeft" size={15} /> All accounts
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <button onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none', border: 'none', color: 'var(--text-secondary)', font: 'inherit', fontSize: 13, cursor: 'pointer' }}>
+          <Icon name="chevronLeft" size={15} /> All accounts
+        </button>
+        <Button variant="secondary" size="sm" iconLeft={<Icon name="pencil" size={14} />} onClick={() => setShowEdit(true)}>Edit account</Button>
+      </div>
+      <ZHQEditAccountModal open={showEdit} acct={acct} onClose={() => setShowEdit(false)} onDeleted={onBack} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
         <Card padding={24}>
@@ -117,19 +212,20 @@ function ZHQAccountDetail({ acct, onBack }) {
         </Card>
 
         <Card padding={22}>
-          <div className="zt-eyebrow" style={{ marginBottom: 16 }}>Account settings</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <span className="zt-eyebrow">Account settings</span>
+            <button onClick={() => setShowEdit(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 12.5, color: 'var(--accent)' }}>
+              <Icon name="pencil" size={12} /> Edit
+            </button>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[['Nickname', acct.name], ['Mapped to', acct.who], ['Type', credit ? 'Credit card' : 'Bank account'], ['Institution', acct.inst]].map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: '1px solid var(--border-hairline)' }}>
+            {[['Nickname', acct.name], ['Mapped to', acct.who], ['Type', typeLabel], ['Institution', acct.inst || '—'], ['Transfer destination', acct.dest || 'None']].map(([k, v]) => (
+              <button key={k} onClick={() => setShowEdit(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: '1px solid var(--border-hairline)', background: 'none', border: 'none', borderBottomStyle: 'solid', width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                 <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{k}</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 500 }}>{k === 'Mapped to' ? <Avatar name={v} size="xs" /> : null}{v}<Icon name="pencil" size={13} style={{ color: 'var(--text-tertiary)' }} /></span>
-              </div>
+              </button>
             ))}
             <ZHQOpeningBalanceRow acct={acct} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0 4px' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Transfer destination</span>
-              <Toggle defaultChecked={!!acct.dest} size="sm" />
-            </div>
           </div>
         </Card>
       </div>
@@ -198,9 +294,18 @@ function ZHQAddAccountModal({ open, onClose }) {
 function ZHQAccounts({ onNavigate }) {
   const { Card, Button, Icon, StatTile } = window.ZittingHQDesignSystem_c9e528;
   const A = window.ZHQ_DATA.accounts || { checking: [], savings: [], credit: [] };
-  const [open, setOpen] = React.useState(null);
+  const flat = [...A.checking, ...A.savings, ...A.credit];
+  // The active screen remounts on every data refresh, so remember which account
+  // is open in a window-global and re-derive it from fresh data each render —
+  // that keeps the detail view open (and current) after an edit, and falls back
+  // to the list if the account was deleted.
+  const [openId, setOpenId] = React.useState(() => window.__zhqOpenAccount || null);
   const [showAdd, setShowAdd] = React.useState(false);
-  if (open) return <ZHQAccountDetail acct={open} onBack={() => setOpen(null)} />;
+  const openAccount = (acct) => { window.__zhqOpenAccount = acct.id; setOpenId(acct.id); };
+  const closeAccount = () => { window.__zhqOpenAccount = null; setOpenId(null); };
+  const open = openId ? flat.find((a) => a.id === openId) : null;
+  if (openId && !open) { window.__zhqOpenAccount = null; }
+  if (open) return <ZHQAccountDetail acct={open} onBack={closeAccount} />;
 
   const groups = [['Checking', A.checking], ['Savings', A.savings], ['Credit cards', A.credit]];
   const total = A.checking.length + A.savings.length + A.credit.length;
@@ -246,7 +351,7 @@ function ZHQAccounts({ onNavigate }) {
             <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{list.length}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
-            {list.map((a) => <ZHQAccountCard key={a.id} acct={a} onOpen={setOpen} />)}
+            {list.map((a) => <ZHQAccountCard key={a.id} acct={a} onOpen={openAccount} />)}
             {title === 'Checking' ? (
               <button onClick={() => setShowAdd(true)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 132, border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-lg)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', font: 'inherit' }}>
                 <Icon name="plus" size={20} /><span style={{ fontSize: 13, fontWeight: 500 }}>Add account</span>
