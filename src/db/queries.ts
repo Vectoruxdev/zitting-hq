@@ -61,7 +61,8 @@ function emptyData(): FinanceData {
   d.categoryGroups = [];
   d.members = [];
   d.catRules = [];
-  d.stats = { totalCash: "$0", spending: "$0", income: "$0", transfers: "$0" };
+  d.stats = { totalCash: "$0", netWorth: "$0", spending: "$0", income: "$0", transfers: "$0" };
+  d.accountTransfers = [];
   d.cashFlow = { month: "", inFlow: 0, inFlowDisplay: "$0", outFlow: 0, outFlowDisplay: "$0", transfersOut: 0, transfersOutDisplay: "$0", transfersDirection: "out", net: 0, netDisplay: "$0" };
   d.trend = { income: [0, 0, 0, 0, 0, 0], spending: [0, 0, 0, 0, 0, 0], labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"] };
   d.member = null;
@@ -189,6 +190,15 @@ export async function getFinanceData(): Promise<FinanceData> {
     data.accounts = { checking: byType("checking"), savings: byType("savings"), credit: byType("credit") };
 
     // --- transactions (resolve labels from FKs, fall back to legacy cols) ---
+    const txnById = new Map(txnRows.map((t) => [t.id, t]));
+    // Label for a transaction's linked transfer counterpart, e.g. "→ Savings ••12".
+    const transferWithLabel = (t: (typeof txnRows)[number]): string | null => {
+      if (!t.transferPairId) return null;
+      const partner = txnById.get(t.transferPairId);
+      if (!partner) return null;
+      const partnerLabel = partner.accountId ? accountLabel(acctById.get(partner.accountId)) : partner.accountLabel ?? "—";
+      return (n(t.amount) < 0 ? "→ " : "← ") + partnerLabel;
+    };
     data.txns = txnRows.map((t) => {
       const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
       const member = t.memberId ? memberById.get(t.memberId) : undefined;
@@ -207,6 +217,8 @@ export async function getFinanceData(): Promise<FinanceData> {
         pending: t.pending,
         flagged: t.flagged,
         isTransfer: t.isTransfer,
+        transferPairId: t.transferPairId,
+        transferWith: transferWithLabel(t),
         hasSplit: t.hasSplit,
         reviewed: t.reviewed,
         source: t.categorySource,
@@ -217,6 +229,27 @@ export async function getFinanceData(): Promise<FinanceData> {
         accountId: t.accountId,
       };
     });
+
+    // Detected internal transfers between accounts (one row per linked pair,
+    // keyed on the outflow/negative leg), newest first — for the Overview
+    // "money moved between accounts" panel.
+    data.accountTransfers = txnRows
+      .filter((t) => t.transferPairId && n(t.amount) < 0)
+      .map((t) => {
+        const partner = txnById.get(t.transferPairId!);
+        const fromAcct = t.accountId ? acctById.get(t.accountId) : undefined;
+        const toAcct = partner?.accountId ? acctById.get(partner.accountId) : undefined;
+        const dt = parseDate(t.date as string | null);
+        return {
+          id: t.id,
+          fromAccount: fromAcct ? accountLabel(fromAcct) : t.accountLabel ?? "—",
+          toAccount: toAcct ? accountLabel(toAcct) : partner?.accountLabel ?? "—",
+          amount: money2(Math.abs(n(t.amount))),
+          date: dt ? dayLabel(dt) : t.dateLabel ?? "",
+          dateTime: dt ? dt.getTime() : 0,
+        };
+      })
+      .sort((a, b) => b.dateTime - a.dateTime);
 
     // --- rules / income / bills / goals / transfers / notifs ---
     // (budgets are mapped later, after per-category/per-member spend is derived)
@@ -411,12 +444,17 @@ export async function getFinanceData(): Promise<FinanceData> {
     const totalCash = accountRows
       .filter((a) => a.type === "checking" || a.type === "savings")
       .reduce((sum, a) => sum + liveBalance(a), 0);
+    // Net worth = ALL accounts (credit liveBalance is negative = debt), so this
+    // is cash + savings − card debt.
+    const netWorth = accountRows.reduce((sum, a) => sum + liveBalance(a), 0);
+    const signedMoney = (v: number) => (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
     const upcomingTotal = transferRows
       .filter((t) => t.kind === "upcoming")
       .reduce((sum, t) => sum + n(t.amount), 0);
 
     data.stats = {
       totalCash: money0(totalCash),
+      netWorth: signedMoney(netWorth),
       spending: money0(monthSpending),
       income: money0(monthIncome),
       transfers: money0(upcomingTotal),

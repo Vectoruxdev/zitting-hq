@@ -24,11 +24,25 @@ function ZHQOverview({ onNavigate }) {
   const D = window.ZHQ_DATA;
   const user = window.ZHQ_USER || {};
 
+  const API = window.ZHQ_API || {};
   const txns = D.txns || [];
   const cats = D.categories || [];
   const budgets = D.budgets || [];
   const upcoming = D.upcoming || [];
   const cf = D.cashFlow || null;
+  const moves = D.accountTransfers || [];
+  const [unlinking, setUnlinking] = React.useState(null);
+
+  async function unlinkMove(id) {
+    if (!API.unlinkTransfer) return;
+    setUnlinking(id);
+    try {
+      await API.unlinkTransfer(id);
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+    } finally {
+      setUnlinking(null);
+    }
+  }
 
   // ---- empty state ----
   if (!txns.length) {
@@ -68,6 +82,7 @@ function ZHQOverview({ onNavigate }) {
   const incomeLabel = statsIsCurrent ? 'This-month income' : `${D.statsMonth} income`;
 
   const tiles = [
+    { label: 'Net worth', value: D.stats.netWorth ?? D.stats.totalCash, sub: 'cash + savings − card debt', nav: 'accounts' },
     { label: 'Total cash', value: D.stats.totalCash },
     { label: spendLabel, value: D.stats.spending },
     { label: incomeLabel, value: D.stats.income },
@@ -85,7 +100,7 @@ function ZHQOverview({ onNavigate }) {
       </div>
 
       {/* Stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }}>
         {tiles.map((t, i) => (
           <Card key={i} interactive={!!t.nav} onClick={t.nav ? () => onNavigate(t.nav) : undefined} style={t.accent ? { boxShadow: 'var(--shadow-md)', border: '1px solid var(--green-tint)' } : undefined}>
             <StatTile label={t.label} value={t.value} sub={t.sub} accent={t.accent} icon={t.icon} />
@@ -109,6 +124,38 @@ function ZHQOverview({ onNavigate }) {
           <p style={{ margin: '14px 0 0', fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
             Income and spending exclude transfers, so money moved to savings or used to pay a credit card shows up under transfers — not as spending. <b style={{ color: 'var(--text-secondary)' }}>Total cash</b> above is your running balance across every imported month (opening balance + all activity), not just {cf.month || 'this month'}.
           </p>
+        </Card>
+      ) : null}
+
+      {/* Money moved between accounts — detected internal transfers (review/undo) */}
+      {moves.length ? (
+        <Card>
+          <SectionHeader eyebrow="Linked automatically" title="Money moved between accounts"
+            action={<span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>not counted as spending or income</span>} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {moves.slice(0, 8).map((mv) => (
+              <div key={mv.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>
+                  <Icon name="transfers" size={15} />
+                </span>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{mv.fromAccount}</span>
+                  <Icon name="arrowRight" size={14} style={{ color: 'var(--text-tertiary)' }} />
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{mv.toAccount}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>· {mv.date}</span>
+                </div>
+                <span className="zt-num" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>{mv.amount}</span>
+                <button
+                  onClick={() => unlinkMove(mv.id)}
+                  disabled={unlinking === mv.id}
+                  style={{ flexShrink: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: 'var(--text-tertiary)', opacity: unlinking === mv.id ? 0.5 : 1 }}
+                  title="Not a transfer — unlink and count both as normal transactions"
+                >
+                  {unlinking === mv.id ? 'Unlinking…' : 'Unlink'}
+                </button>
+              </div>
+            ))}
+          </div>
         </Card>
       ) : null}
 

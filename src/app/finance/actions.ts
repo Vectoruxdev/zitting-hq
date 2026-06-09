@@ -157,6 +157,18 @@ export async function markTransfer(id: number, isTransfer: boolean) {
   refresh();
   return res;
 }
+export async function autoLinkTransfers() {
+  await ensureOwner();
+  const res = await m.autoLinkTransfers();
+  refresh();
+  return res;
+}
+export async function unlinkTransfer(id: number) {
+  await ensureOwner();
+  const res = await m.unlinkTransfer(id);
+  refresh();
+  return res;
+}
 export async function splitTransaction(id: number, splits: { categoryId: string; amount: number }[]) {
   await ensureOwner();
   const res = await m.splitTransaction(id, splits);

@@ -10,6 +10,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { dedupeKey, markDuplicates, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
+import { matchTransfers } from "./transfers";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -296,7 +297,12 @@ export async function commitImport(args: {
     await database.update(s.accounts).set({ balance: String(opening) }).where(eq(s.accounts.id, args.accountId));
   }
 
-  return { ok: true as const, batchId, imported: inserts.length, skipped };
+  // Link the new rows to any matching opposite leg in another account, so
+  // internal transfers (checking↔savings, card payments) are flagged and never
+  // double-counted. Runs after the insert commits so it sees the full picture.
+  const linked = await autoLinkTransfers();
+
+  return { ok: true as const, batchId, imported: inserts.length, skipped, linkedTransfers: linked.linked };
 }
 
 export async function deleteImport(batchId: string) {
@@ -353,6 +359,7 @@ export interface TxnPatch {
   categoryId?: string | null;
   memberId?: string | null;
   isTransfer?: boolean;
+  transferPairId?: number | null;
   flagged?: boolean;
   reviewed?: boolean;
   notes?: string | null;
@@ -377,6 +384,7 @@ async function buildPatchValues(patch: TxnPatch) {
     values.who = patch.memberId ? members.get(patch.memberId)?.name ?? null : null;
   }
   if (patch.isTransfer !== undefined) values.isTransfer = patch.isTransfer;
+  if (patch.transferPairId !== undefined) values.transferPairId = patch.transferPairId;
   if (patch.flagged !== undefined) values.flagged = patch.flagged;
   if (patch.reviewed !== undefined) values.reviewed = patch.reviewed;
   if (patch.notes !== undefined) values.notes = patch.notes;
@@ -429,6 +437,90 @@ export async function confirmTransactions(ids: number[]) {
 
 export async function markTransfer(id: number, isTransfer: boolean) {
   return updateTransaction(id, { isTransfer, categoryId: isTransfer ? "transfer" : undefined });
+}
+
+const TRANSFER_CAT_ID = "transfer";
+
+/**
+ * Detect internal transfers (opposite-amount legs across two accounts within a
+ * few days) and link them: both legs get isTransfer + the "transfer" category +
+ * a mutual transferPairId. Idempotent — only ever pairs not-yet-linked rows, so
+ * it's safe to call after every import. Returns how many pairs were linked.
+ */
+export async function autoLinkTransfers() {
+  const database = requireDb();
+  const rows = await database
+    .select({
+      id: s.transactions.id,
+      accountId: s.transactions.accountId,
+      amount: s.transactions.amount,
+      date: s.transactions.date,
+      isTransfer: s.transactions.isTransfer,
+      transferPairId: s.transactions.transferPairId,
+      merchant: s.transactions.merchant,
+    })
+    .from(s.transactions);
+
+  const pairs = matchTransfers(
+    rows.map((r) => ({
+      id: r.id,
+      accountId: r.accountId,
+      amount: Number(r.amount ?? 0),
+      date: (r.date as string | null) ?? null,
+      isTransfer: r.isTransfer,
+      transferPairId: r.transferPairId,
+    }))
+  );
+  if (!pairs.length) return { ok: true as const, linked: 0 };
+
+  const cats = await catMap();
+  const transferCat = cats.get(TRANSFER_CAT_ID);
+  await database.transaction(async (tx) => {
+    for (const p of pairs) {
+      for (const [id, pairId] of [[p.outId, p.inId], [p.inId, p.outId]] as const) {
+        await tx
+          .update(s.transactions)
+          .set({
+            isTransfer: true,
+            transferPairId: pairId,
+            categoryId: TRANSFER_CAT_ID,
+            category: transferCat?.name ?? "Transfer",
+            color: transferCat?.color ?? null,
+            categorySource: "transfer",
+            reviewed: true,
+          })
+          .where(eq(s.transactions.id, id));
+      }
+    }
+  });
+  return { ok: true as const, linked: pairs.length };
+}
+
+/**
+ * Undo a transfer link: clears isTransfer + the pair on BOTH legs and resets
+ * them to Uncategorized so they re-enter spending/income for re-review.
+ */
+export async function unlinkTransfer(id: number) {
+  const database = requireDb();
+  const [row] = await database.select().from(s.transactions).where(eq(s.transactions.id, id));
+  if (!row) return { ok: true as const };
+  const ids = [id, row.transferPairId].filter((x): x is number => x != null);
+  await database.transaction(async (tx) => {
+    await tx
+      .update(s.transactions)
+      .set({
+        isTransfer: false,
+        transferPairId: null,
+        categoryId: UNCATEGORIZED_ID,
+        category: null,
+        color: null,
+        categorySource: null,
+        categoryConfidence: null,
+        reviewed: false,
+      })
+      .where(inArray(s.transactions.id, ids));
+  });
+  return { ok: true as const };
 }
 
 // ---- splits ----

@@ -65,7 +65,7 @@ function SplitEditor({ txn, onClose }) {
   );
 }
 
-function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTransfer }) {
+function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTransfer, onUnlink }) {
   const { Icon, IconButton, Tag, Avatar, Badge, Toggle, Button } = window.ZittingHQDesignSystem_c9e528;
   const [splitOpen, setSplitOpen] = React.useState(false);
   return (
@@ -108,6 +108,19 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Transfer (exclude from spending)</span>
             <Toggle checked={!!txn.isTransfer} onChange={() => onToggleTransfer(txn)} />
           </div>
+          {txn.transferPairId ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 0', borderTop: '1px solid var(--border-hairline)' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Linked transfer</div>
+                <div style={{ fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{txn.transferWith || 'another account'}</div>
+              </div>
+              {onUnlink ? (
+                <button onClick={() => onUnlink(txn)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-tertiary)', font: 'inherit' }} title="Not a transfer — unlink both legs and count them normally">
+                  Unlink
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <Button variant="secondary" size="sm" full iconLeft={<Icon name="allocations" size={15} />} onClick={() => setSplitOpen(true)}>
@@ -154,6 +167,7 @@ function ZHQTransactions({ onNavigate }) {
   });
   const markTransfer = (ids) => run(async () => { await API.bulkUpdateTransactions(ids, { isTransfer: true, categoryId: 'transfer' }); });
   const toggleTransfer = (txn) => run(async () => { await API.markTransfer(txn.id, !txn.isTransfer); });
+  const unlinkTransfer = (txn) => run(async () => { await API.unlinkTransfer(txn.id); });
   const confirmIds = (idsArg) => run(async () => { await API.confirmTransactions(idsArg); });
 
   const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -243,6 +257,7 @@ function ZHQTransactions({ onNavigate }) {
           onPickCategory={(pids) => setPicker({ kind: 'category', ids: pids })}
           onPickPerson={(pids) => setPicker({ kind: 'person', ids: pids })}
           onToggleTransfer={(t) => { toggleTransfer(t); setSel(null); }}
+          onUnlink={(t) => { unlinkTransfer(t); setSel(null); }}
         />
       ) : null}
 
