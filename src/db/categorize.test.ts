@@ -5,6 +5,7 @@ import {
   scoreCategory,
   looksLikeTransfer,
   dedupeKey,
+  markDuplicates,
   REVIEW_THRESHOLD,
   type MemoryMap,
 } from "./categorize";
@@ -130,5 +131,46 @@ describe("dedupeKey", () => {
     const k = dedupeKey({ date: "2026-05-27", amount: -21.71, merchant: MACU.netflix, accountId: "acc1" });
     expect(k).toContain("2026-05-27");
     expect(k).toContain("-21.71");
+  });
+});
+
+describe("markDuplicates (multiset-aware import dedup)", () => {
+  const rows = (keys: string[]) => keys.map((dedupeKey) => ({ dedupeKey }));
+  const flags = (r: ReturnType<typeof markDuplicates>) => r.map((x) => (x.duplicate ? x.reason : "new"));
+
+  it("imports everything into an empty account", () => {
+    const r = markDuplicates(rows(["a", "b", "c"]), {});
+    expect(flags(r)).toEqual(["new", "new", "new"]);
+  });
+
+  it("skips rows already in the system, keeping existing (re-import of same file)", () => {
+    const r = markDuplicates(rows(["a", "b", "c"]), { a: 1, b: 1, c: 1 });
+    expect(flags(r)).toEqual(["exists", "exists", "exists"]);
+  });
+
+  it("imports only the new rows when date ranges overlap", () => {
+    // account already has Jan–Mar (a,b); new file is Feb–Apr (b,c,d)
+    const r = markDuplicates(rows(["b", "c", "d"]), { a: 1, b: 1 });
+    expect(flags(r)).toEqual(["exists", "new", "new"]);
+  });
+
+  it("flags an exact repeat within the same file", () => {
+    const r = markDuplicates(rows(["a", "a", "b"]), {});
+    expect(flags(r)).toEqual(["new", "file", "new"]);
+  });
+
+  it("consumes existing records one-for-one (3 identical, 2 already stored)", () => {
+    const r = markDuplicates(rows(["x", "x", "x"]), { x: 2 });
+    expect(flags(r)).toEqual(["exists", "exists", "new"]);
+  });
+
+  it("treats unique bank transaction ids as never-duplicate across distinct ids", () => {
+    const r = markDuplicates(rows(["ext:acc:1", "ext:acc:2", "ext:acc:3"]), { "ext:acc:2": 1 });
+    expect(flags(r)).toEqual(["new", "exists", "new"]);
+  });
+
+  it("accepts a Map for existing counts too", () => {
+    const r = markDuplicates(rows(["a", "b"]), new Map([["a", 1]]));
+    expect(flags(r)).toEqual(["exists", "new"]);
   });
 });

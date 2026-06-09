@@ -9,7 +9,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
-import { dedupeKey, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
+import { dedupeKey, markDuplicates, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -205,31 +205,37 @@ export async function commitImport(args: {
   const members = await memberMap();
   const acctLabel = await accountLabel(args.accountId);
 
-  // existing dedupe hashes for this account
+  // How many of each dedupe hash ALREADY exist in this account, then apply the
+  // shared multiset-aware dedup (re-imports and overlapping date ranges skip
+  // exactly what's already stored; existing records are kept). The server is
+  // authoritative — even if the client preview is stale or a duplicate row was
+  // force-included, this is where the final decision is made.
   const existingRows = await database
     .select({ h: s.transactions.dedupeHash })
     .from(s.transactions)
     .where(eq(s.transactions.accountId, args.accountId));
-  const seen = new Set(existingRows.map((r) => r.h).filter(Boolean) as string[]);
+  const existingCounts = new Map<string, number>();
+  for (const r of existingRows) {
+    if (r.h) existingCounts.set(r.h, (existingCounts.get(r.h) || 0) + 1);
+  }
+  const keyed = args.rows.map((r) => ({
+    row: r,
+    dedupeKey: dedupeKey({ externalId: r.externalId, date: r.date, amount: r.amount, merchant: r.merchant, accountId: args.accountId }),
+  }));
+  const decided = markDuplicates(keyed, existingCounts);
 
   const batchId = crypto.randomUUID();
   const inserts: (typeof s.transactions.$inferInsert)[] = [];
   const learnQueue: { key: string; categoryId: string; member: string | null }[] = [];
   let skipped = 0;
 
-  for (const r of args.rows) {
-    const key = dedupeKey({
-      externalId: r.externalId,
-      date: r.date,
-      amount: r.amount,
-      merchant: r.merchant,
-      accountId: args.accountId,
-    });
-    if (seen.has(key)) {
+  for (const d of decided) {
+    if (d.duplicate) {
       skipped++;
       continue;
     }
-    seen.add(key);
+    const r = d.row.row;
+    const key = d.row.dedupeKey;
     const cat = r.categoryId ? cats.get(r.categoryId) : undefined;
     const mem = r.memberId ? members.get(r.memberId) : undefined;
     const conf = r.categoryConfidence ?? null;
@@ -302,13 +308,22 @@ export async function deleteImport(batchId: string) {
   return { ok: true as const };
 }
 
-export async function findExistingHashes(accountId: string, hashes: string[]) {
-  if (!accountId || !hashes.length) return [];
+/** How many transactions ALREADY exist in this account for each dedupe hash.
+ *  Returns a count map so the import preview can match the same multiset-aware
+ *  logic the server uses (re-imports and overlapping date ranges skip exactly
+ *  the rows that already exist, keeping what's in the system). */
+export async function findExistingHashes(accountId: string, hashes: string[]): Promise<Record<string, number>> {
+  if (!accountId || !hashes.length) return {};
+  const unique = Array.from(new Set(hashes));
   const rows = await requireDb()
     .select({ h: s.transactions.dedupeHash })
     .from(s.transactions)
-    .where(and(eq(s.transactions.accountId, accountId), inArray(s.transactions.dedupeHash, hashes)));
-  return rows.map((r) => r.h).filter(Boolean) as string[];
+    .where(and(eq(s.transactions.accountId, accountId), inArray(s.transactions.dedupeHash, unique)));
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.h) counts[r.h] = (counts[r.h] || 0) + 1;
+  }
+  return counts;
 }
 
 // ---- column-mapping templates ----

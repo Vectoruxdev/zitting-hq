@@ -243,3 +243,37 @@ export function dedupeKey(args: {
   }
   return [args.accountId ?? "", args.date, args.amount.toFixed(2), normalizeMerchant(args.merchant)].join("|");
 }
+
+export type DupReason = "exists" | "file" | null;
+
+/**
+ * Multiset-aware duplicate detection — the single source of truth shared by the
+ * import preview (client) and `commitImport` (server). Given rows in file order
+ * (each carrying its `dedupeKey`) and how many of each key ALREADY exist in the
+ * target account, decide which rows are new vs duplicates:
+ *   - "exists": matches a record already in the system → skip, keep the existing
+ *     one. Existing records are consumed one-for-one, so re-imports and
+ *     overlapping date ranges skip exactly what's already stored (no double
+ *     count) while genuinely new rows in the overlap window still import.
+ *   - "file": an exact repeat of an earlier row in the same file.
+ */
+export function markDuplicates<T extends { dedupeKey: string }>(
+  rows: T[],
+  existingCounts: Record<string, number> | Map<string, number>
+): { row: T; duplicate: boolean; reason: DupReason }[] {
+  const countOf = (k: string) =>
+    existingCounts instanceof Map ? existingCounts.get(k) || 0 : existingCounts[k] || 0;
+  const consumed = new Map<string, number>();
+  const seenInFile = new Set<string>();
+  return rows.map((row) => {
+    const k = row.dedupeKey;
+    const used = consumed.get(k) || 0;
+    if (used < countOf(k)) {
+      consumed.set(k, used + 1);
+      return { row, duplicate: true, reason: "exists" as const };
+    }
+    if (seenInFile.has(k)) return { row, duplicate: true, reason: "file" as const };
+    seenInFile.add(k);
+    return { row, duplicate: false, reason: null };
+  });
+}

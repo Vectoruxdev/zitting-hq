@@ -1,6 +1,6 @@
 import React from 'react';
 import Papa from 'papaparse';
-import { dedupeKey, looksLikeTransfer } from '@/db/categorize';
+import { dedupeKey, markDuplicates, looksLikeTransfer } from '@/db/categorize';
 
 /* Import — multi-step CSV transaction import: upload → map → preview → done. */
 
@@ -152,10 +152,13 @@ function ZHQImport({ onNavigate }) {
         });
       }
       if (API.findExistingHashes) {
-        const dupes = await API.findExistingHashes(accountId, normalized.map((r) => r.dkey));
-        const dset = new Set(dupes);
-        normalized.forEach((r) => {
-          if (dset.has(r.dkey)) { r.duplicate = true; r.include = false; }
+        // Same multiset-aware dedup the server uses (markDuplicates), so the
+        // preview is exact: skip rows already in the system (keep existing) and
+        // exact repeats within this file.
+        const counts = await API.findExistingHashes(accountId, normalized.map((r) => r.dkey));
+        const decided = markDuplicates(normalized.map((r) => ({ dedupeKey: r.dkey, ref: r })), counts);
+        decided.forEach((d) => {
+          if (d.duplicate) { d.row.ref.duplicate = true; d.row.ref.include = false; d.row.ref.dupReason = d.reason; }
         });
       }
       setRows([...normalized]);
@@ -369,16 +372,49 @@ function ZHQImport({ onNavigate }) {
       {/* STEP: preview */}
       {step === 'preview' ? (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-              <b style={{ color: 'var(--text-primary)' }}>{rows.filter((r) => r.include).length}</b> of {rows.length} will import
-              {rows.some((r) => r.duplicate) ? <span style={{ color: 'var(--warning)' }}> · {rows.filter((r) => r.duplicate).length} duplicate(s) skipped</span> : null}
-            </span>
-            {busy ? <Spinner size={16} /> : null}
-            <span style={{ flex: 1 }} />
-            <Button variant="ghost" size="sm" onClick={() => setAll({ include: true })}>Select all</Button>
-            <Button variant="ghost" size="sm" onClick={() => setAll({ include: false })}>Deselect all</Button>
-          </div>
+          {(() => {
+            const willImport = rows.filter((r) => r.include).length;
+            const dupExists = rows.filter((r) => r.dupReason === 'exists').length;
+            const dupFile = rows.filter((r) => r.dupReason === 'file').length;
+            const allDupes = !busy && rows.length > 0 && willImport === 0 && (dupExists + dupFile) === rows.length;
+            return (
+              <>
+                {/* duplicate-detection banner */}
+                {!busy && (dupExists || dupFile) ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', marginBottom: 14,
+                    background: allDupes ? 'var(--surface-raised)' : 'var(--amber-glow, var(--surface-sunken))',
+                    border: `1px solid ${allDupes ? 'var(--border-hairline)' : 'var(--warning)'}`, borderRadius: 'var(--radius-md)',
+                  }}>
+                    <span style={{ flexShrink: 0, color: allDupes ? 'var(--text-secondary)' : 'var(--warning)', marginTop: 1 }}>
+                      <Icon name={allDupes ? 'check' : 'alert'} size={16} />
+                    </span>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      {allDupes ? (
+                        <><b style={{ color: 'var(--text-primary)' }}>Already imported.</b> Every one of these {rows.length} transactions is already in {accounts.find((a) => a.id === accountId)?.label || 'this account'}, so there's nothing new to add. Your existing records are kept as-is.</>
+                      ) : (
+                        <><b style={{ color: 'var(--text-primary)' }}>Duplicate transactions detected and skipped.</b>{' '}
+                          {dupExists ? `${dupExists} already exist in this account (kept as-is). ` : ''}
+                          {dupFile ? `${dupFile} repeat earlier in this file. ` : ''}
+                          Overlapping date ranges are fine — only genuinely new transactions import.</>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+                    <b style={{ color: 'var(--text-primary)' }}>{willImport}</b> of {rows.length} will import
+                    {(dupExists + dupFile) ? <span style={{ color: 'var(--warning)' }}> · {dupExists + dupFile} duplicate(s) skipped</span> : null}
+                  </span>
+                  {busy ? <Spinner size={16} /> : null}
+                  <span style={{ flex: 1 }} />
+                  <Button variant="ghost" size="sm" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, include: !r.duplicate })))}>Select all new</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setAll({ include: false })}>Deselect all</Button>
+                </div>
+              </>
+            );
+          })()}
 
           <DataTable
             rowKey="idx"
@@ -389,7 +425,7 @@ function ZHQImport({ onNavigate }) {
               { key: 'merchant', header: 'Description', render: (r) => (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   <span style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant}</span>
-                  {r.duplicate ? <Badge tone="warning" size="sm">dup</Badge> : null}
+                  {r.duplicate ? <Badge tone="warning" size="sm">{r.dupReason === 'file' ? 'repeat in file' : 'already imported'}</Badge> : null}
                   {r.isTransfer ? <Badge tone="neutral" size="sm">transfer</Badge> : null}
                 </span>
               ) },
