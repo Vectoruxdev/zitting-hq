@@ -37,8 +37,42 @@ function monthKey(dt: Date): string {
 
 export type FinanceData = typeof MOCK_FINANCE_DATA;
 
+/** A valid-but-empty dataset (no demo data). Used on any deployed environment
+ *  when the DB is unconfigured or a read fails — so the curated mock never
+ *  leaks into production. Full mock is only used in pure local dev. */
+function emptyData(): FinanceData {
+  const d: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
+  d.accounts = { checking: [], savings: [], credit: [] };
+  d.accountsFlat = [];
+  d.txns = [];
+  d.budgets = [];
+  d.rules = [];
+  d.incomeStreams = [];
+  d.bills = [];
+  d.goals = [];
+  d.upcoming = [];
+  d.past = [];
+  d.notifications = [];
+  d.notifRules = [];
+  d.receiptItems = [];
+  d.categories = [];
+  d.allCategories = [];
+  d.categoryGroups = [];
+  d.members = [];
+  d.catRules = [];
+  d.stats = { totalCash: "$0", spending: "$0", income: "$0", transfers: "$0" };
+  d.trend = { income: [0, 0, 0, 0, 0, 0], spending: [0, 0, 0, 0, 0, 0], labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"] };
+  d.member = null;
+  d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
+  d.permissions = null;
+  return d;
+}
+
+// On a deployed environment, never show the curated mock — show empty instead.
+const fallbackData = (): FinanceData => (process.env.VERCEL ? emptyData() : MOCK_FINANCE_DATA);
+
 export async function getFinanceData(): Promise<FinanceData> {
-  if (!isDbConfigured || !db) return MOCK_FINANCE_DATA;
+  if (!isDbConfigured || !db) return fallbackData();
 
   try {
     // --- sequential reads (pooler-safe) ---
@@ -354,7 +388,9 @@ export async function getFinanceData(): Promise<FinanceData> {
 
     return data;
   } catch (err) {
-    console.error("[getFinanceData] DB read failed, using mock data:", err);
-    return MOCK_FINANCE_DATA;
+    // Most likely cause: the live DB is behind the code's schema (run the
+    // latest migration SQL). Show EMPTY states rather than the demo mock.
+    console.error("[getFinanceData] DB read failed — showing empty data. Run supabase-sync.sql?", err);
+    return isDbConfigured ? emptyData() : fallbackData();
   }
 }
