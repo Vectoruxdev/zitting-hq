@@ -494,6 +494,23 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       time: notif.timeLabel,
       unread: notif.unread,
     }));
+    // Surface pending transfers as a derived (unstored) alert so the bell badges
+    // and the feed shows what needs moving — without a stale stored row.
+    if (data.transfersPending > 0) {
+      data.notifications = [
+        {
+          id: "transfers-pending",
+          type: "transfers",
+          icon: "transfers",
+          tone: "warning",
+          title: `${data.transfersPending} transfer${data.transfersPending === 1 ? "" : "s"} to make`,
+          body: `${data.transfersPendingTotal} ready to move across your accounts.`,
+          time: "Now",
+          unread: true,
+        },
+        ...data.notifications,
+      ];
+    }
     data.notifRules = notifRuleRows.map((r) => ({
       id: r.id,
       name: r.name,
@@ -735,9 +752,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     };
     data.permissions = null;
 
-    // --- member home (categorize tasks + allowance gating for the viewer) ---
-    if (viewer?.memberId) {
-      const mid = viewer.memberId;
+    // --- member home (categorize tasks + allowance gating) ---
+    const buildMemberHome = (mid: string) => {
       const managedIds = [...(accountsByMember.get(mid) ?? [])];
       const prog = computeMemberProgress(
         txnRows.map((t) => ({ accountId: t.accountId, date: t.date as string | null, reviewed: t.reviewed })),
@@ -752,7 +768,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       });
       const allowance = allowanceById.get(mid) ?? 0;
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      data.memberHome = {
+      return {
         memberId: mid,
         name: memberById.get(mid)?.name ?? "there",
         allowance,
@@ -771,9 +787,17 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           .slice()
           .reverse(),
       };
-    } else {
-      data.memberHome = null;
+    };
+    // Whose home to show: the viewer's own. For an OWNER previewing via
+    // "View as member" (owners have no member identity of their own), fall back
+    // to the first real member so the preview lands on an actual person instead
+    // of hanging on "Loading…".
+    let homeMemberId: string | null = viewer?.memberId ?? null;
+    if (!homeMemberId && viewer?.role === "owner") {
+      const preview = memberRows.find((m) => m.role === "member") || memberRows.find((m) => m.role !== "owner");
+      homeMemberId = preview?.id ?? null;
     }
+    data.memberHome = homeMemberId ? buildMemberHome(homeMemberId) : null;
 
     return data;
   } catch (err) {

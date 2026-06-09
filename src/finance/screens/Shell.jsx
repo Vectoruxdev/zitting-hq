@@ -53,6 +53,7 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
 
 function ZHQTopbar({ title, onNavigate }) {
   const { Icon, IconButton, SegmentedControl } = window.ZittingHQDesignSystem_c9e528;
+  const unread = ((window.ZHQ_DATA && window.ZHQ_DATA.notifications) || []).filter((n) => n.unread).length;
   const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'dark');
   const toggleTheme = () => {
     const t = theme === 'light' ? 'dark' : 'light';
@@ -75,7 +76,9 @@ function ZHQTopbar({ title, onNavigate }) {
       <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />
       <div style={{ position: 'relative' }}>
         <IconButton icon="bell" label="Notifications" variant="solid" onClick={() => onNavigate && onNavigate('notifications')} />
-        <span style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-on-accent)', background: 'var(--accent)', borderRadius: 999, border: '2px solid var(--bg-app)' }}>3</span>
+        {unread > 0 ? (
+          <span style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-on-accent)', background: 'var(--accent)', borderRadius: 999, border: '2px solid var(--bg-app)' }}>{unread}</span>
+        ) : null}
       </div>
     </header>
   );

@@ -86,7 +86,7 @@ function ZHQOverview({ onNavigate }) {
     { label: 'Total cash', value: D.stats.totalCash },
     { label: spendLabel, value: D.stats.spending },
     { label: incomeLabel, value: D.stats.income },
-    { label: 'Transfers to make', value: D.stats.transfers, sub: upcoming.length ? `${upcoming.length} to send` : 'none pending', accent: true, icon: 'transfers', nav: 'transfers' },
+    { label: 'Transfers to make', value: D.transfersPendingTotal ?? D.stats.transfers, sub: (D.transfersPending ?? upcoming.length) ? `${D.transfersPending ?? upcoming.length} pending` : 'none pending', accent: true, icon: 'transfers', nav: 'transfers' },
   ];
 
   return (

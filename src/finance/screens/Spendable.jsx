@@ -98,8 +98,9 @@ function ZHQSpendable() {
           </div>
 
           {!H ? (
-            <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>
-              Loading your accounts…
+            <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>No member to show yet</div>
+              Add a person on the <strong>Access &amp; permissions</strong> screen, then assign them an account to manage. Their Spendable view appears here.
             </div>
           ) : tab === 'home' ? (
             <>

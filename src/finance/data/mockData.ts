@@ -152,6 +152,25 @@ export const MOCK_FINANCE_DATA: any = {
   ],
   savingsStats: { totalSaved: 72600, totalSavedDisplay: '$72,600', monthlyContrib: 2450, monthlyContribDisplay: '$2,450', activeCount: 4, onTrackCount: 2 },
 
+  // Member "Spendable" home (server-computed live; this is the mock/demo default
+  // so the member view renders without a DB). Null in emptyData().
+  memberHome: {
+    memberId: 'sarah',
+    name: 'Sarah',
+    allowance: 400,
+    allowanceLabel: '$400',
+    monthLabel: 'June',
+    prevMonthLabel: 'May',
+    managedAccounts: [
+      { id: 'sarah-wallet', name: "Sarah's wallet", label: "Sarah's wallet ••1192", total: 6, reviewed: 6, remaining: 0, done: true },
+    ],
+    totalRemaining: 0,
+    allCaughtUp: true,
+    prevMonthRemaining: 0,
+    allowanceUnlocked: true,
+    reviewQueue: [],
+  },
+
   notifications: [
     { id: 1, type: 'transfers', icon: 'transfers', tone: 'accent', title: 'Transfers ready', body: '$4,000 income arrived — 5 transfers totaling $4,000 are ready to send.', time: 'Just now', unread: true },
     { id: 2, type: 'bill', icon: 'repeat', tone: 'warning', title: 'Bill amount changed', body: 'Rocky Mountain Power is $142.66 this month, up $22 from May.', time: '2h ago', unread: true },
