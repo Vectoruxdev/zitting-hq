@@ -621,8 +621,6 @@ export async function createBudget(args: {
     .values({
       name: labels.name,
       who: labels.who,
-      memberId: labels.memberId,
-      categoryId: labels.categoryId,
       icon: labels.icon,
       limitAmount: String(args.limit),
       spent: "0",
@@ -648,8 +646,6 @@ export async function updateBudget(
     });
     values.name = labels.name;
     values.who = labels.who;
-    values.memberId = labels.memberId;
-    values.categoryId = labels.categoryId;
     values.icon = labels.icon;
   }
   if (Object.keys(values).length) {

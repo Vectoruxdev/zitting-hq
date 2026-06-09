@@ -1,8 +1,8 @@
 -- =============================================================
 -- Zitting Finance — full schema sync (idempotent).
 -- Safe to run anytime in Supabase → SQL Editor → Run. Brings the database up
--- to the current code schema (migrations 0001 + 0002 + 0003) without errors,
--- whether or not parts were already applied.
+-- to the current code schema (migrations 0001 + 0002 + 0003 + 0004) without
+-- errors, whether or not parts were already applied.
 -- =============================================================
 
 -- ---- Categories (0001) ----
@@ -109,3 +109,7 @@ ALTER TABLE family_members ADD COLUMN IF NOT EXISTS email text;
 ALTER TABLE family_members ADD COLUMN IF NOT EXISTS auth_id text;
 ALTER TABLE family_members ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'none';
 ALTER TABLE family_members ADD COLUMN IF NOT EXISTS color text;
+
+-- ---- budgets: link to a person (allowance) or category (0004) ----
+ALTER TABLE budgets ADD COLUMN IF NOT EXISTS member_id text;
+ALTER TABLE budgets ADD COLUMN IF NOT EXISTS category_id text;

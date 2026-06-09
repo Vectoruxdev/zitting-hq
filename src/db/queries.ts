@@ -318,24 +318,17 @@ export async function getFinanceData(): Promise<FinanceData> {
       }
     }
 
-    // Budgets — `spent` is DERIVED from the current month's transactions:
-    // category budgets pull from that category's spend, allowances from that
-    // member's spend. Falls back to the stored column for untargeted rows.
-    data.budgets = budgetRows.map((b) => {
-      let spent = n(b.spent);
-      if (b.categoryId) spent = catTotals.get(b.categoryId) || 0;
-      else if (b.memberId) spent = memberTotals.get(b.memberId) || 0;
-      return {
-        id: b.id,
-        name: b.name,
-        who: b.who,
-        icon: b.icon ?? undefined,
-        categoryId: b.categoryId,
-        memberId: b.memberId,
-        spent,
-        limit: n(b.limitAmount),
-      };
-    });
+    // Budgets — uses the stored `spent` column. (Per-member / per-category
+    // targeting is a planned feature; it needs new budgets columns in the live
+    // DB first, so it's intentionally not wired here yet.)
+    data.budgets = budgetRows.map((b) => ({
+      id: b.id,
+      name: b.name,
+      who: b.who,
+      icon: b.icon ?? undefined,
+      spent: n(b.spent),
+      limit: n(b.limitAmount),
+    }));
 
     const palette = ["var(--green-500)", "var(--indigo-500)", "var(--amber-500)", "var(--green-600)", "var(--gray-500)"];
     const sortedCats = [...catTotals.entries()].sort((a, b) => b[1] - a[1]);

@@ -6,17 +6,49 @@
  *
  * Run: pnpm db:run supabase-categories-import.sql
  */
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 
+// Parse .env.local directly. We don't use dotenv's process.env injection here:
+// Vercel-style vars are often present-but-blank in the shell (which dotenv
+// won't override), and we want the real values the file holds. Reading the file
+// ourselves is deterministic regardless of the dotenv variant installed.
+function parseEnvFile(path: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let text = "";
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return out;
+  }
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    let val = line.slice(eq + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    out[key] = val;
+  }
+  return out;
+}
+
+const fileEnv = parseEnvFile(".env.local");
+const pick = (k: string) => {
+  const fromShell = process.env[k];
+  if (fromShell && fromShell.length) return fromShell;
+  return fileEnv[k] || undefined;
+};
+
+// Prefer a direct (non-pooled) connection for DDL.
 const url =
-  process.env.DIRECT_URL ||
-  process.env.POSTGRES_URL_NON_POOLING ||
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL;
+  pick("DIRECT_URL") ||
+  pick("POSTGRES_URL_NON_POOLING") ||
+  pick("DATABASE_URL") ||
+  pick("POSTGRES_URL");
 
 const file = process.argv[2];
 if (!url) {
