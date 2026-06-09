@@ -20,12 +20,21 @@ function requireDb() {
   return db;
 }
 
-/** Map a Plaid account type/subtype to our account type. */
+/**
+ * Map a Plaid account type/subtype to our 3 buckets (checking | savings |
+ * credit). Credit cards and loans are debt; savings/CD/money-market/HSA and
+ * investment accounts are treated as savings-side assets; everyday spending
+ * accounts are checking. We don't have a dedicated investment bucket, so
+ * investments land in savings (an asset) rather than checking.
+ */
 function mapAccountType(type: string, subtype: string | null | undefined): string {
-  if (type === "credit") return "credit";
-  if (type === "depository" && subtype === "savings") return "savings";
-  if (type === "depository") return "checking";
-  if (type === "loan") return "credit";
+  const sub = (subtype || "").toLowerCase();
+  if (type === "credit" || type === "loan") return "credit";
+  if (type === "investment" || type === "brokerage") return "savings";
+  if (type === "depository") {
+    const savingsLike = ["savings", "cd", "money market", "hsa", "prepaid"];
+    return savingsLike.includes(sub) ? "savings" : "checking";
+  }
   return "checking";
 }
 
