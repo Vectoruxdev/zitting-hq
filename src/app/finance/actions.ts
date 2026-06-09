@@ -386,8 +386,12 @@ export async function deleteContribution(id: number) {
 // ---- Plaid (automatic bank sync) ----
 export async function createPlaidLinkToken() {
   const u = await ensureOwner();
-  const token = await plaidDb.createLinkToken(u?.email || "owner");
-  return { ok: true as const, token };
+  try {
+    const token = await plaidDb.createLinkToken(u?.email || "owner");
+    return { ok: true as const, token };
+  } catch (e) {
+    return { ok: false as const, error: (e as Error)?.message || "Plaid request failed" };
+  }
 }
 export async function exchangePlaidPublicToken(publicToken: string) {
   const u = await ensureOwner();

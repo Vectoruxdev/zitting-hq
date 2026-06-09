@@ -21,9 +21,13 @@ async function connect(onDone) {
   let token;
   try {
     const res = await API.createPlaidLinkToken();
+    if (res && res.ok === false) {
+      alert('Plaid couldn’t start: ' + (res.error || 'unknown error'));
+      return;
+    }
     token = res && res.token;
   } catch (e) {
-    alert('Bank connections aren’t configured yet. Add your Plaid keys in Vercel and try again.');
+    alert('Could not reach the server. ' + (e && e.message ? e.message : ''));
     return;
   }
   if (!token) return;
