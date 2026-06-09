@@ -151,3 +151,33 @@ CREATE INDEX IF NOT EXISTS idx_ti_status ON transfer_instances (status);
 CREATE INDEX IF NOT EXISTS idx_ti_rule ON transfer_instances (rule_id);
 CREATE INDEX IF NOT EXISTS idx_ti_income ON transfer_instances (trigger_income_txn_id);
 CREATE INDEX IF NOT EXISTS idx_ti_accounts ON transfer_instances (from_account_id, to_account_id, status);
+
+-- ---- savings goals: ledger + visibility + metadata (0007) ----
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS target_date date;
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS account_id text;
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS auto_contrib numeric(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS icon text;
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS color text NOT NULL DEFAULT 'var(--accent)';
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS goal_type text NOT NULL DEFAULT 'custom';
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'household';
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS created_by text;
+ALTER TABLE savings_goals ADD COLUMN IF NOT EXISTS archived_at timestamp;
+CREATE TABLE IF NOT EXISTS savings_goal_members (
+  id serial PRIMARY KEY,
+  goal_id text NOT NULL REFERENCES savings_goals(id) ON DELETE CASCADE,
+  member_id text NOT NULL REFERENCES family_members(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goal_members_goal ON savings_goal_members (goal_id);
+CREATE TABLE IF NOT EXISTS savings_contributions (
+  id serial PRIMARY KEY,
+  goal_id text NOT NULL REFERENCES savings_goals(id) ON DELETE CASCADE,
+  amount numeric(14,2) NOT NULL,
+  "date" date,
+  kind text NOT NULL DEFAULT 'manual',
+  member_id text REFERENCES family_members(id),
+  account_id text REFERENCES accounts(id),
+  note text,
+  created_at timestamp DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_contrib_goal ON savings_contributions (goal_id);
