@@ -13,6 +13,7 @@
  * (and pre-migration deploys) never break.
  */
 import { asc } from "drizzle-orm";
+import { detectRecurring } from "./detect";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -86,7 +87,6 @@ export async function getFinanceData(): Promise<FinanceData> {
     const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder));
     const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder));
     const incomeRows = await db.select().from(s.incomeStreams).orderBy(asc(s.incomeStreams.sortOrder));
-    const billRows = await db.select().from(s.bills).orderBy(asc(s.bills.sortOrder));
     const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder));
     const transferRows = await db.select().from(s.transfers).orderBy(asc(s.transfers.sortOrder));
     const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder));
@@ -224,18 +224,6 @@ export async function getFinanceData(): Promise<FinanceData> {
       status: i.status,
       spark: i.spark ?? [],
     }));
-    data.bills = billRows.map((b) => ({
-      id: b.id,
-      name: b.name,
-      cat: b.category,
-      color: b.color,
-      amount: n(b.amount),
-      freq: b.freq,
-      next: b.nextLabel,
-      account: b.accountLabel,
-      ...(b.badge ? { badge: b.badge } : {}),
-      ...(b.delta ? { delta: b.delta } : {}),
-    }));
     data.goals = goalRows.map((g) => ({
       id: g.id,
       name: g.name,
@@ -284,6 +272,21 @@ export async function getFinanceData(): Promise<FinanceData> {
     // ====================================================================
     const now = new Date();
     const curKey = monthKey(now);
+
+    // Recurring bills/subscriptions detected from transaction history.
+    data.bills = detectRecurring(
+      txnRows.map((t) => ({
+        merchant: t.merchant,
+        amount: n(t.amount),
+        date: t.date as string | null,
+        categoryName: t.categoryId ? catById.get(t.categoryId)?.name ?? null : t.category ?? null,
+        color: t.categoryId ? catById.get(t.categoryId)?.color ?? null : t.color ?? null,
+        accountLabel: t.accountId ? accountLabel(acctById.get(t.accountId)) : t.accountLabel ?? null,
+        isTransfer: t.isTransfer,
+        income: t.income,
+      })),
+      now
+    );
     const isExpenseTxn = (t: (typeof txnRows)[number]) =>
       !t.isTransfer && (t.categoryId ? catById.get(t.categoryId)?.kind !== "transfer" : true);
 
