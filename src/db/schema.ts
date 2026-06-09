@@ -23,9 +23,13 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const familyMembers = pgTable("family_members", {
-  id: text("id").primaryKey(), // e.g. "jared", "sarah"
+  id: text("id").primaryKey(), // slug or uuid
   name: text("name").notNull(),
-  role: text("role").notNull().default("member"), // owner | member
+  role: text("role").notNull().default("member"), // owner | partner | member
+  email: text("email"), // links to a login (auth user), if any
+  authId: text("auth_id"), // Supabase auth user id, once invited/created
+  status: text("status").notNull().default("none"), // none | invited | active
+  color: text("color"), // avatar tone
   createdAt: timestamp("created_at").defaultNow(),
 });
 

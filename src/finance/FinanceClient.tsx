@@ -33,7 +33,7 @@ export default function FinanceClient({
   name,
 }: {
   data?: unknown;
-  role?: "owner" | "member";
+  role?: "owner" | "partner" | "member";
   name?: string;
 }) {
   return (

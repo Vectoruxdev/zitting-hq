@@ -84,6 +84,54 @@ export async function suggestCategories(
 }
 
 // ====================================================================
+// Family members (people)
+// ====================================================================
+export async function createMember(args: {
+  name: string;
+  role?: string;
+  email?: string | null;
+  color?: string | null;
+  status?: string;
+  authId?: string | null;
+}) {
+  const id = crypto.randomUUID();
+  await requireDb().insert(s.familyMembers).values({
+    id,
+    name: args.name,
+    role: args.role || "member",
+    email: args.email ?? null,
+    color: args.color ?? null,
+    status: args.status || "none",
+    authId: args.authId ?? null,
+  });
+  return { ok: true as const, id };
+}
+
+export async function updateMember(
+  id: string,
+  patch: { name?: string; role?: string; email?: string | null; color?: string | null; status?: string; authId?: string | null }
+) {
+  const database = requireDb();
+  await database.update(s.familyMembers).set(patch).where(eq(s.familyMembers.id, id));
+  // keep denormalized txn "who" label in sync on rename
+  if (patch.name !== undefined) {
+    await database.update(s.transactions).set({ who: patch.name }).where(eq(s.transactions.memberId, id));
+  }
+  return { ok: true as const };
+}
+
+/** Remove a member: detach their transactions, then delete. Returns authId for cleanup. */
+export async function removeMember(id: string) {
+  const database = requireDb();
+  const [member] = await database.select().from(s.familyMembers).where(eq(s.familyMembers.id, id));
+  await database.transaction(async (tx) => {
+    await tx.update(s.transactions).set({ memberId: null, who: "Household" }).where(eq(s.transactions.memberId, id));
+    await tx.delete(s.familyMembers).where(eq(s.familyMembers.id, id));
+  });
+  return { ok: true as const, authId: member?.authId ?? null };
+}
+
+// ====================================================================
 // Accounts
 // ====================================================================
 export async function createAccount(args: {

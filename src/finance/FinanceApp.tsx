@@ -74,7 +74,7 @@ export default function FinanceApp({
   name,
 }: {
   data?: any;
-  role?: "owner" | "member";
+  role?: "owner" | "partner" | "member";
   name?: string;
 }) {
   // Make the finance data available to the window-global screens before they

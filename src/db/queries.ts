@@ -87,7 +87,14 @@ export async function getFinanceData(): Promise<FinanceData> {
       excludeFromBudget: c.excludeFromBudget,
       sortOrder: c.sortOrder,
     }));
-    data.members = memberRows.map((m) => ({ id: m.id, name: m.name, role: m.role }));
+    data.members = memberRows.map((m) => ({
+      id: m.id,
+      name: m.name,
+      role: m.role,
+      email: m.email,
+      status: m.status,
+      color: m.color,
+    }));
     data.catRules = catRuleRows.map((r) => ({
       id: r.id,
       matchType: r.matchType,

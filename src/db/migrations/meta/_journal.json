@@ -22,6 +22,13 @@
       "when": 1780964870189,
       "tag": "0002_complex_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780975298380,
+      "tag": "0003_stiff_centennial",
+      "breakpoints": true
     }
   ]
 }

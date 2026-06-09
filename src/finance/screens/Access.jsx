@@ -1,67 +1,138 @@
 import React from 'react';
-/* Access Admin — manage a member's permissions matrix + invite. */
-function ZHQPermRow({ row, last }) {
-  const { Toggle, Icon } = window.ZittingHQDesignSystem_c9e528;
+/* People & Access — manage family members, roles, and invitations. */
+
+const ROLE_OPTS = [
+  { value: 'owner', label: 'Owner — full control + manage people' },
+  { value: 'partner', label: 'Partner — full financial access' },
+  { value: 'member', label: 'Member — Spendable view only' },
+];
+const ROLE_LABEL = { owner: 'Owner', partner: 'Partner', member: 'Member' };
+
+function AddPersonModal({ open, onClose, onResult }) {
+  const { Modal, TextInput, Select, Toggle, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const [name, setName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [role, setRole] = React.useState('member');
+  const [invite, setInvite] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+
+  const reset = () => { setName(''); setEmail(''); setRole('member'); setInvite(true); };
+  async function save() {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      const res = await API.addMember({ name: name.trim(), email: email.trim() || null, role, invite: invite && !!email.trim() });
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      reset(); onClose();
+      onResult && onResult({ ...res, email: email.trim() || null });
+    } finally { setBusy(false); }
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px', alignItems: 'center', padding: '13px 16px', borderBottom: last ? 'none' : '1px solid var(--border-hairline)' }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 13.5, color: 'var(--text-primary)' }}>
-        {row.locked ? <Icon name="eye" size={14} style={{ color: 'var(--text-tertiary)' }} /> : null}{row.name}
-      </span>
-      <div style={{ display: 'flex', justifyContent: 'center' }}><Toggle defaultChecked={row.view} size="sm" disabled={row.locked} /></div>
-      <div style={{ display: 'flex', justifyContent: 'center' }}><Toggle defaultChecked={row.edit} size="sm" disabled={row.locked} /></div>
-    </div>
+    <Modal open={open} onClose={onClose} title="Add a person" width={440}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={save} disabled={busy || !name.trim()}>Add person</Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <TextInput label="Name" value={name} onChange={setName} placeholder="Katelynn" />
+        <TextInput label="Email (for login — optional)" value={email} onChange={setEmail} type="email" placeholder="katelynn@example.com" />
+        <Select label="Permission level" value={role} onChange={setRole} options={ROLE_OPTS} />
+        {email.trim() ? (
+          <Toggle label="Send an email invitation to set up their login" checked={invite} onChange={setInvite} />
+        ) : (
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-tertiary)' }}>No email = a name for tagging transactions only (no login). Add an email to invite them.</p>
+        )}
+      </div>
+    </Modal>
   );
 }
 
 function ZHQAccess() {
-  const { Card, Button, Icon, Avatar, Badge } = window.ZittingHQDesignSystem_c9e528;
-  const P = window.ZHQ_DATA.permissions;
-  const members = [{ name: 'Sarah', role: 'Member', on: true }, { name: 'Rebecca', role: 'Member' }, { name: 'Caleb', role: 'Teen' }];
+  const { Card, Button, Icon, Avatar, Badge, Select, Modal } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA;
+  const API = window.ZHQ_API || {};
+  const me = window.ZHQ_USER || {};
+  const members = D.members || [];
+  const isOwner = me.role === 'owner';
 
-  const Matrix = ({ title, rows }) => (
-    <Card padding={6}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px', padding: '12px 16px 10px', borderBottom: '1px solid var(--border-hairline)' }}>
-        <span className="zt-eyebrow">{title}</span>
-        <span className="zt-eyebrow" style={{ textAlign: 'center' }}>View</span>
-        <span className="zt-eyebrow" style={{ textAlign: 'center' }}>Edit</span>
-      </div>
-      {rows.map((r, i) => <ZHQPermRow key={r.name} row={r} last={i === rows.length - 1} />)}
-    </Card>
-  );
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [linkModal, setLinkModal] = React.useState(null);
+  const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+
+  async function changeRole(m, role) { setBusy(true); try { await API.updateMember(m.id, { role }); refresh(); } finally { setBusy(false); } }
+  async function remove(m) {
+    if (!window.confirm(`Remove ${m.name}? Their transactions move to Household and their login (if any) is revoked.`)) return;
+    setBusy(true); try { await API.removeMember(m.id); refresh(); } finally { setBusy(false); }
+  }
+  async function copyLink(email) {
+    setBusy(true);
+    try {
+      const res = await API.getInviteLink(email);
+      if (res?.link) { try { await navigator.clipboard.writeText(res.link); } catch { /* clipboard blocked */ } setLinkModal({ email, link: res.link }); }
+      else setLinkModal({ email, error: res?.error || 'Could not generate a link.' });
+    } finally { setBusy(false); }
+  }
+
+  const statusBadge = (m) => {
+    if (m.status === 'invited') return <Badge tone="warning" size="sm">Invited</Badge>;
+    if (m.status === 'active' || m.email) return <Badge tone="positive" size="sm">Login</Badge>;
+    return <Badge tone="neutral" size="sm">No login</Badge>;
+  };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 22, alignItems: 'start' }}>
-      <Card padding={14}>
-        <div className="zt-eyebrow" style={{ padding: '4px 8px 12px' }}>Family members</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {members.map((m) => (
-            <button key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px', borderRadius: 'var(--radius-sm)', border: 'none', background: m.on ? 'var(--surface-raised)' : 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
-              <Avatar name={m.name} size="sm" />
-              <div style={{ flex: 1 }}><div style={{ fontSize: 13.5, fontWeight: m.on ? 600 : 500, color: 'var(--text-primary)' }}>{m.name}</div><div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>{m.role}</div></div>
-            </button>
-          ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 780 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>People &amp; access</h2>
+          <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--text-secondary)' }}>Family members for tagging transactions and signing in.</p>
         </div>
-        <Button variant="secondary" size="sm" full iconLeft={<Icon name="plus" size={14} />} style={{ marginTop: 12 }}>Invite member</Button>
+        <span style={{ flex: 1 }} />
+        {isOwner ? <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={15} />} onClick={() => setShowAdd(true)}>Add person</Button> : null}
+      </div>
+
+      <Card padding={6}>
+        {members.map((m) => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: '1px solid var(--border-hairline)' }}>
+            <Avatar name={m.name} size="sm" />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{m.name}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{m.email || 'tag-only'}</div>
+            </div>
+            <span style={{ flex: 1 }} />
+            {statusBadge(m)}
+            {isOwner ? (
+              <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 132 }} />
+            ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}
+            {isOwner && m.status === 'invited' && m.email ? <Button variant="ghost" size="sm" onClick={() => copyLink(m.email)} disabled={busy}>Invite link</Button> : null}
+            {isOwner && me.email !== m.email ? (
+              <button onClick={() => remove(m)} disabled={busy} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={16} /></button>
+            ) : null}
+          </div>
+        ))}
+        {!members.length ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>No people yet.</div> : null}
       </Card>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <Avatar name="Sarah" size="lg" />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-primary)' }}>Sarah Zitting</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>sarah@zitting.family · Member</div>
-          </div>
-          <Badge tone="positive" dot>Active</Badge>
-        </div>
-
-        <Matrix title="Finance areas" rows={P.areas} />
-        <Matrix title="Accounts" rows={P.accounts} />
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <Button variant="ghost">Reset</Button>
-          <Button variant="primary">Save permissions</Button>
-        </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+        <b style={{ color: 'var(--text-secondary)' }}>Permission levels:</b> Owner — full control, can manage people. Partner — full financial access, can&apos;t manage people. Member — sees only their personal &ldquo;Spendable&rdquo; view.
       </div>
+
+      <AddPersonModal open={showAdd} onClose={() => setShowAdd(false)} onResult={(res) => {
+        if (res && res.email && res.inviteError) setLinkModal({ email: res.email, error: `${res.inviteError} You can still send an invite link.` });
+      }} />
+
+      <Modal open={!!linkModal} onClose={() => setLinkModal(null)} title="Invitation link" width={480}>
+        {linkModal?.link ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text-secondary)' }}>Copied to your clipboard. Send this to {linkModal.email} — it lets them set a password and sign in.</p>
+            <div style={{ wordBreak: 'break-all', fontSize: 12, padding: '10px 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}>{linkModal.link}</div>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: 13.5, color: 'var(--negative)' }}>{linkModal?.error}</p>
+        )}
+      </Modal>
     </div>
   );
 }
