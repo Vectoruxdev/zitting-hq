@@ -21,6 +21,11 @@ export async function signIn(
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    console.error("[signIn] auth error:", error.status, error.message);
+    const m = error.message || "";
+    if (/confirm/i.test(m)) {
+      return { error: "Account not confirmed. In Supabase → Authentication → Users, confirm this user (or re-add with “Auto Confirm User” on)." };
+    }
     return { error: "Wrong email or password." };
   }
 
