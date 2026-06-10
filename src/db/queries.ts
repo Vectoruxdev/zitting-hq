@@ -185,9 +185,20 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const memoryRows = await db.select().from(s.merchantMemory).catch(() => []);
     // Owner notification preferences (defensive — empty before the migration).
     const notifPrefRows = await db.select().from(s.notificationPrefs).catch(() => [] as { event: string; enabled: boolean; inApp: boolean; push: boolean }[]);
-    // Which of our accounts are linked to a Plaid (auto-syncing) bank.
-    const plaidAcctRows = await db.select({ accountId: s.plaidAccounts.accountId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null }[]);
+    // Which of our accounts are linked to a Plaid (auto-syncing) bank + when
+    // that bank last synced (real time, not the static "Synced just now" label).
+    const plaidAcctRows = await db.select({ accountId: s.plaidAccounts.accountId, itemId: s.plaidAccounts.itemId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null; itemId: string }[]);
     const plaidLinkedIds = new Set(plaidAcctRows.map((r) => r.accountId).filter(Boolean) as string[]);
+    const plaidItemRows = await db.select({ itemId: s.plaidItems.itemId, lastSyncedAt: s.plaidItems.lastSyncedAt }).from(s.plaidItems).catch(() => [] as { itemId: string; lastSyncedAt: Date | null }[]);
+    const lastSyncByItem = new Map(plaidItemRows.map((r) => [r.itemId, r.lastSyncedAt ? new Date(r.lastSyncedAt) : null]));
+    const syncedLabelFor = (accountId: string, fallback: string | null): string | null => {
+      if (!plaidLinkedIds.has(accountId)) return fallback; // manual account → keep its label
+      const itemId = plaidAcctRows.find((p) => p.accountId === accountId)?.itemId;
+      const last = itemId ? lastSyncByItem.get(itemId) : null;
+      if (!last) return "Auto-sync";
+      const rt = relTime(last, new Date());
+      return `Synced ${rt === "Just now" ? "just now" : rt}`;
+    };
     const allowanceRows = await db
       .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
       .from(s.familyMembers)
@@ -354,7 +365,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           who: a.who,
           managers: managersByAccount.get(a.id) ?? [],
           plaidLinked: plaidLinkedIds.has(a.id),
-          synced: a.syncedLabel,
+          synced: syncedLabelFor(a.id, a.syncedLabel),
           status: a.status,
           trend: a.trend ?? [],
           dest: a.destLabel,
