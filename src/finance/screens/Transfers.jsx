@@ -25,6 +25,7 @@ function ZHQNewTransferModal({ open, onClose }) {
   const [amount, setAmount] = React.useState('');
   const [date, setDate] = React.useState('');
   const [cadence, setCadence] = React.useState('monthly');
+  const [dayOfMonth, setDayOfMonth] = React.useState('1'); // for monthly/quarterly/yearly
   const [method, setMethod] = React.useState('Fixed'); // income: Fixed | %
   const [incomeMatch, setIncomeMatch] = React.useState('');
   const [name, setName] = React.useState('');
@@ -33,8 +34,22 @@ function ZHQNewTransferModal({ open, onClose }) {
   React.useEffect(() => {
     if (!open) return;
     setFreq('once'); setFromId(''); setToId(''); setMemberId(''); setAmount(''); setDate('');
-    setCadence('monthly'); setMethod('Fixed'); setIncomeMatch(''); setName(''); setBusy(false);
+    setCadence('monthly'); setDayOfMonth('1'); setMethod('Fixed'); setIncomeMatch(''); setName(''); setBusy(false);
   }, [open]);
+
+  const monthlyLike = ['monthly', 'quarterly', 'yearly'].includes(cadence);
+  // Build the schedule anchor: monthly-family uses the chosen day-of-month (in
+  // the current month, clamped); weekly/biweekly uses the chosen start date.
+  function repeatAnchor() {
+    if (monthlyLike) {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      const last = new Date(y, m + 1, 0).getDate();
+      const day = Math.min(Math.max(parseInt(dayOfMonth, 10) || 1, 1), last);
+      return `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+    return date || null; // weekly/biweekly: start date sets the weekday; semimonthly ignores
+  }
 
   const amt = parseFloat(amount);
   const amtValid = Number.isFinite(amt) && amt > 0 && (method !== '%' || amt <= 100);
@@ -53,7 +68,7 @@ function ZHQNewTransferModal({ open, onClose }) {
         await API.createManualTransfer({ fromAccountId: fromId || null, toAccountId: toId, memberId: memberId || null, amount: amt, plannedDate: date || null });
       } else if (freq === 'repeat') {
         if (!API.createAllocationRule) return;
-        await API.createAllocationRule({ name: name.trim() || autoName, method: 'Fixed', value: amt, fromAccountId: fromId || null, toAccountId: toId, memberId: memberId || null, trigger: 'scheduled', cadence, anchorDate: date || null, enabled: true });
+        await API.createAllocationRule({ name: name.trim() || autoName, method: 'Fixed', value: amt, fromAccountId: fromId || null, toAccountId: toId, memberId: memberId || null, trigger: 'scheduled', cadence, anchorDate: repeatAnchor(), enabled: true });
       } else {
         if (!API.createAllocationRule) return;
         await API.createAllocationRule({ name: name.trim() || autoName, method, value: amt, fromAccountId: fromId || null, toAccountId: toId, memberId: memberId || null, trigger: 'on_income', incomeMatch: incomeMatch.trim() || null, enabled: true });
@@ -71,10 +86,10 @@ function ZHQNewTransferModal({ open, onClose }) {
   ];
   const saveLabel = freq === 'once' ? 'Add transfer' : freq === 'repeat' ? 'Create recurring transfer' : 'Create income rule';
   const help = freq === 'once'
-    ? "Set a future planned date to schedule it — it waits on your checklist and checks off automatically once the transfer posts."
+    ? "A future date stays off your checklist until that day, then appears and reminds you — and checks off automatically once the transfer posts."
     : freq === 'repeat'
-    ? `This creates a recurring transfer. We'll add it to your checklist ${cadence === 'yearly' ? 'each year' : cadence === 'quarterly' ? 'each quarter' : cadence === 'weekly' ? 'each week' : cadence === 'biweekly' ? 'every 2 weeks' : 'each ' + (cadence === 'semimonthly' ? 'payday (1st & 15th)' : 'month')}, starting from the date you choose.`
-    : "This creates a rule: whenever income arrives, the amount (or %) is queued as a transfer to make. Manage it later under Allocations.";
+    ? `Recurring ${monthlyLike ? `on day ${dayOfMonth || '1'} ${cadence === 'monthly' ? 'each month' : cadence === 'quarterly' ? 'each quarter' : 'each year'}` : cadence === 'semimonthly' ? 'on the 1st & 15th' : cadence === 'weekly' ? 'each week' : 'every 2 weeks'}. Each one appears on your checklist when it's due.`
+    : "A rule: whenever income arrives, the amount (or %) is queued as a transfer to make. Manage it later under Allocations.";
 
   return (
     <Modal open={open} onClose={onClose} title="New transfer" width={460}
@@ -98,22 +113,31 @@ function ZHQNewTransferModal({ open, onClose }) {
           <Select label="To account" value={toId} onChange={setToId} placeholder="Choose account" options={acctOpts} />
         </div>
 
-        {/* amount / % + mode-specific fields */}
+        {/* amount / % + when */}
         {freq === 'income' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
             <Select label="Amount type" value={method} onChange={setMethod} options={[{ value: 'Fixed', label: 'Fixed amount' }, { value: '%', label: '% of income' }]} />
             <TextInput label={method === '%' ? 'Percent' : 'Amount'} value={amount} onChange={setAmount} prefix={method === '%' ? '' : '$'} type="number" inputMode="decimal" placeholder={method === '%' ? '15' : '500'} />
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-            <TextInput label="Amount" value={amount} onChange={setAmount} prefix="$" type="number" inputMode="decimal" placeholder="500" />
-            <TextInput label={freq === 'repeat' ? 'Start date' : 'Planned date'} value={date} onChange={setDate} type="date" />
-          </div>
+          <>
+            {freq === 'repeat' ? (
+              <Select label="Repeats" value={cadence} onChange={setCadence} options={CADENCE_OPTS} />
+            ) : null}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+              <TextInput label="Amount" value={amount} onChange={setAmount} prefix="$" type="number" inputMode="decimal" placeholder="500" />
+              {freq === 'once' ? (
+                <TextInput label="Planned date" value={date} onChange={setDate} type="date" />
+              ) : monthlyLike ? (
+                <TextInput label="On day (1–31)" value={dayOfMonth} onChange={setDayOfMonth} type="number" inputMode="numeric" placeholder="1" />
+              ) : cadence === 'semimonthly' ? (
+                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 11, fontSize: 12.5, color: 'var(--text-tertiary)' }}>On the 1st &amp; 15th</div>
+              ) : (
+                <TextInput label="Start date" value={date} onChange={setDate} type="date" />
+              )}
+            </div>
+          </>
         )}
-
-        {freq === 'repeat' ? (
-          <Select label="Repeats" value={cadence} onChange={setCadence} options={CADENCE_OPTS} />
-        ) : null}
 
         <Select label="For (optional)" value={memberId} onChange={setMemberId} placeholder="Household"
           options={[{ value: '', label: 'Household' }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
@@ -139,6 +163,8 @@ function ZHQTransfers() {
   const API = window.ZHQ_API || {};
   const D = window.ZHQ_DATA;
   const upcoming = D.upcoming || [];
+  const scheduled = D.scheduledTransfers || [];
+  const scheduledCount = D.scheduledCount ?? scheduled.length;
   const past = D.past || [];
   const [tab, setTab] = React.useState('upcoming');
   const [showAdd, setShowAdd] = React.useState(false);
@@ -171,10 +197,15 @@ function ZHQTransfers() {
     setBusy(true);
     try { await API.generateTransfersForIncome(lastIncome.id); refresh(); } finally { setBusy(false); }
   }
+  async function cancel(t) {
+    if (typeof t.id !== 'number' || !API.deleteTransferInstance) return;
+    setBusy(true);
+    try { await API.deleteTransferInstance(t.id); refresh(); } finally { setBusy(false); }
+  }
 
   const modal = <ZHQNewTransferModal open={showAdd} onClose={() => setShowAdd(false)} />;
 
-  if (!upcoming.length && !past.length) {
+  if (!upcoming.length && !scheduled.length && !past.length) {
     return (
       <>
         <EmptyState icon="transfers" title="No transfers yet"
@@ -207,7 +238,7 @@ function ZHQTransfers() {
         </div>
       </Card>
 
-      <Tabs options={[{ value: 'upcoming', label: 'Pending', badge: pendingCount || undefined }, { value: 'past', label: 'History' }]} value={tab} onChange={setTab} style={{ flex: 1 }} />
+      <Tabs options={[{ value: 'upcoming', label: 'Pending', badge: pendingCount || undefined }, { value: 'scheduled', label: 'Scheduled', badge: scheduledCount || undefined }, { value: 'past', label: 'History' }]} value={tab} onChange={setTab} style={{ flex: 1 }} />
 
       {tab === 'upcoming' ? (
         upcoming.length ? (
@@ -224,6 +255,24 @@ function ZHQTransfers() {
           </div>
         ) : (
           <EmptyState icon="check" title="Nothing pending" body="Every transfer is done. New ones appear here when income arrives." />
+        )
+      ) : tab === 'scheduled' ? (
+        scheduled.length ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Set for a future date. Each moves to your Pending list and reminds you on its day. You can move one early or cancel it.</span>
+            {scheduled.map((t) => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <ChecklistRow to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon} state="todo" onToggle={() => mark(t, true)} />
+                </div>
+                {typeof t.id === 'number' && API.deleteTransferInstance ? (
+                  <button onClick={() => cancel(t)} disabled={busy} title="Cancel this scheduled transfer" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 6 }}><Icon name="x" size={16} /></button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon="calendar" title="Nothing scheduled" body="Add a transfer with a future date or a repeating schedule and it'll wait here until it's due." />
         )
       ) : (
         past.length ? (

@@ -18,6 +18,7 @@ export interface NotifEvent {
 export const NOTIFICATION_EVENTS: NotifEvent[] = [
   { event: "new_transactions", label: "New transactions", detail: "When new bank activity syncs in from Plaid", audience: "owners" },
   { event: "large_charges", label: "Large charges", detail: "Purchases of about $200 or more", audience: "owners" },
+  { event: "transfers_due", label: "Transfer due", detail: "A scheduled transfer reaches its date", audience: "owners" },
   { event: "member_complete", label: "Member finished categorizing", detail: "When someone finishes reviewing their month", audience: "owners" },
   { event: "member_nudges", label: "Categorize reminders", detail: "Tell a member when they have new transactions to review", audience: "members" },
 ];
@@ -48,6 +49,8 @@ export function prefKeyForType(type: string): string | null {
       return "new_transactions";
     case "large-charge":
       return "large_charges";
+    case "transfer-due":
+      return "transfers_due";
     case "member-complete":
       return "member_complete";
     case "categorize-nudge":

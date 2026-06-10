@@ -75,6 +75,7 @@ function emptyData(): FinanceData {
   d.goals = [];
   d.savingsStats = { totalSaved: 0, totalSavedDisplay: "$0", monthlyContrib: 0, monthlyContribDisplay: "$0", activeCount: 0, onTrackCount: 0 };
   d.upcoming = [];
+  d.scheduledTransfers = [];
   d.past = [];
   d.notifications = [];
   d.notifRules = [];
@@ -474,8 +475,20 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       };
     };
 
+    // A pending transfer is "due" when it has no planned date or its date has
+    // arrived; future-dated ones are "scheduled" and stay off the active
+    // checklist (and out of the banner count) until their day.
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const isDue = (r: (typeof instanceRows)[number]) => {
+      const pd = r.plannedDate as string | null;
+      return !pd || pd.slice(0, 10) <= todayISO;
+    };
     const pendingInstances = instanceRows.filter((r) => r.status === "pending");
-    data.upcoming = pendingInstances.map(mapInstance);
+    const duePending = pendingInstances.filter(isDue);
+    const scheduledPending = pendingInstances.filter((r) => !isDue(r));
+    data.upcoming = duePending.map(mapInstance);
+    data.scheduledTransfers = scheduledPending.map(mapInstance).sort((a, b) => a._t - b._t);
+    data.scheduledCount = scheduledPending.length;
 
     // History = completed/auto instances + detected transfer pairs not already
     // represented by an instance (deduped by the inflow leg id), newest first.
@@ -511,9 +524,10 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       }));
     data.past = [...historyFromInstances, ...historyFromDetected].sort((a, b) => b._t - a._t);
 
-    // Pending banner (derived — count + total $ to move).
-    const pendingTotal = pendingInstances.reduce((sum, r) => sum + n(r.amount), 0);
-    data.transfersPending = pendingInstances.length;
+    // Pending banner (derived — count + total $ to move). Due items only;
+    // scheduled (future-dated) transfers wait until their date.
+    const pendingTotal = duePending.reduce((sum, r) => sum + n(r.amount), 0);
+    data.transfersPending = duePending.length;
     data.transfersPendingTotal = money2(pendingTotal);
     // Scope to the viewer: a member sees only their own + household-wide
     // alerts; owner/partner see owner + household-wide. Newest first (by real

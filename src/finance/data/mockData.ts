@@ -64,6 +64,7 @@ export const MOCK_FINANCE_DATA: any = {
     { to: "Sarah's allowance", from: 'Main Checking', amount: '$400.00', due: 'Due Jun 1', state: 'done', icon: 'wallet' },
     { to: 'Emergency Fund', from: 'Main Checking', amount: '$1,200.00', due: 'Due Jun 1', state: 'todo', icon: 'target' },
   ],
+  scheduledTransfers: [],
 
   past: [
     { to: 'Tithing', from: 'Main Checking', amount: '$540.00', due: 'May 1', state: 'auto', icon: 'dollar' },

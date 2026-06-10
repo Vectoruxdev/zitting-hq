@@ -30,22 +30,40 @@ export async function GET(req: Request) {
     const generated = await runScheduledTransfers(today);
     const reconciled = await reconcilePendingTransfers();
 
-    // One idempotent daily nudge summarizing what's still pending.
+    // Daily nudges: a per-item reminder for each transfer reaching its date
+    // today, plus one idempotent summary of everything DUE (planned date arrived
+    // or none). Future-dated transfers stay quiet until their day.
     let notified = false;
     if (db) {
       const pend = await db
-        .select({ amount: s.transferInstances.amount })
+        .select({ id: s.transferInstances.id, amount: s.transferInstances.amount, plannedDate: s.transferInstances.plannedDate })
         .from(s.transferInstances)
         .where(eq(s.transferInstances.status, "pending"));
-      if (pend.length) {
-        const total = pend.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
+      const dateOf = (p: { plannedDate: unknown }) => (p.plannedDate ? String(p.plannedDate).slice(0, 10) : null);
+      const due = pend.filter((p) => { const d = dateOf(p); return !d || d <= today; });
+      // Per-item: a transfer whose planned date is exactly today.
+      for (const p of pend.filter((p) => dateOf(p) === today)) {
+        const usd = "$" + Math.round(Number(p.amount ?? 0)).toLocaleString("en-US");
+        await createNotification({
+          type: "transfer-due",
+          tone: "warning",
+          icon: "transfers",
+          audience: "owners",
+          title: `Transfer due today · ${usd}`,
+          body: "A scheduled transfer reaches its date today.",
+          linkTo: "transfers",
+          dedupeKey: `transfer-due:${p.id}`,
+        });
+      }
+      if (due.length) {
+        const total = due.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
         const usd = "$" + Math.round(total).toLocaleString("en-US");
         const res = await createNotification({
           type: "transfers",
           tone: "warning",
           icon: "transfers",
           audience: "owners",
-          title: `${pend.length} transfer${pend.length === 1 ? "" : "s"} to make`,
+          title: `${due.length} transfer${due.length === 1 ? "" : "s"} to make`,
           body: `${usd} ready to move across your accounts.`,
           linkTo: "transfers",
           dedupeKey: `transfers:ready:${today}`,
