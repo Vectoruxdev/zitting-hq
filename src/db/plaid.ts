@@ -267,6 +267,24 @@ export async function syncItem(itemId: string) {
     }
   }
 
+  // 4b) Reconcile EVERY linked account's balance to the bank's reported balance
+  // on every sync — not only when new transactions arrived. `accounts.balance`
+  // is the OPENING balance; the displayed balance is opening + the net of the
+  // account's transactions, so we set opening = bankBalance − net. Without this,
+  // a sync that brings no new rows for an account leaves its balance stale and
+  // it drifts away from the bank.
+  for (const p of paRows) {
+    if (!p.accountId) continue;
+    const bankBal = balanceByPlaid.get(p.plaidAccountId);
+    if (bankBal == null) continue;
+    const balRows = await database
+      .select({ a: s.transactions.amount })
+      .from(s.transactions)
+      .where(eq(s.transactions.accountId, p.accountId));
+    const net = balRows.reduce((sum, r) => sum + Number(r.a ?? 0), 0);
+    await database.update(s.accounts).set({ balance: String(bankBal - net) }).where(eq(s.accounts.id, p.accountId));
+  }
+
   // 5) In-app notifications for what just arrived (owners + managing members).
   await emitSyncNotifications(item.institutionName, freshByAccount, ourByPlaid, paRows);
 

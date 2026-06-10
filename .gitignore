@@ -44,3 +44,6 @@ next-env.d.ts
 
 # gstack QA artifacts (local only — screenshots contain real financial data; repo is public)
 .gstack/
+
+# QA screenshots (contain real financial data)
+.qa-screens/
