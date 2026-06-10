@@ -154,7 +154,7 @@ function ZHQBulk() {
 
       {/* selected → assign one category to all */}
       {selected.size > 0 ? (
-        <div style={{ position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 40, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 'var(--radius-lg)', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-pop)' }}>
+        <div style={{ position: 'fixed', left: '50%', bottom: 'calc(20px + var(--bottomnav-h, 0px) + env(safe-area-inset-bottom))', transform: 'translateX(-50%)', zIndex: 55, maxWidth: 'calc(100vw - 24px)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', rowGap: 8, justifyContent: 'center', padding: '12px 16px', borderRadius: 'var(--radius-lg)', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-pop)' }}>
           <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
             {selected.size} merchant{selected.size === 1 ? '' : 's'} · {visible.filter((g) => selected.has(g.key)).reduce((s, g) => s + g.count, 0)} transactions
           </span>
@@ -162,7 +162,7 @@ function ZHQBulk() {
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
         </div>
       ) : undo ? (
-        <div style={{ position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 40, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 'var(--radius-lg)', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-pop)' }}>
+        <div style={{ position: 'fixed', left: '50%', bottom: 'calc(20px + var(--bottomnav-h, 0px) + env(safe-area-inset-bottom))', transform: 'translateX(-50%)', zIndex: 55, maxWidth: 'calc(100vw - 24px)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', rowGap: 8, justifyContent: 'center', padding: '12px 16px', borderRadius: 'var(--radius-lg)', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-pop)' }}>
           <Icon name="check" size={16} style={{ color: 'var(--accent)' }} />
           <span style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>Categorized {undo.count} transaction{undo.count === 1 ? '' : 's'}{undo.label ? ` · ${undo.label}` : ''}</span>
           <Button variant="ghost" size="sm" disabled={busy} onClick={doUndo}>Undo</Button>

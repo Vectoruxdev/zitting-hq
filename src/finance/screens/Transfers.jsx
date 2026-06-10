@@ -266,7 +266,7 @@ function ZHQTransfers() {
                   <ChecklistRow to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon} state="todo" onToggle={() => mark(t, true)} />
                 </div>
                 {typeof t.id === 'number' && API.deleteTransferInstance ? (
-                  <button onClick={() => cancel(t)} disabled={busy} title="Cancel this scheduled transfer" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 6 }}><Icon name="x" size={16} /></button>
+                  <button onClick={() => cancel(t)} disabled={busy} title="Cancel this scheduled transfer" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 }}><Icon name="x" size={16} /></button>
                 ) : null}
               </div>
             ))}

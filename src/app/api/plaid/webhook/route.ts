@@ -35,11 +35,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
-  // Confirm the item is one of ours before doing any work.
-  const [item] = await db.select({ id: s.plaidItems.id }).from(s.plaidItems).where(eq(s.plaidItems.itemId, item_id));
-  if (!item) return NextResponse.json({ ok: true, unknown: true });
-
   try {
+    // Confirm the item is one of ours before doing any work. (Inside the try so
+    // a transient DB error acks 200 instead of 500-ing into a Plaid retry storm.)
+    const [item] = await db.select({ id: s.plaidItems.id }).from(s.plaidItems).where(eq(s.plaidItems.itemId, item_id));
+    if (!item) return NextResponse.json({ ok: true, unknown: true });
     const res = await syncItem(item_id);
     return NextResponse.json({ ok: true, ...res });
   } catch (e) {

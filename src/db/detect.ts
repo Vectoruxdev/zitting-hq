@@ -75,7 +75,7 @@ export function detectRecurring(txns: DetectTxn[], now: Date = new Date()): Dete
   const out: { bill: DetectedBill; nextTime: number }[] = [];
   for (const [key, list] of groups) {
     if (list.length < 2) continue;
-    const sorted = [...list].sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
+    const sorted = [...list].sort((a, b) => new Date(a.date! + "T00:00:00").getTime() - new Date(b.date! + "T00:00:00").getTime());
     const times = sorted.map((t) => new Date(t.date! + "T00:00:00").getTime());
     const gaps: number[] = [];
     for (let i = 1; i < times.length; i++) gaps.push((times[i] - times[i - 1]) / DAY);
@@ -154,7 +154,7 @@ export function detectIncomeStreams(txns: DetectTxn[], now: Date = new Date()): 
   const out: { stream: DetectedStream; lastTime: number }[] = [];
   for (const [key, list] of groups) {
     if (list.length < 2) continue;
-    const sorted = [...list].sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
+    const sorted = [...list].sort((a, b) => new Date(a.date! + "T00:00:00").getTime() - new Date(b.date! + "T00:00:00").getTime());
     const times = sorted.map((t) => new Date(t.date! + "T00:00:00").getTime());
     const gaps: number[] = [];
     for (let i = 1; i < times.length; i++) gaps.push((times[i] - times[i - 1]) / DAY);

@@ -16,6 +16,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { DS } from "./ds";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MOCK_FINANCE_DATA } from "./data/mockData";
 import { signOut } from "@/app/login/actions";
 import * as ZHQApi from "@/app/finance/actions";
@@ -169,7 +170,7 @@ export default function FinanceApp({
       <>
         {splash}
         <div className="zhq-member-canvas">
-          {Spendable ? <Spendable /> : null}
+          <ErrorBoundary label="member">{Spendable ? <Spendable /> : null}</ErrorBoundary>
           <div style={{ position: "fixed", top: 20, left: 20 }}>
             {isMember ? (
               <Button
@@ -223,7 +224,9 @@ export default function FinanceApp({
           <ScreenSkeleton />
         ) : (
           <div key={`${route}:${dataVersion}`} className="zt-enter">
-            {r.render(navigate)}
+            <ErrorBoundary key={route} label={route} onReset={() => setDataVersion((v) => v + 1)}>
+              {r.render(navigate)}
+            </ErrorBoundary>
           </div>
         )}
       </ShellC>

@@ -94,7 +94,7 @@ function ZHQOverview({ onNavigate }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
         <div>
           <div className="zt-eyebrow" style={{ marginBottom: 7 }}>{dateStr}</div>
-          <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{greeting}, {user.name || 'there'}</h2>
+          <h2 style={{ fontSize: 'clamp(20px, 6vw, 26px)', fontWeight: 600, letterSpacing: '-0.025em', color: 'var(--text-primary)' }}>{greeting}, {user.name || 'there'}</h2>
         </div>
         <Button variant="primary" iconLeft={<Icon name="arrowDown" size={16} />} style={{ flex: 'none' }} onClick={() => onNavigate('import')}>Import</Button>
       </div>
@@ -185,7 +185,7 @@ function ZHQOverview({ onNavigate }) {
 
       {/* Budgets + upcoming transfers (only if present) */}
       {(budgets.length || upcoming.length) ? (
-        <div style={{ display: 'grid', gridTemplateColumns: budgets.length && upcoming.length ? '1fr 1fr' : '1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: budgets.length && upcoming.length ? 'var(--grid-2)' : '1fr', gap: 16 }}>
           {budgets.length ? (
             <Card>
               <SectionHeader title="Budgets at a glance" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('budgets')}>See all</Button>} />

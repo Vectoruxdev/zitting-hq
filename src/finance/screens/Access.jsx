@@ -130,9 +130,9 @@ function ZHQAccess() {
 
       <Card padding={6}>
         {members.map((m) => (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: '1px solid var(--border-hairline)' }}>
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', rowGap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border-hairline)' }}>
             <Avatar name={m.name} size="sm" />
-            <div style={{ minWidth: 0 }}>
+            <div style={{ flex: '1 1 150px', minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{m.name}</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{m.email || 'tag-only'}</div>
               {(() => { const mng = managedNames(m.id); return mng.length ? (
@@ -143,16 +143,17 @@ function ZHQAccess() {
                 <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 3 }}>No accounts yet · assign on the Accounts screen</div>
               ) : null); })()}
             </div>
-            <span style={{ flex: 1 }} />
-            {statusBadge(m)}
-            {isOwner ? <MemberAllowanceCell m={m} /> : null}
-            {isOwner ? (
-              <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 132 }} />
-            ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}
-            {isOwner && m.status === 'invited' && m.email ? <Button variant="ghost" size="sm" onClick={() => copyLink(m.email)} disabled={busy}>Invite link</Button> : null}
-            {isOwner && me.email !== m.email ? (
-              <button onClick={() => remove(m)} disabled={busy} title="Remove" className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={16} /></button>
-            ) : null}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {statusBadge(m)}
+              {isOwner ? <MemberAllowanceCell m={m} /> : null}
+              {isOwner ? (
+                <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 124 }} />
+              ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}
+              {isOwner && m.status === 'invited' && m.email ? <Button variant="ghost" size="sm" onClick={() => copyLink(m.email)} disabled={busy}>Invite link</Button> : null}
+              {isOwner && me.email !== m.email ? (
+                <button onClick={() => remove(m)} disabled={busy} title="Remove" className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={16} /></button>
+              ) : null}
+            </div>
           </div>
         ))}
         {!members.length ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>No people yet.</div> : null}

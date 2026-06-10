@@ -207,7 +207,7 @@ function ZHQTransactions({ onNavigate }) {
 
       {/* bulk bar */}
       {selected.size > 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-md)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', rowGap: 8, padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-md)' }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>{selected.size} selected</span>
           <span style={{ flex: 1 }} />
           <Button variant="secondary" size="sm" onClick={() => setPicker({ kind: 'category', ids })} disabled={busy}>Set category</Button>

@@ -109,7 +109,7 @@ function ZHQLearned() {
                   {m.alts && m.alts.length ? ` · also seen as ${m.alts.map((a) => `${a.category} (${a.count})`).join(', ')}` : ''}
                 </div>
               </div>
-              <button onClick={() => forget(m.key)} disabled={busy} title="Forget this merchant" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 6 }}>
+              <button onClick={() => forget(m.key)} disabled={busy} title="Forget this merchant" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 }}>
                 <Icon name="x" size={16} />
               </button>
             </div>

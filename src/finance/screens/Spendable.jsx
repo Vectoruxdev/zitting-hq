@@ -321,9 +321,9 @@ function ZHQSpendable() {
               {bulkUndo ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'var(--green-glow)', border: '1px solid var(--green-tint)' }}>
                   <Icon name="check" size={16} style={{ color: 'var(--accent)', flex: 'none' }} />
-                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>Categorized {bulkUndo.count}{bulkUndo.label ? ` · ${bulkUndo.label}` : ''}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)' }}>Categorized {bulkUndo.count}{bulkUndo.label ? ` · ${bulkUndo.label}` : ''}</span>
                   <Button variant="ghost" size="sm" disabled={busy === 'bulk'} onClick={undoBulk}>Undo</Button>
-                  <button onClick={() => setBulkSnap(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 2 }}><Icon name="x" size={14} /></button>
+                  <button onClick={() => setBulkSnap(null)} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={14} /></button>
                 </div>
               ) : null}
 
