@@ -100,6 +100,7 @@ function emptyData(): FinanceData {
   d.member = null;
   d.memberHome = null;
   d.allowanceRules = [];
+  d.incomeHistory = {};
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
   d.permissions = null;
   return d;
@@ -448,8 +449,24 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         categoryId: t.categoryId,
         memberId: t.memberId,
         accountId: t.accountId,
+        // Merchant key — lets the drawer look up this source's income history.
+        sourceKey: extractMerchant(t.merchant),
       };
     });
+
+    // Income-over-time history per source (merchant key) — drives the income
+    // trend chart in the transaction drawer. Raw dated points (real ISO dates);
+    // the client buckets them weekly/monthly/yearly/3y/5y and averages.
+    const incomeHistory: Record<string, { key: string; name: string; points: { date: string; amount: number }[] }> = {};
+    for (const t of txnRows) {
+      if (!t.income || t.isTransfer || !canSeeAccount(t.accountId)) continue;
+      const iso = t.date as string | null;
+      if (!iso) continue;
+      const key = extractMerchant(t.merchant);
+      const entry = (incomeHistory[key] ||= { key, name: t.merchant, points: [] });
+      entry.points.push({ date: iso, amount: n(t.amount) });
+    }
+    data.incomeHistory = incomeHistory;
 
     // Detected internal transfers between accounts (one row per linked pair,
     // keyed on the outflow/negative leg), newest first — for the Overview

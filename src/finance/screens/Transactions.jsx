@@ -65,6 +65,74 @@ function SplitEditor({ txn, onClose }) {
   );
 }
 
+const TREND_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const TREND_GRAN = [
+  { id: 'weekly', label: 'Weekly', cap: 26, per: 'wk' },
+  { id: 'monthly', label: 'Monthly', cap: 24, per: 'mo' },
+  { id: 'yearly', label: 'Yearly', cap: 12, per: 'yr' },
+  { id: '3y', label: '3-Year', cap: 8, per: '3yr' },
+  { id: '5y', label: '5-Year', cap: 8, per: '5yr' },
+];
+function startOfWeek(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - x.getDay()); return x; }
+function bucketIncome(points, gran) {
+  const buckets = new Map();
+  for (const p of points || []) {
+    const d = new Date(String(p.date) + 'T00:00:00');
+    if (isNaN(d.getTime())) continue;
+    let key, t, label;
+    if (gran === 'weekly') { const s = startOfWeek(d); key = 'w' + s.getTime(); t = s.getTime(); label = `${TREND_MON[s.getMonth()]} ${s.getDate()}`; }
+    else if (gran === 'monthly') { key = `${d.getFullYear()}-${d.getMonth()}`; t = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); label = `${TREND_MON[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`; }
+    else if (gran === 'yearly') { key = `${d.getFullYear()}`; t = new Date(d.getFullYear(), 0, 1).getTime(); label = `${d.getFullYear()}`; }
+    else { const span = gran === '3y' ? 3 : 5; const base = Math.floor(d.getFullYear() / span) * span; key = `${base}`; t = new Date(base, 0, 1).getTime(); label = `${base}–${base + span - 1}`; }
+    const b = buckets.get(key) || { t, label, sum: 0 };
+    b.sum += Number(p.amount) || 0;
+    buckets.set(key, b);
+  }
+  const arr = [...buckets.values()].sort((a, b) => a.t - b.t);
+  const cap = (TREND_GRAN.find((g) => g.id === gran) || {}).cap || 24;
+  const recent = arr.slice(-cap);
+  const sums = recent.map((b) => Math.round(b.sum * 100) / 100);
+  const avg = sums.length ? sums.reduce((s, v) => s + v, 0) / sums.length : 0;
+  // Thin x-labels to ~6 so the axis stays readable.
+  const step = Math.ceil(recent.length / 6) || 1;
+  const labels = recent.map((b, i) => (i % step === 0 || i === recent.length - 1 ? b.label : ''));
+  return { data: sums, labels, avg, count: sums.length };
+}
+function IncomeTrend({ history }) {
+  const { SegmentedControl, AreaChart } = window.ZittingHQDesignSystem_c9e528;
+  const [gran, setGran] = React.useState('monthly');
+  const points = (history && history.points) || [];
+  const { data, labels, avg, count } = React.useMemo(() => bucketIncome(points, gran), [history, gran]);
+  const money = (v) => '$' + Math.round(v).toLocaleString('en-US');
+  const per = (TREND_GRAN.find((g) => g.id === gran) || {}).per;
+  const setByLabel = (lbl) => { const g = TREND_GRAN.find((x) => x.label === lbl); if (g) setGran(g.id); };
+  const curLabel = (TREND_GRAN.find((g) => g.id === gran) || {}).label;
+  return (
+    <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid var(--border-hairline)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span className="zt-eyebrow">Income over time</span>
+        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{count} {count === 1 ? 'period' : 'periods'}</span>
+      </div>
+      <SegmentedControl size="sm" options={TREND_GRAN.map((g) => g.label)} value={curLabel} onChange={setByLabel} />
+      <div style={{ marginTop: 14 }}>
+        {count >= 2 ? (
+          <AreaChart data={data} labels={labels} width={330} height={150} color="var(--positive)" />
+        ) : count === 1 ? (
+          <div className="zt-num" style={{ fontSize: 28, fontWeight: 600, color: 'var(--text-primary)' }}>{money(data[0])}</div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No income history from this source yet.</div>
+        )}
+      </div>
+      {count >= 1 ? (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-hairline)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Average</span>
+          <span className="zt-num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{money(avg)} <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>/ {per}</span></span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTransfer, onUnlink }) {
   const { Icon, IconButton, Tag, Avatar, Badge, Toggle, Button } = window.ZittingHQDesignSystem_c9e528;
   const [splitOpen, setSplitOpen] = React.useState(false);
@@ -145,7 +213,11 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
           ) : null}
         </div>
 
-        <Button variant="secondary" size="sm" full iconLeft={<Icon name="allocations" size={15} />} onClick={() => setSplitOpen(true)}>
+        {txn.income && !txn.isTransfer ? (
+          <IncomeTrend history={(window.ZHQ_DATA && window.ZHQ_DATA.incomeHistory && window.ZHQ_DATA.incomeHistory[txn.sourceKey]) || null} />
+        ) : null}
+
+        <Button variant="secondary" size="sm" full iconLeft={<Icon name="allocations" size={15} />} onClick={() => setSplitOpen(true)} style={{ marginTop: 18 }}>
           {txn.hasSplit ? 'Edit split' : 'Split into categories'}
         </Button>
 
