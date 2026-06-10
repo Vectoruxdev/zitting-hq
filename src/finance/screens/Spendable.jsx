@@ -101,8 +101,11 @@ function ZHQSpendable() {
 
   const [tab, setTab] = React.useState('home');
   const [picker, setPicker] = React.useState(null); // txn id being categorized
-  const [busy, setBusy] = React.useState(null); // txn id mid-action
+  const [groupPicker, setGroupPicker] = React.useState(null); // merchant group being set
+  const [reviewMode, setReviewMode] = React.useState('merchant'); // 'merchant' | 'single'
+  const [busy, setBusy] = React.useState(null); // txn id (or 'bulk') mid-action
   const [acctFilter, setAcctFilter] = React.useState('all'); // Activity account filter
+  const [bulkUndo, setBulkUndo] = React.useState(() => (typeof window !== 'undefined' ? window.__ZHQ_BULK_UNDO || null : null));
 
   async function run(id, fn) {
     setBusy(id);
@@ -112,6 +115,32 @@ function ZHQSpendable() {
   const pickCategory = (id, categoryId) => run(id, () => API.updateTransaction(id, { categoryId }, { learn: true }));
   const confirmOne = (id) => run(id, () => API.confirmTransactions([id]));
   const markTransfer = (id) => run(id, () => API.markTransfer(id, true));
+
+  // --- bulk (by-merchant) categorize, scoped to the member's accounts ---
+  const setBulkSnap = (snap) => { if (typeof window !== 'undefined') window.__ZHQ_BULK_UNDO = snap; setBulkUndo(snap); };
+  async function applyGroups(groups, label) {
+    if (!groups.length || !API.applyBulkCategories) return;
+    setBusy('bulk');
+    try {
+      const res = await API.applyBulkCategories(groups.map((g) => ({ ids: g.ids, categoryId: g.categoryId })));
+      const count = groups.reduce((s, g) => s + g.ids.length, 0);
+      setBulkSnap(res && res.undo ? { pairs: res.undo, count, label } : null);
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+    } finally { setBusy(null); }
+  }
+  const acceptGroup = (g) => applyGroups([{ ids: g.ids, categoryId: g.suggestion.categoryId }], `${g.merchant} → ${g.suggestion.name}`);
+  const setGroup = (g, categoryId) => applyGroups([{ ids: g.ids, categoryId }], g.merchant);
+  async function undoBulk() {
+    if (!bulkUndo || !API.restoreTransactionCategories) return;
+    setBusy('bulk');
+    try { await API.restoreTransactionCategories(bulkUndo.pairs); setBulkSnap(null); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); }
+    finally { setBusy(null); }
+  }
+  const bulkGroups = (D.bulkGroups || []).filter((g) => g.unreviewed > 0 || g.uncategorized > 0);
+  const acceptAllGroups = () => {
+    const t = bulkGroups.filter((g) => g.suggestion && g.suggestion.confidence >= 0.7);
+    applyGroups(t.map((g) => ({ ids: g.ids, categoryId: g.suggestion.categoryId })), `${t.length} suggestions`);
+  };
 
   const accounts = (H && H.managedAccounts) || [];
   const queue = (H && H.reviewQueue) || [];
@@ -287,8 +316,17 @@ function ZHQSpendable() {
               )}
             </>
           ) : (
-            /* ========================= CATEGORIZE ========================= */
+            /* =========================== REVIEW =========================== */
             <>
+              {bulkUndo ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'var(--green-glow)', border: '1px solid var(--green-tint)' }}>
+                  <Icon name="check" size={16} style={{ color: 'var(--accent)', flex: 'none' }} />
+                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>Categorized {bulkUndo.count}{bulkUndo.label ? ` · ${bulkUndo.label}` : ''}</span>
+                  <Button variant="ghost" size="sm" disabled={busy === 'bulk'} onClick={undoBulk}>Undo</Button>
+                  <button onClick={() => setBulkSnap(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 2 }}><Icon name="x" size={14} /></button>
+                </div>
+              ) : null}
+
               {queue.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '50px 10px' }}>
                   <span style={{ display: 'inline-flex', width: 60, height: 60, borderRadius: 999, placeItems: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 16 }}><Icon name="check" size={28} /></span>
@@ -297,17 +335,63 @@ function ZHQSpendable() {
                 </div>
               ) : (
                 <>
-                  <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-                    <b style={{ color: 'var(--text-primary)' }}>{queue.length}</b> transaction{queue.length === 1 ? '' : 's'} to review. Tap the category to change it, then Confirm.
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {queue.map((t) => (
-                      <MemberTxnRow key={t.id} t={t} review busy={busy === t.id}
-                        onEditCat={() => setPicker(t.id)}
-                        onConfirm={() => confirmOne(t.id)}
-                        onTransfer={() => markTransfer(t.id)} />
-                    ))}
-                  </div>
+                  {/* mode toggle: bulk by merchant vs one at a time */}
+                  {bulkGroups.length ? (
+                    <div style={{ display: 'flex', gap: 6, padding: 4, background: 'var(--surface-sunken)', borderRadius: 999, marginBottom: 14 }}>
+                      {[{ k: 'merchant', l: 'By merchant' }, { k: 'single', l: 'One at a time' }].map((m) => (
+                        <button key={m.k} onClick={() => setReviewMode(m.k)} style={{ flex: 1, padding: '9px 0', borderRadius: 999, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 600, background: reviewMode === m.k ? 'var(--surface-card)' : 'transparent', color: reviewMode === m.k ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{m.l}</button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {reviewMode === 'merchant' && bulkGroups.length ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <div style={{ flex: 1, fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          <b style={{ color: 'var(--text-primary)' }}>{bulkGroups.length}</b> merchant{bulkGroups.length === 1 ? '' : 's'} to review. Set a whole merchant at once.
+                        </div>
+                        {bulkGroups.filter((g) => g.suggestion && g.suggestion.confidence >= 0.7).length ? (
+                          <Button variant="primary" size="sm" disabled={busy === 'bulk'} onClick={acceptAllGroups}>Accept all</Button>
+                        ) : null}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {bulkGroups.map((g) => (
+                          <div key={g.key} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 14, opacity: busy === 'bulk' ? 0.5 : 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.merchant}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{g.count} txn{g.count === 1 ? '' : 's'} · {g.spendLabel}{g.dateRange ? ` · ${g.dateRange}` : ''}</div>
+                              </div>
+                              <Badge tone="neutral" size="sm">{g.count}</Badge>
+                            </div>
+                            {g.suggestion ? (
+                              <button onClick={() => acceptGroup(g)} disabled={busy === 'bulk'} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: `1px solid ${g.suggestion.confidence >= 0.7 ? 'var(--green-tint)' : 'var(--border-hairline)'}`, background: 'var(--surface-sunken)', cursor: 'pointer', font: 'inherit', marginBottom: 8 }}>
+                                <span style={{ width: 10, height: 10, borderRadius: 999, background: g.suggestion.color, flex: 'none' }} />
+                                <span style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Set all to {g.suggestion.name}</span>
+                                <span className="zt-num" style={{ fontSize: 12, color: g.suggestion.confidence >= 0.7 ? 'var(--accent)' : 'var(--text-tertiary)' }}>{g.suggestion.confidencePct}%</span>
+                                <Icon name="check" size={16} style={{ color: 'var(--accent)' }} />
+                              </button>
+                            ) : null}
+                            <Button variant={g.suggestion ? 'ghost' : 'primary'} size="md" style={{ width: '100%' }} disabled={busy === 'bulk'} onClick={() => setGroupPicker(g)}>{g.suggestion ? 'Choose another category' : `Categorize ${g.count}`}</Button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+                        <b style={{ color: 'var(--text-primary)' }}>{queue.length}</b> transaction{queue.length === 1 ? '' : 's'} to review. Tap the category to change it, then Confirm.
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {queue.map((t) => (
+                          <MemberTxnRow key={t.id} t={t} review busy={busy === t.id}
+                            onEditCat={() => setPicker(t.id)}
+                            onConfirm={() => confirmOne(t.id)}
+                            onTransfer={() => markTransfer(t.id)} />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
@@ -333,6 +417,12 @@ function ZHQSpendable() {
         <MemberCategoryPicker
           onClose={() => setPicker(null)}
           onPick={(categoryId) => { const id = picker; setPicker(null); pickCategory(id, categoryId); }}
+        />
+      ) : null}
+      {groupPicker ? (
+        <MemberCategoryPicker
+          onClose={() => setGroupPicker(null)}
+          onPick={(categoryId) => { const g = groupPicker; setGroupPicker(null); setGroup(g, categoryId); }}
         />
       ) : null}
     </ZHQPhoneFrame>
