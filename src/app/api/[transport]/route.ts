@@ -75,9 +75,10 @@ const baseHandler = createMcpHandler(
           search: z.string().optional().describe("case-insensitive merchant substring"),
           month: z.string().optional().describe("YYYY-MM"),
           limit: z.number().int().min(1).max(500).optional(),
+          offset: z.number().int().min(0).optional().describe("skip this many (newest-first) for pagination"),
         },
       },
-      async ({ accountId, categoryId, memberId, search, month, limit }) => {
+      async ({ accountId, categoryId, memberId, search, month, limit, offset }) => {
         try {
           const d = await getFinanceData();
           const q = (search || "").toLowerCase();
@@ -90,10 +91,11 @@ const baseHandler = createMcpHandler(
             if (month && !String(t.isoDate || t.date || "").startsWith(month)) return false;
             return true;
           });
+          const start = offset ?? 0;
           const out = rows
             .slice()
             .reverse()
-            .slice(0, limit ?? 50)
+            .slice(start, start + (limit ?? 50))
             .map((t) => ({
               id: t.id, date: t.date, merchant: t.merchant, amount: t.amt, category: t.cat,
               categoryId: t.categoryId, who: t.who, memberId: t.memberId, account: t.account,
