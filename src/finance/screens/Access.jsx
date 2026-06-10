@@ -102,6 +102,14 @@ function ZHQAccess() {
     if (!window.confirm(`Remove ${m.name}? Their transactions move to Household and their login (if any) is revoked.`)) return;
     setBusy(true); try { await API.removeMember(m.id); refresh(); } finally { setBusy(false); }
   }
+  async function sendInvite(email) {
+    if (!API.sendInviteEmail) return;
+    setBusy(true);
+    try {
+      const res = await API.sendInviteEmail(email);
+      setLinkModal({ email, sent: !!res?.ok, error: res?.ok ? null : (res?.error || 'Could not send the invite.'), link: res?.link || null });
+    } finally { setBusy(false); }
+  }
   async function copyLink(email) {
     setBusy(true);
     try {
@@ -149,7 +157,7 @@ function ZHQAccess() {
               {isOwner ? (
                 <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 124 }} />
               ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}
-              {isOwner && m.status === 'invited' && m.email ? <Button variant="ghost" size="sm" onClick={() => copyLink(m.email)} disabled={busy}>Invite link</Button> : null}
+              {isOwner && m.email && me.email !== m.email ? <Button variant="secondary" size="sm" iconLeft={<Icon name="bell" size={14} />} onClick={() => sendInvite(m.email)} disabled={busy}>Send invite</Button> : null}
               {isOwner && me.email !== m.email ? (
                 <button onClick={() => remove(m)} disabled={busy} title="Remove" className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={16} /></button>
               ) : null}
@@ -167,15 +175,23 @@ function ZHQAccess() {
         if (res && res.email && res.inviteError) setLinkModal({ email: res.email, error: `${res.inviteError} You can still send an invite link.` });
       }} />
 
-      <Modal open={!!linkModal} onClose={() => setLinkModal(null)} title="Invitation link" width={480}>
-        {linkModal?.link ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text-secondary)' }}>Copied to your clipboard. Send this to {linkModal.email} — it lets them set a password and sign in.</p>
-            <div style={{ wordBreak: 'break-all', fontSize: 12, padding: '10px 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}>{linkModal.link}</div>
-          </div>
-        ) : (
-          <p style={{ margin: 0, fontSize: 13.5, color: 'var(--negative)' }}>{linkModal?.error}</p>
-        )}
+      <Modal open={!!linkModal} onClose={() => setLinkModal(null)} title={linkModal?.sent ? 'Invite sent' : 'Invite'} width={480}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {linkModal?.sent ? (
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text-secondary)' }}>
+              ✅ Emailed an invite to <b style={{ color: 'var(--text-primary)' }}>{linkModal.email}</b>. They'll get a link to set their password — tell them to check spam if it's slow.
+            </p>
+          ) : linkModal?.error ? (
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--negative)' }}>{linkModal.error}</p>
+          ) : null}
+          {linkModal?.link ? (
+            <>
+              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-tertiary)' }}>{linkModal?.sent ? 'Or copy the link and send it yourself:' : 'Copy this link and send it to them:'}</p>
+              <div style={{ wordBreak: 'break-all', fontSize: 12, padding: '10px 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}>{linkModal.link}</div>
+              <Button variant="secondary" size="sm" onClick={() => { try { navigator.clipboard.writeText(linkModal.link); } catch { /* clipboard blocked */ } }}>Copy link</Button>
+            </>
+          ) : null}
+        </div>
       </Modal>
     </div>
   );
