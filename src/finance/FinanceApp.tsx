@@ -102,7 +102,16 @@ export default function FinanceApp({
 
   if (typeof window !== "undefined") {
     w.ZHQ_REFRESH = () => router.refresh();
+    w.ZHQ_LOGOUT = () => signOut();
   }
+
+  // Register the service worker on load (not just when enabling push) so the app
+  // is installable as a PWA ("Add to Home Screen") for everyone.
+  React.useEffect(() => {
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }, []);
 
   React.useEffect(() => {
     if (typeof window !== "undefined") {
@@ -171,17 +180,10 @@ export default function FinanceApp({
         {splash}
         <div className="zhq-member-canvas">
           <ErrorBoundary label="member">{Spendable ? <Spendable /> : null}</ErrorBoundary>
-          <div style={{ position: "fixed", top: 20, left: 20 }}>
-            {isMember ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => signOut()}
-                iconLeft={<Icon name="logout" size={15} />}
-              >
-                Log out
-              </Button>
-            ) : (
+          {/* Owner previewing a member: a back button. The actual member's Log
+              out now lives in their in-app account menu (Spendable header). */}
+          {!isMember ? (
+            <div style={{ position: "fixed", top: 20, left: 20, zIndex: 60 }}>
               <Button
                 variant="secondary"
                 size="sm"
@@ -190,8 +192,8 @@ export default function FinanceApp({
               >
                 Owner view
               </Button>
-            )}
-          </div>
+            </div>
+          ) : null}
         </div>
       </>
     );

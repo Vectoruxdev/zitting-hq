@@ -92,7 +92,7 @@ function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer }) {
 }
 
 function ZHQSpendable() {
-  const { Icon, Avatar, ProgressBar, Button, Badge } = window.ZittingHQDesignSystem_c9e528;
+  const { Icon, Avatar, ProgressBar, Button, Badge, Modal } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA || {};
   const user = window.ZHQ_USER || {};
   const API = window.ZHQ_API || {};
@@ -100,6 +100,7 @@ function ZHQSpendable() {
   const name = (H && H.name) || user.name || 'there';
 
   const [tab, setTab] = React.useState('home');
+  const [acctOpen, setAcctOpen] = React.useState(false); // account menu (Log out lives here)
   const [picker, setPicker] = React.useState(null); // txn id being categorized
   const [groupPicker, setGroupPicker] = React.useState(null); // merchant group being set
   const [reviewMode, setReviewMode] = React.useState('merchant'); // 'merchant' | 'single'
@@ -165,15 +166,16 @@ function ZHQSpendable() {
   return (
     <ZHQPhoneFrame>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '8px 18px 24px' }}>
-          {/* header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 18px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 'max(8px, env(safe-area-inset-top)) 18px 24px' }}>
+          {/* header — tap to open the account menu (Log out lives there) */}
+          <button onClick={() => setAcctOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 18px', width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
             <Avatar name={name} size="md" />
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Welcome back</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{name}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
             </div>
-          </div>
+            <span style={{ flex: 'none', width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', color: 'var(--text-tertiary)' }}><Icon name="chevronDown" size={18} /></span>
+          </button>
 
           {!H ? (
             <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 14, lineHeight: 1.6 }}>
@@ -424,6 +426,21 @@ function ZHQSpendable() {
           onClose={() => setGroupPicker(null)}
           onPick={(categoryId) => { const g = groupPicker; setGroupPicker(null); setGroup(g, categoryId); }}
         />
+      ) : null}
+      {acctOpen && Modal ? (
+        <Modal open onClose={() => setAcctOpen(false)} title="Account" width={340}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Avatar name={name} size="md" />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{({ owner: 'Owner', partner: 'Partner', member: 'Member' })[user.role] || 'Member'}</div>
+              </div>
+            </div>
+            {window.ZHQPushPrompt ? <window.ZHQPushPrompt compact /> : null}
+            <Button variant="secondary" size="md" style={{ width: '100%' }} iconLeft={<Icon name="logout" size={16} />} onClick={() => { if (window.ZHQ_LOGOUT) window.ZHQ_LOGOUT(); }}>Log out</Button>
+          </div>
+        </Modal>
       ) : null}
     </ZHQPhoneFrame>
   );

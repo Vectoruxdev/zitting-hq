@@ -101,7 +101,7 @@ body {
     overflow-x: hidden; /* stray wide rows clip instead of breaking the page;
                            tables keep their own internal horizontal scroll */
   }
-  .zhq-topbar { padding: 0 16px !important; gap: 10px !important; }
+  .zhq-topbar { padding: env(safe-area-inset-top) 16px 0 !important; gap: 10px !important; }
   .zhq-member-canvas { padding: 0; gap: 0; align-items: stretch; }
   /* On a real phone the iPhone mockup frame is full-bleed; the fake status bar
      and home indicator give way to the device's own. */

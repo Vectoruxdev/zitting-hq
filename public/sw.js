@@ -2,6 +2,12 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
+// A fetch handler is REQUIRED for the app to be installable as a PWA (Android
+// Chrome won't offer "Add to Home Screen" without one). We don't cache app data
+// (it's authenticated + live), so this is a pass-through that lets the network
+// handle every request normally.
+self.addEventListener("fetch", () => {});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {

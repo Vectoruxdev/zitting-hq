@@ -31,26 +31,36 @@ export default function SetPasswordPage() {
       setStatus("noConfig");
       return;
     }
-    let settled = false;
-    sb.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        settled = true;
-        setStatus("ready");
+    let cancelled = false;
+    // Establish a session from whatever shape the link arrives in:
+    //  - ?token_hash=…&type=recovery|invite  → verifyOtp (the current default)
+    //  - ?code=…                              → exchangeCodeForSession
+    //  - #access_token=…                      → auto-handled by detectSessionInUrl
+    // Relying on getSession() alone left valid links looking "expired" instantly.
+    async function establish() {
+      try {
+        const url = new URL(window.location.href);
+        const tokenHash = url.searchParams.get("token_hash");
+        const type = url.searchParams.get("type");
+        const code = url.searchParams.get("code");
+        if (tokenHash && type) {
+          await sb!.auth.verifyOtp({ token_hash: tokenHash, type: type as "recovery" | "invite" | "signup" | "magiclink" | "email" });
+        } else if (code) {
+          await sb!.auth.exchangeCodeForSession(code);
+        }
+      } catch {
+        /* fall through — getSession decides below */
       }
-    });
+      const { data } = await sb!.auth.getSession();
+      if (cancelled) return;
+      setStatus(data.session ? "ready" : "noSession");
+    }
+    establish();
     const { data: sub } = sb.auth.onAuthStateChange((_e, session) => {
-      if (session) {
-        settled = true;
-        setStatus("ready");
-      }
+      if (session && !cancelled) setStatus("ready");
     });
-    // Give the client ~1.5s to pick the session out of the URL before concluding
-    // the link is bad — avoids flashing "expired" while the token is processed.
-    const t = setTimeout(() => {
-      if (!settled) setStatus((s) => (s === "loading" ? "noSession" : s));
-    }, 1500);
     return () => {
-      clearTimeout(t);
+      cancelled = true;
       sub.subscription.unsubscribe();
     };
   }, []);

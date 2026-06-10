@@ -62,9 +62,9 @@ function ZHQTopbar({ title, onNavigate }) {
   };
   return (
     <header className="zhq-topbar" style={{
-      height: 'var(--topbar-h)', flex: 'none',
+      height: 'calc(var(--topbar-h) + env(safe-area-inset-top))', flex: 'none', boxSizing: 'border-box',
       display: 'flex', alignItems: 'center', gap: 16,
-      padding: '0 26px', borderBottom: '1px solid var(--border-hairline)',
+      padding: 'env(safe-area-inset-top) 26px 0', borderBottom: '1px solid var(--border-hairline)',
     }}>
       <h1 style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
       <div style={{ flex: 1 }} />
