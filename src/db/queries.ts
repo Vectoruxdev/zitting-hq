@@ -12,7 +12,8 @@
  * when no DB is configured, we fall back to the full curated mock so the app
  * (and pre-migration deploys) never break.
  */
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
+import { isEmailConfigured } from "@/lib/email";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
 import { mergePrefs } from "./notifyPrefs";
@@ -74,6 +75,7 @@ function emptyData(): FinanceData {
   d.bills = [];
   d.goals = [];
   d.savingsStats = { totalSaved: 0, totalSavedDisplay: "$0", monthlyContrib: 0, monthlyContribDisplay: "$0", activeCount: 0, onTrackCount: 0 };
+  d.digest = { cadence: "monthly", enabled: true, ownerEnabled: true, membersEnabled: true, nextRunLabel: null, emailConfigured: false };
   d.upcoming = [];
   d.scheduledTransfers = [];
   d.past = [];
@@ -157,6 +159,13 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
       .from(s.familyMembers)
       .catch(() => [] as { id: string; allowance: string | null }[]);
+    // Read digest opt-in separately (new column) so a pre-migration DB doesn't
+    // break the core member read.
+    const digestOptInRows = await db
+      .select({ id: s.familyMembers.id, digestOptIn: s.familyMembers.digestOptIn })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; digestOptIn: boolean }[]);
+    const [digestRow] = await db.select().from(s.digestSettings).where(eq(s.digestSettings.id, "household")).catch(() => []);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -176,6 +185,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
 
     // --- account ↔ member assignment (who's "in charge of" each account) ---
     const allowanceById = new Map(allowanceRows.map((r) => [r.id, n(r.allowance)]));
+    const digestOptInById = new Map(digestOptInRows.map((r) => [r.id, r.digestOptIn]));
     const managersByAccount = new Map<string, { id: string; name: string; color: string | null }[]>();
     const accountsByMember = new Map<string, Set<string>>();
     for (const am of acctMemberRows) {
@@ -211,7 +221,23 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       status: m.status,
       color: m.color,
       allowance: allowanceById.get(m.id) ?? 0,
+      digestOptIn: digestOptInById.get(m.id) ?? true,
     }));
+
+    // --- email digest settings (for the Notifications settings card) ---
+    {
+      const cadence = digestRow?.cadence ?? "monthly";
+      const nrd = digestRow?.nextRunDate as string | null;
+      const nrDt = nrd ? parseDate(nrd) : null;
+      data.digest = {
+        cadence,
+        enabled: digestRow?.enabled ?? true,
+        ownerEnabled: digestRow?.ownerEnabled ?? true,
+        membersEnabled: digestRow?.membersEnabled ?? true,
+        nextRunLabel: nrDt ? `Next · ${dayLabel(nrDt)}` : null,
+        emailConfigured: isEmailConfigured,
+      };
+    }
     data.catRules = catRuleRows.map((r) => ({
       id: r.id,
       matchType: r.matchType,
@@ -737,21 +763,26 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const amt = n(t.amount);
       const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
       if (cat?.kind === "transfer") continue;
-      if (t.income || amt > 0) {
+      if (t.income) {
+        // Genuine income only (a positive amount that ISN'T flagged income is a
+        // refund/reimbursement — handled below as negative spend, not income).
         monthIncome += Math.abs(amt);
       } else {
-        const spend = Math.abs(amt);
-        monthSpending += spend;
-        if (t.memberId) memberTotals.set(t.memberId, (memberTotals.get(t.memberId) || 0) + spend);
+        // net: +spend for a charge (amt<0), −spend for a refund (amt>0), so a
+        // return nets DOWN spending instead of inflating income.
+        const net = -amt;
+        monthSpending += net;
+        if (t.memberId) memberTotals.set(t.memberId, (memberTotals.get(t.memberId) || 0) + net);
         const splits = splitsByTxn.get(t.id);
         if (t.hasSplit && splits?.length) {
+          const sign = net >= 0 ? 1 : -1;
           for (const sp of splits) {
             const key = sp.categoryId || "uncategorized";
-            catTotals.set(key, (catTotals.get(key) || 0) + Math.abs(n(sp.amount)));
+            catTotals.set(key, (catTotals.get(key) || 0) + Math.abs(n(sp.amount)) * sign);
           }
         } else {
           const key = t.categoryId || "uncategorized";
-          catTotals.set(key, (catTotals.get(key) || 0) + spend);
+          catTotals.set(key, (catTotals.get(key) || 0) + net);
         }
       }
     }
@@ -859,8 +890,10 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
       if (cat?.kind === "transfer") continue;
       const amt = n(t.amount);
-      if (t.income || amt > 0) b.inc += Math.abs(amt);
-      else b.sp += Math.abs(amt);
+      // income only for flagged income; non-income positives are refunds that
+      // net down spending (consistent with the stats loop above).
+      if (t.income) b.inc += Math.abs(amt);
+      else b.sp += -amt;
     }
     for (const v of bucket.values()) {
       incomeArr.push(Math.round(v.inc));

@@ -1,4 +1,85 @@
 import React from 'react';
+
+/* Email digests — owner overview + per-member spending summaries, on a shared
+ * weekly/biweekly/monthly cadence. Owner-gated writes via window.ZHQ_API. */
+function ZHQEmailDigestCard() {
+  const { Card, Button, Icon, Toggle, SegmentedControl } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA || {};
+  const API = window.ZHQ_API || {};
+  const dg = D.digest || {};
+  const members = (D.members || []).filter((m) => m.role === 'member');
+  const [testState, setTestState] = React.useState(null); // null | sending | sent | skipped | error
+
+  const update = (patch) => { if (API.updateDigestSettings) API.updateDigestSettings(patch).then(() => window.ZHQ_REFRESH && window.ZHQ_REFRESH()); };
+  const toggleMember = (id, on) => { if (API.setMemberDigestOptIn) API.setMemberDigestOptIn(id, on).then(() => window.ZHQ_REFRESH && window.ZHQ_REFRESH()); };
+  const sendTest = async () => {
+    if (!API.sendDigestTest) return;
+    setTestState('sending');
+    try { const r = await API.sendDigestTest(); setTestState(r && r.ok ? 'sent' : (r && r.skipped ? 'skipped' : 'error')); }
+    catch { setTestState('error'); }
+  };
+  const cadenceOpts = [{ value: 'weekly', label: 'Weekly' }, { value: 'biweekly', label: 'Biweekly' }, { value: 'monthly', label: 'Monthly' }];
+  const on = dg.enabled !== false;
+
+  return (
+    <Card padding={20}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>Email digests</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 2 }}>A spending recap by email — a household overview for you, a personal summary for each member.</div>
+        </div>
+        <Toggle checked={on} onChange={(v) => update({ enabled: v })} />
+      </div>
+
+      {on ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
+          {!dg.emailConfigured ? (
+            <div style={{ fontSize: 12.5, color: 'var(--warning)', background: 'var(--warning-soft)', borderRadius: 'var(--radius-sm)', padding: '9px 12px', lineHeight: 1.5 }}>
+              Connect Resend (set <span className="zt-num">RESEND_API_KEY</span> + verify your sending domain) to start delivering these.
+            </div>
+          ) : null}
+
+          <div>
+            <div className="zt-eyebrow" style={{ marginBottom: 7 }}>How often</div>
+            <SegmentedControl full value={dg.cadence || 'monthly'} onChange={(v) => update({ cadence: v })} options={cadenceOpts} />
+            {dg.nextRunLabel ? <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>{dg.nextRunLabel}</div> : null}
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13.5, color: 'var(--text-secondary)' }}>
+            Email me the household overview
+            <Toggle checked={dg.ownerEnabled !== false} onChange={(v) => update({ ownerEnabled: v })} size="sm" />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13.5, color: 'var(--text-secondary)' }}>
+            Email members their own summaries
+            <Toggle checked={dg.membersEnabled !== false} onChange={(v) => update({ membersEnabled: v })} size="sm" />
+          </label>
+
+          {dg.membersEnabled !== false && members.length ? (
+            <div>
+              <div className="zt-eyebrow" style={{ marginBottom: 4 }}>Members</div>
+              {members.map((m, i) => (
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: i === members.length - 1 ? 'none' : '1px solid var(--border-hairline)' }}>
+                  <span style={{ fontSize: 13.5, color: 'var(--text-primary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {m.name}{m.email ? <span style={{ color: 'var(--text-tertiary)' }}> · {m.email}</span> : <span style={{ color: 'var(--warning)' }}> · no email</span>}
+                  </span>
+                  <Toggle checked={m.digestOptIn !== false} onChange={(v) => toggleMember(m.id, v)} size="sm" disabled={!m.email} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Button variant="secondary" size="sm" iconLeft={<Icon name="bell" size={14} />} onClick={sendTest} disabled={testState === 'sending'}>Send me a test</Button>
+            {testState === 'sent' ? <span style={{ fontSize: 12.5, color: 'var(--accent)' }}>Sent ✓</span> : null}
+            {testState === 'skipped' ? <span style={{ fontSize: 12.5, color: 'var(--warning)' }}>Email not configured yet</span> : null}
+            {testState === 'error' ? <span style={{ fontSize: 12.5, color: 'var(--negative)' }}>Couldn’t send</span> : null}
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 /* Notifications — alert feed + rule settings. */
 function ZHQNotifications({ onNavigate }) {
   const { Card, Button, Icon, Badge, Toggle, Tabs, EmptyState } = window.ZittingHQDesignSystem_c9e528;
@@ -69,7 +150,9 @@ function ZHQNotifications({ onNavigate }) {
         )}
         </>
       ) : (
-        !notifPrefs.length ? (
+        <>
+        <ZHQEmailDigestCard />
+        {!notifPrefs.length ? (
           <EmptyState icon="settings" title="Notification settings" body="Choose which events notify your household and where. Settings appear once notifications are set up." />
         ) : (
         <>
@@ -105,7 +188,8 @@ function ZHQNotifications({ onNavigate }) {
           ))}
         </Card>
         </>
-        )
+        )}
+        </>
       )}
     </div>
   );

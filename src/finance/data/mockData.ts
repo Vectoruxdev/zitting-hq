@@ -160,6 +160,8 @@ export const MOCK_FINANCE_DATA: any = {
   ],
   savingsStats: { totalSaved: 72600, totalSavedDisplay: '$72,600', monthlyContrib: 2450, monthlyContribDisplay: '$2,450', activeCount: 4, onTrackCount: 2 },
 
+  digest: { cadence: 'monthly', enabled: true, ownerEnabled: true, membersEnabled: true, nextRunLabel: 'Next · Jul 1', emailConfigured: false },
+
   // Member "Spendable" home (server-computed live; this is the mock/demo default
   // so the member view renders without a DB). Null in emptyData().
   memberHome: {

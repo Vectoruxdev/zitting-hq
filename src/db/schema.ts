@@ -32,6 +32,7 @@ export const familyMembers = pgTable("family_members", {
   status: text("status").notNull().default("none"), // none | invited | active
   color: text("color"), // avatar tone
   allowance: numeric("allowance", { precision: 14, scale: 2 }), // monthly spending money (owner-set); null = none
+  digestOptIn: boolean("digest_opt_in").notNull().default(true), // receives the email spending digest
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -476,4 +477,35 @@ export const plaidAccounts = pgTable(
     createdAt: timestamp("created_at").defaultNow(),
   },
   (t) => [index("idx_plaid_acct_item").on(t.itemId)]
+);
+
+// ---- Email digests ------------------------------------------------------
+
+/** Single-row household digest config (id always "household"). */
+export const digestSettings = pgTable("digest_settings", {
+  id: text("id").primaryKey().default("household"),
+  cadence: text("cadence").notNull().default("monthly"), // weekly | biweekly | monthly
+  enabled: boolean("enabled").notNull().default(true), // master switch
+  ownerEnabled: boolean("owner_enabled").notNull().default(true), // owner gets the household overview
+  membersEnabled: boolean("members_enabled").notNull().default(true), // members get their summaries
+  anchorDate: date("anchor_date"), // cadence reference
+  nextRunDate: date("next_run_date"), // when the next digest goes out
+  lastRunDate: date("last_run_date"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/** Idempotency + audit: one row per (recipient, period, kind) actually sent. */
+export const digestLog = pgTable(
+  "digest_log",
+  {
+    id: serial("id").primaryKey(),
+    recipientEmail: text("recipient_email").notNull(),
+    kind: text("kind").notNull(), // owner | member
+    memberId: text("member_id"),
+    periodKey: text("period_key").notNull(), // e.g. "2026-06-09:weekly"
+    status: text("status").notNull().default("sent"), // sent | failed
+    error: text("error"),
+    sentAt: timestamp("sent_at").defaultNow(),
+  },
+  (t) => [index("idx_digestlog_period").on(t.recipientEmail, t.periodKey, t.kind)]
 );

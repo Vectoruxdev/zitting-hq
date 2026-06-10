@@ -6,6 +6,7 @@ import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient, SITE_URL } from "@/lib/supabase/admin";
 import * as m from "@/db/mutations";
 import * as plaidDb from "@/db/plaid";
+import { sendDigestPreview } from "@/db/digestSend";
 
 async function ensureOwner() {
   if (!isAuthConfigured) return; // local dev / no auth → allow
@@ -495,23 +496,62 @@ export async function createPlaidLinkToken() {
 }
 export async function exchangePlaidPublicToken(publicToken: string) {
   const u = await ensureOwner();
-  const res = await plaidDb.exchangePublicToken(publicToken, u?.email ?? null);
-  refresh();
-  return res;
+  try {
+    const res = await plaidDb.exchangePublicToken(publicToken, u?.email ?? null);
+    refresh();
+    return res; // already { ok: true, ... }
+  } catch (e) {
+    // Next redacts thrown server-action errors in prod → return a real message
+    // so the connect flow can show why linking failed.
+    return { ok: false as const, error: (e as Error)?.message || "Couldn't link the bank. Please try again." };
+  }
 }
 export async function syncPlaid() {
   await ensureOwner();
-  const res = await plaidDb.syncAllItems();
-  refresh();
-  return res;
+  try {
+    const res = await plaidDb.syncAllItems();
+    refresh();
+    return res;
+  } catch (e) {
+    return { ok: false as const, error: (e as Error)?.message || "Sync failed. Please try again." };
+  }
 }
 export async function listPlaidBanks() {
   await ensureOwner();
-  return plaidDb.listPlaidItems();
+  try {
+    return await plaidDb.listPlaidItems();
+  } catch {
+    return [] as Awaited<ReturnType<typeof plaidDb.listPlaidItems>>;
+  }
 }
 export async function removePlaidBank(itemId: string) {
   await ensureOwner();
-  const res = await plaidDb.removePlaidItem(itemId);
+  try {
+    const res = await plaidDb.removePlaidItem(itemId);
+    refresh();
+    return res;
+  } catch (e) {
+    return { ok: false as const, error: (e as Error)?.message || "Couldn't disconnect the bank." };
+  }
+}
+
+// ---- email digests ----
+export async function updateDigestSettings(patch: Parameters<typeof m.updateDigestSettings>[0]) {
+  await ensureOwner();
+  const res = await m.updateDigestSettings(patch);
   refresh();
   return res;
+}
+export async function setMemberDigestOptIn(memberId: string, on: boolean) {
+  await ensureOwner();
+  const res = await m.setMemberDigestOptIn(memberId, on);
+  refresh();
+  return res;
+}
+/** Email the current owner a test copy of the household digest. */
+export async function sendDigestTest() {
+  const u = await ensureOwner();
+  const to = u?.email || (process.env.OWNER_EMAILS || "").split(",")[0]?.trim();
+  if (!to) return { ok: false as const, error: "No owner email on file" };
+  return sendDigestPreview(to);
 }

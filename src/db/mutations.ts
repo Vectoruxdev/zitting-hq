@@ -1743,3 +1743,50 @@ export async function deleteContribution(id: number) {
   await requireDb().delete(s.savingsContributions).where(eq(s.savingsContributions.id, id));
   return { ok: true as const };
 }
+
+// ====================================================================
+// Email digests
+// ====================================================================
+
+export async function updateDigestSettings(patch: {
+  cadence?: string; // weekly | biweekly | monthly
+  enabled?: boolean;
+  ownerEnabled?: boolean;
+  membersEnabled?: boolean;
+}) {
+  const database = requireDb();
+  const [cur] = await database.select().from(s.digestSettings).where(eq(s.digestSettings.id, "household"));
+  const cadence = (patch.cadence ?? cur?.cadence ?? "monthly") as Cadence;
+  const anchor = (cur?.anchorDate as string | null) ?? todayISO();
+
+  if (!cur) {
+    await database.insert(s.digestSettings).values({
+      id: "household",
+      cadence,
+      enabled: patch.enabled ?? true,
+      ownerEnabled: patch.ownerEnabled ?? true,
+      membersEnabled: patch.membersEnabled ?? true,
+      anchorDate: anchor,
+      nextRunDate: firstRunOnOrAfter(cadence, anchor, todayISO()),
+    }).onConflictDoNothing();
+    return { ok: true as const };
+  }
+
+  const values: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.cadence !== undefined) values.cadence = patch.cadence;
+  if (patch.enabled !== undefined) values.enabled = patch.enabled;
+  if (patch.ownerEnabled !== undefined) values.ownerEnabled = patch.ownerEnabled;
+  if (patch.membersEnabled !== undefined) values.membersEnabled = patch.membersEnabled;
+  // Recompute the next send when cadence changes (or none scheduled yet).
+  if (patch.cadence !== undefined || !cur.nextRunDate) {
+    values.anchorDate = anchor;
+    values.nextRunDate = firstRunOnOrAfter(cadence, anchor, todayISO());
+  }
+  await database.update(s.digestSettings).set(values).where(eq(s.digestSettings.id, "household"));
+  return { ok: true as const };
+}
+
+export async function setMemberDigestOptIn(memberId: string, on: boolean) {
+  await requireDb().update(s.familyMembers).set({ digestOptIn: on }).where(eq(s.familyMembers.id, memberId));
+  return { ok: true as const };
+}

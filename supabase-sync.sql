@@ -258,3 +258,28 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
   push boolean NOT NULL DEFAULT true,
   updated_at timestamp DEFAULT now()
 );
+
+-- ---- Email digests (0012) ----
+ALTER TABLE family_members ADD COLUMN IF NOT EXISTS digest_opt_in boolean NOT NULL DEFAULT true;
+CREATE TABLE IF NOT EXISTS digest_settings (
+  id text PRIMARY KEY DEFAULT 'household',
+  cadence text NOT NULL DEFAULT 'monthly', -- weekly | biweekly | monthly
+  enabled boolean NOT NULL DEFAULT true,
+  owner_enabled boolean NOT NULL DEFAULT true,
+  members_enabled boolean NOT NULL DEFAULT true,
+  anchor_date date,
+  next_run_date date,
+  last_run_date date,
+  updated_at timestamp DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS digest_log (
+  id serial PRIMARY KEY,
+  recipient_email text NOT NULL,
+  kind text NOT NULL,            -- owner | member
+  member_id text,
+  period_key text NOT NULL,
+  status text NOT NULL DEFAULT 'sent',
+  error text,
+  sent_at timestamp DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_digestlog_period ON digest_log (recipient_email, period_key, kind);
