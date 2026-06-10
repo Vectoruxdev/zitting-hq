@@ -167,7 +167,12 @@ export async function saveColumnTemplate(args: Parameters<typeof m.saveColumnTem
 // ---- transaction edits ----
 export async function updateTransaction(id: number, patch: m.TxnPatch, opts?: { learn?: boolean }) {
   const u = await ensureCanEditTxns([id]);
-  const res = await m.updateTransaction(id, patch, opts);
+  // Setting a category is always a deliberate manual choice (owner OR member),
+  // so learn by default whenever one is present — a caller can still opt out
+  // with { learn: false }. This guarantees the learning loop is fed from every
+  // categorize surface without relying on each client to remember the flag.
+  const learn = opts?.learn ?? patch.categoryId != null;
+  const res = await m.updateTransaction(id, patch, { ...opts, learn });
   if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;
