@@ -40,7 +40,9 @@ function ZHQNotifications({ onNavigate }) {
       </div>
 
       {tab === 'feed' ? (
-        !notifications.length ? (
+        <>
+        {window.ZHQPushPrompt ? <window.ZHQPushPrompt /> : null}
+        {!notifications.length ? (
           <EmptyState icon="bell" title="No alerts" body="You're all caught up. Alerts about large charges, new subscriptions, and overspending will show up here." />
         ) : (
         <Card padding={6}>
@@ -59,7 +61,8 @@ function ZHQNotifications({ onNavigate }) {
             </div>
           ))}
         </Card>
-        )
+        )}
+        </>
       ) : (
         !notifRules.length ? (
           <EmptyState icon="settings" title="No alert rules yet" body="Create rules to get notified about large charges, new subscriptions, or overspending. Rule settings are coming soon." />

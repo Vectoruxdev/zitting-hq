@@ -907,6 +907,52 @@ export async function createNotification(args: {
     dedupeKey: args.dedupeKey ?? null,
     sortOrder,
   });
+  // Fan the same alert out to subscribed devices (best-effort — a push failure
+  // must never undo the stored notification). Dynamic import keeps the web-push
+  // dependency out of paths that never notify.
+  try {
+    const { sendPushToAudience } = await import("@/lib/push");
+    await sendPushToAudience({
+      audience: args.audience ?? "owners",
+      memberId: args.memberId ?? null,
+      title: args.title,
+      body: args.body ?? null,
+      linkTo: args.linkTo ?? null,
+      tag: args.dedupeKey ?? args.type,
+    });
+  } catch {
+    /* push is optional */
+  }
+  return { ok: true as const };
+}
+
+/** Store (or refresh) a device's push subscription, tagged with who owns it. */
+export async function savePushSubscription(
+  sub: { endpoint: string; p256dh: string; auth: string },
+  owner: { memberId: string | null; role: string; email?: string | null }
+) {
+  const database = requireDb();
+  await database
+    .insert(s.pushSubscriptions)
+    .values({
+      endpoint: sub.endpoint,
+      p256dh: sub.p256dh,
+      auth: sub.auth,
+      memberId: owner.memberId ?? null,
+      role: owner.role,
+      userEmail: owner.email ?? null,
+    })
+    .onConflictDoUpdate({
+      target: s.pushSubscriptions.endpoint,
+      set: { p256dh: sub.p256dh, auth: sub.auth, memberId: owner.memberId ?? null, role: owner.role, userEmail: owner.email ?? null },
+    });
+  return { ok: true as const };
+}
+
+/** Drop a device's push subscription (on disable / unsubscribe). */
+export async function deletePushSubscription(endpoint: string) {
+  const database = requireDb();
+  await database.delete(s.pushSubscriptions).where(eq(s.pushSubscriptions.endpoint, endpoint));
   return { ok: true as const };
 }
 

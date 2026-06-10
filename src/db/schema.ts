@@ -425,6 +425,25 @@ export const plaidItems = pgTable("plaid_items", {
   lastSyncedAt: timestamp("last_synced_at"),
 });
 
+// ---- Web Push (device notifications) -------------------------------------
+// One row per browser/device push subscription. `role`/`memberId` snapshot who
+// the device belongs to so a notification's audience can fan out to the right
+// devices. Keyed by the unique push endpoint (re-subscribing upserts).
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    memberId: text("member_id").references(() => familyMembers.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("owner"), // owner | partner | member
+    userEmail: text("user_email"), // for debugging / dedupe by person
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [index("idx_push_member").on(t.memberId)]
+);
+
 // Maps a Plaid account to one of our accounts (created on first connect).
 export const plaidAccounts = pgTable(
   "plaid_accounts",

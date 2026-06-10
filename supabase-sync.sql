@@ -231,3 +231,16 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dedupe_key text;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();
 CREATE INDEX IF NOT EXISTS idx_notif_member ON notifications (member_id);
 CREATE INDEX IF NOT EXISTS idx_notif_dedupe ON notifications (dedupe_key);
+
+-- ---- web push subscriptions (0011) ----
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id serial PRIMARY KEY,
+  endpoint text NOT NULL UNIQUE,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  member_id text REFERENCES family_members(id) ON DELETE CASCADE,
+  role text NOT NULL DEFAULT 'owner',
+  user_email text,
+  created_at timestamp DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_push_member ON push_subscriptions (member_id);

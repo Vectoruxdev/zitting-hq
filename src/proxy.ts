@@ -7,7 +7,15 @@ const SUPABASE_ANON_KEY =
 
 // Plaid's webhook + the nightly cron are machine-to-machine (no session) and
 // carry their own guards, so they must bypass the login redirect.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/plaid/webhook", "/api/plaid/cron-sync"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth",
+  "/api/plaid/webhook",
+  "/api/plaid/cron-sync",
+  "/api/push/vapid", // public VAPID key (safe to expose)
+  "/sw.js", // service worker must load without a session redirect
+  "/manifest.webmanifest",
+];
 
 /**
  * Next 16 Proxy (formerly Middleware). Refreshes the Supabase session cookie on

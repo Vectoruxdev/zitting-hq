@@ -358,6 +358,21 @@ export async function markNotificationsRead(ids?: number[]) {
   return res;
 }
 
+// ---- web push (device notifications) ----
+/** Register this device for push, tagged to the signed-in person. */
+export async function subscribePush(sub: { endpoint: string; p256dh: string; auth: string }) {
+  const u = isAuthConfigured ? await getCurrentUser() : null;
+  return m.savePushSubscription(sub, {
+    memberId: u?.memberId ?? null,
+    role: u?.role ?? "owner",
+    email: u?.email ?? null,
+  });
+}
+/** Remove this device's push subscription. */
+export async function unsubscribePush(endpoint: string) {
+  return m.deletePushSubscription(endpoint);
+}
+
 // ---- savings goals ----
 export async function createSavingsGoal(args: m.SavingsGoalInput) {
   const u = await ensureOwner();

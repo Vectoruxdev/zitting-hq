@@ -177,6 +177,7 @@ function ZHQSpendable() {
                   </div>
                 </div>
               ) : null}
+              {window.ZHQPushPrompt ? <div style={{ marginTop: 20 }}><window.ZHQPushPrompt compact /></div> : null}
             </>
           ) : (
             /* ---- Categorize tab ---- */
