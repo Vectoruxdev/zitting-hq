@@ -219,14 +219,45 @@ export async function syncItem(itemId: string) {
   }
 
   // 2) Current balances per account (to reconcile our opening balance).
+  // For depository accounts we want the AVAILABLE balance — that's the number
+  // the bank's own app shows as your spendable balance (current minus holds).
+  // For credit/loan accounts `available` is the remaining credit line, so we use
+  // `current` (the amount owed) instead.
   const balanceByPlaid = new Map<string, number>();
+  const pickBalance = (a: {
+    type?: string | null;
+    balances?: { available?: number | null; current?: number | null } | null;
+  }): number | null => {
+    const bals = a.balances;
+    if (!bals) return null;
+    const isDebt = a.type === "credit" || a.type === "loan";
+    const v = isDebt ? bals.current : bals.available ?? bals.current;
+    return v ?? null;
+  };
+  // Seed from accountsGet first — it returns cached balances and is reliable
+  // (the same call used at connect). accountsBalanceGet does a LIVE pull from the
+  // bank and frequently times out / rate-limits (MACU especially); when it threw,
+  // the old code left this map empty and the reconcile below silently no-op'd,
+  // so every account's balance stayed stale. Seeding from accountsGet guarantees
+  // we always have a value to reconcile against.
+  try {
+    const acc = await plaid.accountsGet({ access_token: item.accessToken });
+    for (const a of acc.data.accounts) {
+      const v = pickBalance(a);
+      if (v != null) balanceByPlaid.set(a.account_id, v);
+    }
+  } catch {
+    /* fall through to the live balance call */
+  }
+  // Refresh with the live balance where it succeeds (more up to date).
   try {
     const bal = await plaid.accountsBalanceGet({ access_token: item.accessToken });
     for (const a of bal.data.accounts) {
-      if (a.balances?.current != null) balanceByPlaid.set(a.account_id, a.balances.current);
+      const v = pickBalance(a);
+      if (v != null) balanceByPlaid.set(a.account_id, v);
     }
   } catch {
-    /* balances are best-effort */
+    /* balances are best-effort — accountsGet seed above covers us */
   }
 
   // 3) Delete removed + modified rows (modified get reinserted fresh).
