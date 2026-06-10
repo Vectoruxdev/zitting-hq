@@ -84,6 +84,11 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
           {txn.flagged ? <Badge tone="warning" size="sm">Flagged</Badge> : null}
         </div>
         <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-primary)' }}>{txn.merchant}</div>
+        {txn.description ? (
+          <div className="zt-num" style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 4, wordBreak: 'break-word', lineHeight: 1.4 }}>
+            {txn.description}
+          </div>
+        ) : null}
         <div className="zt-num" style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.03em', color: txn.income ? 'var(--positive)' : 'var(--text-primary)', marginTop: 8 }}>
           {txn.income ? '+' : '−'}${Math.abs(txn.amt).toFixed(2)}
         </div>
@@ -119,6 +124,16 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
                   Unlink
                 </button>
               ) : null}
+            </div>
+          ) : null}
+          {txn.categorizedBy ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderTop: '1px solid var(--border-hairline)' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Categorized by</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <Avatar name={txn.categorizedBy} size="xs" />
+                <span style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{txn.categorizedBy}</span>
+                {txn.categorizedAt ? <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>· {txn.categorizedAt}</span> : null}
+              </span>
             </div>
           ) : null}
         </div>
@@ -225,7 +240,8 @@ function ZHQTransactions({ onNavigate }) {
             { key: '_sel', header: '', render: (r) => <span onClick={(e) => { e.stopPropagation(); toggle(r.id); }}><Checkbox checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></span> },
             { key: 'date', header: 'Date', render: (r) => <span style={{ color: 'var(--text-secondary)' }}>{r.date}</span> },
             { key: 'merchant', header: 'Merchant', render: (r) => (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 500 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 500 }}
+                title={[r.merchant, r.description].filter(Boolean).join(' · ')}>
                 <span style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant}</span>
                 {r.flagged ? <Icon name="flag" size={13} style={{ color: 'var(--warning)' }} /> : null}
                 {r.pending ? <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>pending</span> : null}
@@ -237,6 +253,7 @@ function ZHQTransactions({ onNavigate }) {
                   <Tag color={r.color} editable size="sm">{r.cat}</Tag>
                 </span>
                 {!r.reviewed ? <span title={`${Math.round((r.confidence || 0) * 100)}% confident · ${r.source || 'auto'}`} style={{ width: 6, height: 6, borderRadius: 999, flex: 'none', background: (r.confidence || 0) >= 0.7 ? 'var(--accent)' : 'var(--warning)' }} /> : null}
+                {r.categorizedBy ? <span title={`Categorized by ${r.categorizedBy}${r.categorizedAt ? ` · ${r.categorizedAt}` : ''}`} style={{ display: 'inline-flex', flex: 'none' }}><Avatar name={r.categorizedBy} size="xs" /></span> : null}
               </span>
             ) },
             { key: 'who', header: 'Person', render: (r) => (

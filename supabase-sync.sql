@@ -286,3 +286,8 @@ CREATE INDEX IF NOT EXISTS idx_digestlog_period ON digest_log (recipient_email, 
 
 -- ---- member last-seen (0013) ----
 ALTER TABLE family_members ADD COLUMN IF NOT EXISTS last_seen_at timestamp;
+
+-- ---- account space: household vs business (0014) ----
+-- "business" accounts are hidden from the household dashboard + emails and
+-- skipped by Plaid sync (seam for a future Business tab).
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS space text NOT NULL DEFAULT 'household';

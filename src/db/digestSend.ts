@@ -60,6 +60,9 @@ async function buildInput(runDate: string, cadence: DigestCadence): Promise<Dige
   const categories = new Map(catRows.map((c) => [c.id, { name: c.name, color: c.color, kind: c.kind }]));
   const members = new Map(memRows.map((m) => [m.id, { name: m.name, allowance: num(m.allowance) }]));
   const acctById = new Map(acctRows.map((a) => [a.id, a]));
+  // Business-space accounts never appear in digests (kept out of the household).
+  const businessIds = new Set(acctRows.filter((a) => ((a as { space?: string }).space ?? "household") !== "household").map((a) => a.id));
+  const visibleTxns = txnRows.filter((t) => !t.accountId || !businessIds.has(t.accountId));
 
   const savedByGoal = new Map<string, number>();
   for (const c of contribRows) savedByGoal.set(c.goalId, (savedByGoal.get(c.goalId) || 0) + num(c.amount));
@@ -74,12 +77,12 @@ async function buildInput(runDate: string, cadence: DigestCadence): Promise<Dige
   const toCategorizeByMember = new Map<string, number>();
   for (const [memberId, accts] of managedByMember) {
     let cnt = 0;
-    for (const t of txnRows) if (!t.reviewed && t.accountId && accts.has(t.accountId)) cnt++;
+    for (const t of visibleTxns) if (!t.reviewed && t.accountId && accts.has(t.accountId)) cnt++;
     toCategorizeByMember.set(memberId, cnt);
   }
 
   return {
-    txns: txnRows.map((t) => ({
+    txns: visibleTxns.map((t) => ({
       id: t.id, date: t.date as string | null, amount: num(t.amount), income: t.income,
       isTransfer: t.isTransfer, memberId: t.memberId, categoryId: t.categoryId,
       merchant: t.merchant, hasSplit: t.hasSplit,

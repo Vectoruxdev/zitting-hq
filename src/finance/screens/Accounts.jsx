@@ -148,6 +148,17 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
     } finally { setBusy(false); }
   }
 
+  async function moveToBusiness() {
+    if (!API.setAccountSpace) return;
+    setBusy(true);
+    try {
+      await API.setAccountSpace(acct.id, 'business');
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      onClose();
+      onDeleted && onDeleted(); // it leaves the household list → go back
+    } finally { setBusy(false); }
+  }
+
   const typeOpts = [{ value: 'checking', label: 'Checking' }, { value: 'savings', label: 'Savings' }, { value: 'credit', label: 'Credit card' }];
   const whoOpts = [{ value: 'Household', label: 'Household' }, ...members.map((m) => ({ value: m.name, label: m.name }))];
 
@@ -204,6 +215,14 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
             ) : (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Add people in People &amp; Access first.</div>
             )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTop: '1px solid var(--border-hairline)', paddingTop: 14 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-primary)' }}>Hide this account</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.5 }}>Keeps its transactions out of the household dashboard &amp; emails and pauses its sync (good for business accounts). Unhide anytime from "Show hidden accounts".</div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={moveToBusiness} disabled={busy} style={{ flex: 'none' }}>Hide</Button>
           </div>
         </div>
       )}
@@ -381,6 +400,56 @@ function ZHQConnectedBanks() {
   );
 }
 
+function ZHQBusinessAccounts() {
+  const { Card, Button, Icon, Badge } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const D = window.ZHQ_DATA || {};
+  const list = D.excludedAccounts || [];
+  const [busy, setBusy] = React.useState(null);
+  const [open, setOpen] = React.useState(false);
+  if (!list.length) return null;
+
+  async function unhide(id) {
+    if (!API.setAccountSpace) return;
+    setBusy(id);
+    try { await API.setAccountSpace(id, 'household'); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } finally { setBusy(null); }
+  }
+
+  return (
+    <Card padding={open ? 18 : 12}>
+      {/* Collapsed by default — an opt-in to reveal hidden (business) accounts. */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', padding: open ? '0 0 12px' : 0, color: 'var(--text-secondary)' }}>
+        <Icon name={open ? 'chevronDown' : 'chevronRight'} size={15} />
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{open ? 'Hidden accounts' : `Show hidden accounts (${list.length})`}</span>
+        {!open ? <span style={{ flex: 1 }} /> : null}
+      </button>
+
+      {open ? (
+        <>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, lineHeight: 1.5 }}>
+            These accounts and their transactions are kept out of your dashboard and emails, and their sync is paused. Unhide to bring one back.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {list.map((a) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name="bank" size={15} /></span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }} className="zt-num">{a.institution || 'Account'}{a.mask ? ` ••${a.mask}` : ''}</div>
+                </div>
+                {a.plaidLinked ? <Badge tone="neutral" size="sm">Auto-sync paused</Badge> : null}
+                <Button variant="ghost" size="sm" onClick={() => unhide(a.id)} disabled={busy === a.id} style={{ flex: 'none' }}>{busy === a.id ? '…' : 'Unhide'}</Button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
 function ZHQAccounts({ onNavigate }) {
   const { Card, Button, Icon, StatTile } = window.ZittingHQDesignSystem_c9e528;
   const A = window.ZHQ_DATA.accounts || { checking: [], savings: [], credit: [] };
@@ -417,6 +486,7 @@ function ZHQAccounts({ onNavigate }) {
             </div>
           </div>
         </div>
+        <ZHQBusinessAccounts />
         <ZHQAddAccountModal open={showAdd} onClose={() => setShowAdd(false)} />
       </>
     );
@@ -456,6 +526,8 @@ function ZHQAccounts({ onNavigate }) {
           </div>
         </div>
       ))}
+
+      <ZHQBusinessAccounts />
 
       <ZHQAddAccountModal open={showAdd} onClose={() => setShowAdd(false)} />
     </div>

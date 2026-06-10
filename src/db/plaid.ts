@@ -146,7 +146,19 @@ export async function syncItem(itemId: string) {
   if (!item) throw new Error("Unknown Plaid item");
 
   const paRows = await database.select().from(s.plaidAccounts).where(eq(s.plaidAccounts.itemId, itemId));
-  const ourByPlaid = new Map(paRows.map((p) => [p.plaidAccountId, p.accountId] as const));
+  // Accounts moved to a non-household space (e.g. business) are skipped — their
+  // Plaid transactions are not imported. Defensive read so a pre-migration DB
+  // (no `space` column) just syncs everything as before.
+  const acctSpaceRows = await database
+    .select({ id: s.accounts.id, space: s.accounts.space })
+    .from(s.accounts)
+    .catch(() => [] as { id: string; space: string }[]);
+  const businessAcctIds = new Set(acctSpaceRows.filter((a) => (a.space ?? "household") !== "household").map((a) => a.id));
+  const ourByPlaid = new Map(
+    paRows
+      .filter((p) => !p.accountId || !businessAcctIds.has(p.accountId))
+      .map((p) => [p.plaidAccountId, p.accountId] as const)
+  );
 
   // 1) Pull the incremental delta.
   let cursor = item.cursor || undefined;
@@ -213,12 +225,17 @@ export async function syncItem(itemId: string) {
       const accountId = ourByPlaid.get(t.account_id)!;
       const ourAmount = -t.amount;
       const merchant = t.merchant_name || t.name || "(no description)";
+      // Keep the full raw bank text when it's richer than the cleaned merchant
+      // name (Plaid's `name` vs `merchant_name`) — surfaced in the detail drawer
+      // to help identify ambiguous charges.
+      const description = t.name && t.name !== merchant ? t.name : null;
       const sg = sugg[i];
       const isTransfer = sg?.source === "transfer" || looksLikeTransfer(merchant);
       const arr = byAccount.get(accountId) || [];
       arr.push({
         date: t.date,
         merchant,
+        description,
         amount: ourAmount,
         income: ourAmount > 0,
         externalId: t.transaction_id,
@@ -439,6 +456,7 @@ interface InsertedRow {
 interface ImportRowLite {
   date: string;
   merchant: string;
+  description: string | null;
   amount: number;
   income: boolean;
   externalId: string;

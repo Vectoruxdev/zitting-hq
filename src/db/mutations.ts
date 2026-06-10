@@ -11,6 +11,7 @@ import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
 import { channelsFor, mergePrefs } from "./notifyPrefs";
+import { findExactDuplicates } from "./dedupe";
 import { dedupeKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
@@ -259,6 +260,13 @@ export async function deleteAccount(id: string) {
   return { ok: true as const };
 }
 
+/** Move an account between the household and a separate space (e.g. business).
+ *  "business" accounts are hidden from the household view + skipped by sync. */
+export async function setAccountSpace(id: string, space: "household" | "business") {
+  await requireDb().update(s.accounts).set({ space }).where(eq(s.accounts.id, id));
+  return { ok: true as const };
+}
+
 // ---- member ↔ account assignment + allowance ----
 
 /** Accounts a member is "in charge of". Fail-closed (empty set) on any error. */
@@ -325,6 +333,7 @@ export async function touchMemberLastSeen(memberId: string | null | undefined) {
 export interface ImportRow {
   date: string; // YYYY-MM-DD
   merchant: string;
+  description?: string | null; // full raw bank text, when richer than `merchant`
   amount: number; // signed
   income?: boolean;
   categoryId?: string | null;
@@ -395,6 +404,7 @@ export async function commitImport(args: {
       isTransfer: Boolean(r.isTransfer),
       dedupeHash: key,
       merchant: r.merchant,
+      description: r.description ?? null,
       amount: String(r.amount),
       income: r.income ?? r.amount > 0,
       categorySource: r.categorySource ?? null,
@@ -420,7 +430,11 @@ export async function commitImport(args: {
       source: args.source ?? "csv",
       createdBy: args.createdBy ?? null,
     });
-    if (inserts.length) await tx.insert(s.transactions).values(inserts);
+    // onConflictDoNothing: once the unique (account_id, dedupe_hash) index exists
+    // (supabase-dedupe-transactions.sql), this makes inserts idempotent at the DB
+    // level — so even two syncs racing on the same Plaid txn can't double-insert.
+    // No-op (plain insert) until that index is added, so it's safe to ship now.
+    if (inserts.length) await tx.insert(s.transactions).values(inserts).onConflictDoNothing();
   });
 
   // Learn from rows the user explicitly categorized during import.
@@ -495,6 +509,29 @@ export async function deleteImport(batchId: string) {
   return { ok: true as const };
 }
 
+/**
+ * Find (and optionally remove) exact-duplicate transactions — rows that share
+ * the same account AND dedupe key, which the ingestion dedup should have
+ * collapsed but didn't (e.g. two syncs racing on the same Plaid transaction).
+ * Keeps the earliest; safe to run anytime (never touches legit lookalikes).
+ */
+export async function dedupeTransactions(opts?: { apply?: boolean }) {
+  const database = requireDb();
+  const rows = await database
+    .select({ id: s.transactions.id, accountId: s.transactions.accountId, dedupeHash: s.transactions.dedupeHash })
+    .from(s.transactions);
+  const { removeIds, groups } = findExactDuplicates(rows);
+  let removed = 0;
+  if (opts?.apply && removeIds.length) {
+    await database.transaction(async (tx) => {
+      await tx.delete(s.transactionSplits).where(inArray(s.transactionSplits.transactionId, removeIds));
+      await tx.delete(s.transactions).where(inArray(s.transactions.id, removeIds));
+    });
+    removed = removeIds.length;
+  }
+  return { ok: true as const, duplicates: removeIds.length, groups, removed };
+}
+
 /** How many transactions ALREADY exist in this account for each dedupe hash.
  *  Returns a count map so the import preview can match the same multiset-aware
  *  logic the server uses (re-imports and overlapping date ranges skip exactly
@@ -546,7 +583,7 @@ export interface TxnPatch {
   notes?: string | null;
 }
 
-async function buildPatchValues(patch: TxnPatch) {
+async function buildPatchValues(patch: TxnPatch, opts?: { categorizedBy?: string | null }) {
   const values: Record<string, unknown> = {};
   if (patch.categoryId !== undefined) {
     values.categoryId = patch.categoryId;
@@ -558,6 +595,13 @@ async function buildPatchValues(patch: TxnPatch) {
     values.categorySource = "manual";
     values.categoryConfidence = "1.000";
     values.reviewed = true;
+    // Tag who deliberately set the category, and when. `categorizedBy` may be
+    // null (e.g. owner not in the roster, or local dev with auth off) — we still
+    // record the timestamp so the drawer can show "categorized just now".
+    if (opts && "categorizedBy" in opts) {
+      values.categorizedBy = opts.categorizedBy ?? null;
+      values.categorizedAt = new Date();
+    }
   }
   if (patch.memberId !== undefined) {
     values.memberId = patch.memberId;
@@ -572,12 +616,12 @@ async function buildPatchValues(patch: TxnPatch) {
   return values;
 }
 
-export async function updateTransaction(id: number, patch: TxnPatch, opts?: { learn?: boolean }) {
+export async function updateTransaction(id: number, patch: TxnPatch, opts?: { learn?: boolean; categorizedBy?: string | null }) {
   const database = requireDb();
   // Capture the row BEFORE the update so we know the category being replaced
   // (for negative learning) and the merchant string.
   const [before] = await database.select().from(s.transactions).where(eq(s.transactions.id, id));
-  const values = await buildPatchValues(patch);
+  const values = await buildPatchValues(patch, opts);
   if (Object.keys(values).length) {
     await database.update(s.transactions).set(values).where(eq(s.transactions.id, id));
   }
@@ -592,13 +636,13 @@ export async function updateTransaction(id: number, patch: TxnPatch, opts?: { le
   return { ok: true as const };
 }
 
-export async function bulkUpdateTransactions(ids: number[], patch: TxnPatch, opts?: { learn?: boolean }) {
+export async function bulkUpdateTransactions(ids: number[], patch: TxnPatch, opts?: { learn?: boolean; categorizedBy?: string | null }) {
   if (!ids.length) return { ok: true as const };
   const database = requireDb();
   const before = opts?.learn && patch.categoryId
     ? await database.select().from(s.transactions).where(inArray(s.transactions.id, ids))
     : [];
-  const values = await buildPatchValues(patch);
+  const values = await buildPatchValues(patch, opts);
   if (Object.keys(values).length) {
     await database.update(s.transactions).set(values).where(inArray(s.transactions.id, ids));
   }
@@ -635,7 +679,7 @@ export async function confirmTransactions(ids: number[]) {
  * then categorizes each group through the normal learning loop (so bulk
  * categorizing also trains the engine). One round trip for the whole batch.
  */
-export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[]) {
+export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[], opts?: { categorizedBy?: string | null }) {
   const database = requireDb();
   const allIds = [...new Set(groups.flatMap((g) => g.ids))];
   if (!allIds.length) return { ok: true as const, updated: 0, undo: [] as { id: number; categoryId: string | null; reviewed: boolean }[] };
@@ -647,7 +691,7 @@ export async function applyBulkCategories(groups: { ids: number[]; categoryId: s
   let updated = 0;
   for (const g of groups) {
     if (!g.ids.length || !g.categoryId) continue;
-    await bulkUpdateTransactions(g.ids, { categoryId: g.categoryId }, { learn: true });
+    await bulkUpdateTransactions(g.ids, { categoryId: g.categoryId }, { learn: true, categorizedBy: opts?.categorizedBy ?? null });
     updated += g.ids.length;
   }
   return { ok: true as const, updated, undo };

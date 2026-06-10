@@ -184,6 +184,13 @@ export async function setMemberAllowance(memberId: string, amount: number | null
   refresh();
   return res;
 }
+/** Move an account to/from the household (business accounts are hidden + sync-skipped). */
+export async function setAccountSpace(id: string, space: "household" | "business") {
+  await ensureOwner();
+  const res = await m.setAccountSpace(id, space);
+  refresh();
+  return res;
+}
 
 // ---- import ----
 export async function commitImport(args: Parameters<typeof m.commitImport>[0]) {
@@ -196,6 +203,13 @@ export async function deleteImport(batchId: string) {
   await ensureOwner();
   const res = await m.deleteImport(batchId);
   refresh();
+  return res;
+}
+/** Remove exact-duplicate transactions (default applies; pass false to count only). */
+export async function dedupeTransactions(apply = true) {
+  await ensureOwner();
+  const res = await m.dedupeTransactions({ apply });
+  if (apply) refresh();
   return res;
 }
 export async function findExistingHashes(accountId: string, hashes: string[]) {
@@ -225,15 +239,18 @@ export async function updateTransaction(id: number, patch: m.TxnPatch, opts?: { 
   // with { learn: false }. This guarantees the learning loop is fed from every
   // categorize surface without relying on each client to remember the flag.
   const learn = opts?.learn ?? patch.categoryId != null;
-  const res = await m.updateTransaction(id, patch, { ...opts, learn });
+  // Tag who categorized it. The mutation only records this when a category is
+  // actually being set; null when we can't resolve a member (local dev / owner
+  // not in the roster).
+  const res = await m.updateTransaction(id, patch, { ...opts, learn, categorizedBy: u?.memberId ?? null });
   if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;
 }
 export async function bulkUpdateTransactions(ids: number[], patch: m.TxnPatch) {
   const u = await ensureCanEditTxns(ids);
-  // Bulk setting a category is a manual choice → learn from it.
-  const res = await m.bulkUpdateTransactions(ids, patch, { learn: patch.categoryId != null });
+  // Bulk setting a category is a manual choice → learn from it, and tag who did it.
+  const res = await m.bulkUpdateTransactions(ids, patch, { learn: patch.categoryId != null, categorizedBy: u?.memberId ?? null });
   if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;
@@ -255,7 +272,7 @@ export async function markTransfer(id: number, isTransfer: boolean) {
 export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[]) {
   const allIds = groups.flatMap((g) => g.ids);
   const u = await ensureCanEditTxns(allIds);
-  const res = await m.applyBulkCategories(groups);
+  const res = await m.applyBulkCategories(groups, { categorizedBy: u?.memberId ?? null });
   if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
   refresh();
   return res;

@@ -64,6 +64,10 @@ export const accounts = pgTable("accounts", {
   type: text("type").notNull(), // checking | savings | credit
   balance: numeric("balance", { precision: 14, scale: 2 }).notNull().default("0"),
   who: text("who").notNull().default("Household"),
+  // Which workspace this account belongs to. "business" accounts are hidden from
+  // the personal/household dashboard + emails and skipped by Plaid sync. (Seam
+  // for a future Business tab.)
+  space: text("space").notNull().default("household"), // household | business
   syncedLabel: text("synced_label"),
   status: text("status").notNull().default("good"), // good | attention
   destLabel: text("dest_label"), // transfer-destination tag, if any
@@ -115,8 +119,15 @@ export const transactions = pgTable(
     categorySource: text("category_source"), // rule | learned | merchant | keyword | income | transfer | manual | none
     categoryConfidence: numeric("category_confidence", { precision: 4, scale: 3 }),
     reviewed: boolean("reviewed").notNull().default(false),
+    // Who manually set/changed the category (and when). Null until a person
+    // deliberately categorizes it — auto-categorization does not set these.
+    categorizedBy: text("categorized_by").references(() => familyMembers.id),
+    categorizedAt: timestamp("categorized_at"),
     // Core fields
-    merchant: text("merchant").notNull(),
+    merchant: text("merchant").notNull(), // cleaned/display name (e.g. "Netflix")
+    // Full raw bank text when richer than `merchant` (e.g. "NETFLIX.COM 866-579-7172 CA").
+    // Helps people identify ambiguous charges when categorizing. Null = no extra detail.
+    description: text("description"),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     income: boolean("income").notNull().default(false),
     pending: boolean("pending").notNull().default(false),

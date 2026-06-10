@@ -106,6 +106,9 @@ export const MOCK_FINANCE_DATA: any = {
     ],
   },
 
+  // Accounts moved out of the household (e.g. business) — surfaced for management.
+  excludedAccounts: [] as { id: string; name: string; institution: string; mask: string | null; type: string; space: string; label: string; plaidLinked: boolean }[],
+
   accounts: {
     checking: [
       { id: 'main', name: 'Main Checking', inst: 'Mountain America CU', mask: '4021', balance: 12480.22, who: 'Household', synced: '2m ago', status: 'good', trend: [11200, 9800, 13400, 10200, 14100, 12480], dest: null },

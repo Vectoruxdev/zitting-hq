@@ -68,6 +68,7 @@ function emptyData(): FinanceData {
   const d: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
   d.accounts = { checking: [], savings: [], credit: [] };
   d.accountsFlat = [];
+  d.excludedAccounts = [];
   d.txns = [];
   d.budgets = [];
   d.rules = [];
@@ -109,7 +110,31 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
 
   try {
     // --- sequential reads (pooler-safe) ---
-    const accountRows = await db.select().from(s.accounts).orderBy(asc(s.accounts.sortOrder));
+    // Column-explicit (no `space`) so a not-yet-migrated `space` column can't
+    // break this CORE read; `space` is read separately + defensively below.
+    const accountColRows = await db
+      .select({
+        id: s.accounts.id,
+        name: s.accounts.name,
+        institution: s.accounts.institution,
+        mask: s.accounts.mask,
+        type: s.accounts.type,
+        balance: s.accounts.balance,
+        who: s.accounts.who,
+        syncedLabel: s.accounts.syncedLabel,
+        status: s.accounts.status,
+        destLabel: s.accounts.destLabel,
+        trend: s.accounts.trend,
+        sortOrder: s.accounts.sortOrder,
+      })
+      .from(s.accounts)
+      .orderBy(asc(s.accounts.sortOrder));
+    const spaceRows = await db
+      .select({ id: s.accounts.id, space: s.accounts.space })
+      .from(s.accounts)
+      .catch(() => [] as { id: string; space: string }[]);
+    const spaceById = new Map(spaceRows.map((r) => [r.id, r.space]));
+    const allAccountRows = accountColRows.map((a) => ({ ...a, space: spaceById.get(a.id) ?? "household" }));
     // Column-explicit (no `allowance`) so a not-yet-migrated allowance column
     // can't break this CORE read; allowance is read separately + defensively.
     const memberRows = await db
@@ -127,7 +152,15 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const groupRows = await db.select().from(s.categoryGroups).orderBy(asc(s.categoryGroups.sortOrder));
     const catRows = await db.select().from(s.categories).orderBy(asc(s.categories.sortOrder));
     const catRuleRows = await db.select().from(s.categorizationRules).orderBy(asc(s.categorizationRules.priority));
-    const txnRows = await db.select().from(s.transactions).orderBy(asc(s.transactions.id));
+    const allTxnRows = await db.select().from(s.transactions).orderBy(asc(s.transactions.id));
+    // Business-space accounts (and their transactions) are filtered OUT of the
+    // entire household view here — every derivation below inherits it. They're
+    // surfaced separately as data.excludedAccounts so the UI can manage them.
+    const businessIds = new Set(
+      allAccountRows.filter((a) => ((a as { space?: string }).space ?? "household") !== "household").map((a) => a.id)
+    );
+    const accountRows = allAccountRows.filter((a) => !businessIds.has(a.id));
+    const txnRows = allTxnRows.filter((t) => !t.accountId || !businessIds.has(t.accountId));
     // Feature/auxiliary tables are read DEFENSIVELY (`.catch(() => [])`): a schema
     // drift on one of them (a column the live DB doesn't have yet) degrades that
     // ONE section to empty instead of throwing and wiping the entire dashboard.
@@ -276,6 +309,22 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         plaidLinked: plaidLinkedIds.has(a.id),
       }));
 
+    // Accounts moved out of the household (e.g. business) — surfaced so the
+    // Accounts screen can list + manage them even though they're filtered from
+    // every personal view above.
+    data.excludedAccounts = allAccountRows
+      .filter((a) => businessIds.has(a.id))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        institution: a.institution,
+        mask: a.mask,
+        type: a.type,
+        space: (a as { space?: string }).space ?? "business",
+        label: accountLabel(a),
+        plaidLinked: plaidLinkedIds.has(a.id),
+      }));
+
     // --- account balances ---
     // `accounts.balance` is the OPENING balance; the live balance is that plus
     // the net of every transaction in the account. So Total Cash always
@@ -322,15 +371,22 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const partnerLabel = partner.accountId ? accountLabel(acctById.get(partner.accountId)) : partner.accountLabel ?? "—";
       return (n(t.amount) < 0 ? "→ " : "← ") + partnerLabel;
     };
+    const txnNow = new Date();
     data.txns = txnRows.filter((t) => canSeeAccount(t.accountId)).map((t) => {
       const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
       const member = t.memberId ? memberById.get(t.memberId) : undefined;
       const acct = t.accountId ? acctById.get(t.accountId) : undefined;
       const dt = parseDate(t.date as string | null);
+      const catBy = t.categorizedBy ? memberById.get(t.categorizedBy) : undefined;
       return {
         id: t.id,
         date: dt ? dayLabel(dt) : t.dateLabel ?? "",
         merchant: t.merchant,
+        // Full raw bank text when richer than the cleaned merchant name.
+        description: t.description ?? null,
+        // Who manually set the category (+ when), for the "categorized by" tag.
+        categorizedBy: catBy?.name ?? null,
+        categorizedAt: t.categorizedAt ? relTime(new Date(t.categorizedAt), txnNow) : null,
         cat: t.hasSplit ? "Split" : cat?.name ?? t.category ?? "Uncategorized",
         color: cat?.color ?? t.color ?? "var(--gray-500)",
         who: member?.name ?? t.who ?? "Household",
