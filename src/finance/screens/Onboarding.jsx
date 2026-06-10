@@ -12,7 +12,7 @@ function ZHQOnboarding({ onDone }) {
 
   return (
     <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ width: 540 }}>
+      <div style={{ width: '100%', maxWidth: 540 }}>
         <div style={{ textAlign: 'center', marginBottom: 30 }}>
           <img src="/finance/mark.svg" width="56" height="56" alt="" style={{ borderRadius: 16 }} />
           <h1 className="zt-wordmark" style={{ fontSize: 34, color: 'var(--text-primary)', marginTop: 16 }}>Welcome to Zitting <span style={{ color: 'var(--accent)' }}>HQ</span></h1>

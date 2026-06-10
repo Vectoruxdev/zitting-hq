@@ -255,8 +255,8 @@ function ZHQCategories() {
                     {c.kind !== 'expense' ? <Badge tone="neutral" size="sm">{c.kind}</Badge> : null}
                     {c.excludeFromBudget ? <Badge tone="neutral" size="sm">excluded</Badge> : null}
                     <span style={{ flex: 1 }} />
-                    <button onClick={() => openEditSub(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="pencil" size={15} /></button>
-                    {!PROTECTED_CATS.has(c.id) ? <button onClick={() => delSub(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={15} /></button> : null}
+                    <button onClick={() => openEditSub(c)} className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="pencil" size={15} /></button>
+                    {!PROTECTED_CATS.has(c.id) ? <button onClick={() => delSub(c)} className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={15} /></button> : null}
                   </div>
                 )) : (
                   <button onClick={() => openNewSub(g.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', font: 'inherit', fontSize: 13 }}>
@@ -292,7 +292,7 @@ function ZHQCategories() {
                   {r.source === 'learned' ? <Badge tone="neutral" size="sm">learned</Badge> : null}
                   <span style={{ flex: 1 }} />
                   <Toggle checked={r.enabled} onChange={() => toggleRule(r)} size="sm" />
-                  <button onClick={() => delRule(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={15} /></button>
+                  <button onClick={() => delRule(r)} className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={15} /></button>
                 </div>
               ))}
             </Card>

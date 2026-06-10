@@ -71,7 +71,7 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 30, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)' }} />
-      <div style={{ position: 'relative', width: 420, height: '100%', background: 'var(--surface-card)', borderLeft: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-pop)', overflowY: 'auto', padding: 24 }}>
+      <div style={{ position: 'relative', width: 'min(420px, 100%)', height: '100%', background: 'var(--surface-card)', borderLeft: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-pop)', overflowY: 'auto', padding: 'clamp(16px, 5vw, 24px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
           <span className="zt-eyebrow">Transaction</span>
           <IconButton icon="x" label="Close" onClick={onClose} />
@@ -192,7 +192,7 @@ function ZHQTransactions({ onNavigate }) {
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 220 }}>
+        <div className="zhq-desktop-only" style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 220 }}>
           <Icon name="search" size={16} /><span style={{ fontSize: 13 }}>Search merchant, amount…</span>
         </div>
         {reviewCount > 0 ? (

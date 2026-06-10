@@ -250,7 +250,7 @@ function ZHQAllocations() {
 
         {rules.map((r, i) => (
           <Card key={r.id} padding={16} bordered>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', rowGap: 10 }}>
               <span style={{ width: 22, height: 22, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600 }} className="zt-num">{i + 1}</span>
               <span style={{ width: 36, height: 36, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>
                 <Icon name={r.icon || 'transfers'} size={17} />

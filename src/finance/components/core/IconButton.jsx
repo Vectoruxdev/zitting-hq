@@ -17,6 +17,7 @@ export function IconButton({
   label,
   onClick,
   style,
+  className,
   ...rest
 }) {
   const dims = { sm: 30, md: 36, lg: 42 };
@@ -47,6 +48,7 @@ export function IconButton({
       type="button"
       aria-label={label}
       title={label}
+      className={['zhq-iconbtn', className].filter(Boolean).join(' ')}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       style={{

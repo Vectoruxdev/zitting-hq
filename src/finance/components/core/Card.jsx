@@ -17,13 +17,16 @@ export function Card({
   ...rest
 }) {
   const El = as;
+  // Numeric padding scales down on phones (floor 14px) so cards aren't cramped
+  // by a desktop-tuned inset; string paddings and tight cards (≤14) pass through.
+  const pad = typeof padding === 'number' ? `clamp(${Math.min(padding, 14)}px, 4vw, ${padding}px)` : padding;
   return (
     <El
       style={{
         background: raised ? 'var(--surface-raised)' : 'var(--surface-card)',
         border: bordered ? '1px solid var(--border-hairline)' : '1px solid transparent',
         borderRadius: radius,
-        padding,
+        padding: pad,
         boxShadow: 'var(--shadow-md)',
         transition: 'background var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out)',
         cursor: interactive ? 'pointer' : 'default',
