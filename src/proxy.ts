@@ -13,6 +13,9 @@ const PUBLIC_PATHS = [
   "/api/plaid/webhook",
   "/api/plaid/cron-sync",
   "/api/push/vapid", // public VAPID key (safe to expose)
+  "/api/mcp", // remote MCP server — guarded by its own MCP_TOKEN, not a session
+  "/api/sse", // MCP SSE transport (legacy clients)
+  "/api/message", // MCP SSE message channel
   "/sw.js", // service worker must load without a session redirect
   "/manifest.webmanifest",
 ];
