@@ -277,7 +277,13 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       sortOrder: c.sortOrder,
     }));
     const seenNow = new Date();
-    data.members = memberRows.map((m) => {
+    // "Household" is the reserved shared-bucket label (the static option in the
+    // owner/who pickers), not a person. A roster row literally named "Household"
+    // is an artifact and would show up twice in those dropdowns — drop it from the
+    // member list. (memberById above keeps the row for any name resolution.)
+    data.members = memberRows
+      .filter((m) => (m.name ?? "").trim().toLowerCase() !== "household")
+      .map((m) => {
       const seen = lastSeenById.get(m.id) ?? null;
       return {
         id: m.id,
