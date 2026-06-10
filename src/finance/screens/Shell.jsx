@@ -1,5 +1,10 @@
 import React from 'react';
 /* Shell — sidebar + topbar layout for the Zitting Finance desktop app. */
+
+// Build stamp — inlined at build time via next.config.ts. Updates on every
+// commit + deploy (Vercel rebuilds each push). Falls back to 'dev' locally.
+const BUILD_LABEL = `Build ${process.env.NEXT_PUBLIC_BUILD_NUMBER || '0'} · ${process.env.NEXT_PUBLIC_BUILD_SHA || 'dev'}`;
+const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME || '';
 function ZHQSidebar({ active, onNavigate, onLogout }) {
   const { Icon, Avatar } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
@@ -46,6 +51,7 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
             <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>Owner</div>
           </div>
         </div>
+        <div className="zt-num" title={BUILD_TIME} style={{ padding: '6px 11px 2px', fontSize: 10.5, color: 'var(--text-tertiary)', letterSpacing: '0.02em' }}>{BUILD_LABEL}</div>
       </div>
     </aside>
   );
@@ -136,6 +142,7 @@ function ZHQBottomNav({ active, onNavigate, onLogout }) {
                 <Icon name="logout" size={18} className="zhq-nav-icon" /> Log out
               </button>
             ) : null}
+            <div className="zt-num" title={BUILD_TIME} style={{ padding: '12px 11px 4px', fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center' }}>{BUILD_LABEL}</div>
           </div>
         </div>
       ) : null}
