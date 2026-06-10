@@ -4,6 +4,11 @@
  */
 
 :root {
+  /* Default (dark) theme — tells native controls (date pickers, scrollbars,
+   * selects) to render dark, so e.g. the date-picker icon isn't black-on-black.
+   * theme-light.css overrides this to `light`. */
+  color-scheme: dark;
+
   /* ---- Base palette (raw values) ---- */
   --black-true:    #000000; /* outermost void behind the rounded app shell */
   --ink-900:       #0A0A0B; /* app canvas */

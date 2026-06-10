@@ -422,7 +422,7 @@ function ZHQSavings() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <span className="zt-eyebrow">{label}</span><span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 14 }}>
         {items.map((g) => <ZHQGoalCard key={g.id} g={g} onAddMoney={openAddMoney} onManage={openManage} />)}
       </div>
     </div>

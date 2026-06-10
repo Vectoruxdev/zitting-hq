@@ -58,3 +58,102 @@ body {
 .zhq-nav-item[data-active="true"] .zhq-nav-icon {
   color: var(--accent);
 }
+
+/* =========================================================================
+   Responsive / mobile chrome
+   Screens use inline styles, so shared layout grids are exposed as classes
+   here (inline can't be overridden by media queries). Collapse on phones.
+   ========================================================================= */
+:root {
+  --bottomnav-h: 0px;
+  /* Responsive grid templates — finance screens set
+     `gridTemplateColumns: 'var(--grid-N)'` inline; these collapse on phones. */
+  --grid-2: 1fr 1fr;
+  --grid-3: repeat(3, 1fr);
+  --grid-4: repeat(4, 1fr);
+  --grid-split: 1fr 360px; /* main + sticky aside */
+}
+
+@media (max-width: 900px) {
+  :root { --grid-split: 1fr; }
+}
+@media (max-width: 760px) {
+  :root {
+    --grid-2: 1fr;
+    --grid-3: 1fr;
+    --grid-4: 1fr 1fr;
+  }
+}
+
+/* Bottom tab bar + "More" sheet (hybrid mobile nav). Hidden on desktop. */
+.zhq-bottomnav { display: none; }
+.zhq-mobile-only { display: none; }
+
+@media (max-width: 760px) {
+  :root { --bottomnav-h: 58px; }
+  .zhq-sidebar { display: none !important; }
+  .zhq-desktop-only { display: none !important; }
+  .zhq-mobile-only { display: inline-flex; }
+  .zhq-bottomnav { display: flex; }
+  .zhq-main {
+    padding: 16px !important;
+    padding-bottom: calc(16px + var(--bottomnav-h) + env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden; /* stray wide rows clip instead of breaking the page;
+                           tables keep their own internal horizontal scroll */
+  }
+  .zhq-topbar { padding: 0 16px !important; gap: 10px !important; }
+  .zhq-member-canvas { padding: 0; gap: 0; align-items: stretch; }
+  /* On a real phone the iPhone mockup frame is full-bleed; the fake status bar
+     and home indicator give way to the device's own. */
+  .zhq-phone-frame {
+    width: 100% !important; height: 100dvh !important;
+    border-radius: 0 !important; border: none !important; box-shadow: none !important;
+  }
+  .zhq-phone-statusbar { display: none !important; }
+  .zhq-phone-home { display: none !important; }
+}
+
+.zhq-bottomnav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  align-items: stretch;
+  background: color-mix(in srgb, var(--bg-app) 92%, transparent);
+  backdrop-filter: saturate(140%) blur(12px);
+  border-top: 1px solid var(--border-hairline);
+  z-index: 50;
+}
+.zhq-bottomnav-item {
+  flex: 1 1 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 0;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-tertiary);
+  font: inherit; font-size: 10.5px; font-weight: 600;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.zhq-bottomnav-item[data-active="true"] { color: var(--accent); }
+
+.zhq-sheet-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: flex-end;
+  animation: zhqFade var(--dur-fast) var(--ease-out);
+}
+.zhq-sheet {
+  width: 100%;
+  max-height: 82vh; overflow-y: auto;
+  background: var(--surface-card);
+  border-top-left-radius: 20px; border-top-right-radius: 20px;
+  border-top: 1px solid var(--border-hairline);
+  box-shadow: 0 -16px 48px rgba(0,0,0,0.5);
+  padding: 8px 10px calc(16px + env(safe-area-inset-bottom));
+  animation: zhqSheetUp var(--dur-base, 0.2s) var(--ease-out);
+}
+.zhq-sheet-grip {
+  width: 40px; height: 4px; border-radius: 999px;
+  background: var(--border-strong); margin: 8px auto 12px;
+}
+@keyframes zhqFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zhqSheetUp { from { transform: translateY(16px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }

@@ -12,7 +12,7 @@ const FinanceApp = dynamic(() => import("./FinanceApp"), {
   loading: () => (
     <div
       style={{
-        height: "100vh",
+        height: "100dvh",
         display: "grid",
         placeItems: "center",
         background: "var(--bg-app)",

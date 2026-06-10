@@ -184,7 +184,7 @@ function ZHQBudgets() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <span className="zt-eyebrow">Personal allowances</span><span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-3)', gap: 14 }}>
             {allowances.map((b) => <ZHQAllowanceCard key={b.id} b={b} onEdit={openEdit} onDelete={remove} />)}
           </div>
         </div>
@@ -196,7 +196,7 @@ function ZHQBudgets() {
             <span className="zt-eyebrow">Shared household budgets</span><span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
           </div>
           <Card>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 36px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: '20px 36px' }}>
               {shared.map((b) => {
                 const left = b.limit - b.spent;
                 const over = left < 0;

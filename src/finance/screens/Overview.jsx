@@ -160,7 +160,7 @@ function ZHQOverview({ onNavigate }) {
       ) : null}
 
       {/* Money going + income vs spending */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.05fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 16 }}>
         <Card>
           <SectionHeader eyebrow={monthEyebrow} title="Where's our money going"
             action={<Button variant="ghost" size="sm" onClick={() => onNavigate('categories')}>Categories</Button>} />

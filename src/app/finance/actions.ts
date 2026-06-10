@@ -238,6 +238,26 @@ export async function deleteCategory(id: string) {
   return res;
 }
 
+// ---- category groups (parent categories) ----
+export async function createCategoryGroup(args: Parameters<typeof m.createCategoryGroup>[0]) {
+  await ensureOwner();
+  const res = await m.createCategoryGroup(args);
+  refresh();
+  return res;
+}
+export async function updateCategoryGroup(id: string, patch: Parameters<typeof m.updateCategoryGroup>[1]) {
+  await ensureOwner();
+  const res = await m.updateCategoryGroup(id, patch);
+  refresh();
+  return res;
+}
+export async function deleteCategoryGroup(id: string) {
+  await ensureOwner();
+  const res = await m.deleteCategoryGroup(id);
+  refresh();
+  return res;
+}
+
 // ---- budgets ----
 export async function createBudget(args: Parameters<typeof m.createBudget>[0]) {
   await ensureOwner();

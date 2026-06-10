@@ -49,11 +49,11 @@ function ZHQNewTransferModal({ open, onClose }) {
         <Button variant="primary" onClick={save} disabled={busy || !valid}>Add transfer</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
           <Select label="From account" value={fromId} onChange={setFromId} placeholder="Choose account" options={acctOpts} />
           <Select label="To account" value={toId} onChange={setToId} placeholder="Choose account" options={acctOpts} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
           <TextInput label="Amount" value={amount} onChange={setAmount} prefix="$" type="number" inputMode="decimal" placeholder="500" />
           <TextInput label="Planned date" value={date} onChange={setDate} type="date" />
         </div>

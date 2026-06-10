@@ -3,7 +3,7 @@ import React from 'react';
    the accounts they're in charge of. Driven by D.memberHome (server-computed). */
 function ZHQPhoneFrame({ children }) {
   return (
-    <div style={{
+    <div className="zhq-phone-frame" style={{
       width: 392, height: 812, flex: 'none', position: 'relative',
       background: 'var(--bg-app)', borderRadius: 46,
       border: '1px solid var(--border-shell)',
@@ -11,7 +11,7 @@ function ZHQPhoneFrame({ children }) {
       overflow: 'hidden',
     }}>
       {/* status bar */}
-      <div style={{ height: 50, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 30px 0 34px', position: 'relative', zIndex: 2 }}>
+      <div className="zhq-phone-statusbar" style={{ height: 50, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 30px 0 34px', position: 'relative', zIndex: 2 }}>
         <span className="zt-num" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>9:41</span>
         <div style={{ position: 'absolute', left: '50%', top: 12, transform: 'translateX(-50%)', width: 108, height: 26, background: '#000', borderRadius: 999 }} />
         <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', color: 'var(--text-primary)' }}>
@@ -232,7 +232,7 @@ function ZHQSpendable() {
             </button>
           ))}
         </div>
-        <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 134, height: 5, background: 'var(--paper-200)', opacity: 0.4, borderRadius: 999 }} />
+        <div className="zhq-phone-home" style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 134, height: 5, background: 'var(--paper-200)', opacity: 0.4, borderRadius: 999 }} />
       </div>
 
       {picker != null ? (

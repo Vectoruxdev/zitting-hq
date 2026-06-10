@@ -1,8 +1,15 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Modal — centered dialog over a dim overlay. Controlled via `open`/`onClose`.
  * Matches the design tokens (dark card, large radius, soft shadow).
+ *
+ * Rendered through a portal to <body> so the `position: fixed` overlay is
+ * relative to the viewport — the finance screens sit inside a `.zt-enter`
+ * wrapper whose lingering `transform` would otherwise become the containing
+ * block and clip a tall modal under the header. The portal also lets it cover
+ * the full screen on mobile.
  */
 export function Modal({ open, onClose, title, children, footer, width = 460 }) {
   React.useEffect(() => {
@@ -12,8 +19,8 @@ export function Modal({ open, onClose, title, children, footer, width = 460 }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-  return (
+  if (!open || typeof document === 'undefined') return null;
+  const overlay = (
     <div
       onClick={onClose}
       style={{
@@ -23,7 +30,7 @@ export function Modal({ open, onClose, title, children, footer, width = 460 }) {
         background: 'rgba(0,0,0,0.5)',
         display: 'grid',
         placeItems: 'center',
-        padding: 24,
+        padding: 'clamp(12px, 4vw, 24px)',
         backdropFilter: 'blur(2px)',
       }}
     >
@@ -70,4 +77,5 @@ export function Modal({ open, onClose, title, children, footer, width = 460 }) {
       </div>
     </div>
   );
+  return createPortal(overlay, document.body);
 }

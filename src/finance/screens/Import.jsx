@@ -268,7 +268,7 @@ function ZHQImport({ onNavigate }) {
       {step === 'upload' ? (
         <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <FileDropzone onFile={onFile} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
             <Select label="Import into account" value={accountId} onChange={setAccountId} options={accounts.map((a) => ({ value: a.id, label: a.plaidLinked ? `${a.label} (auto-synced)` : a.label }))} placeholder="Choose account" />
             <Select label="Default person" value={defaultMember} onChange={setDefaultMember} options={memberOpts} placeholder="Choose person" />
           </div>
@@ -331,7 +331,7 @@ function ZHQImport({ onNavigate }) {
       {/* STEP: map */}
       {step === 'map' && mapping ? (
         <div style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
             <Select label="Date column" value={mapping.dateCol} onChange={(v) => setMapping({ ...mapping, dateCol: v })} options={headerOpts} />
             <Select label="Date format" value={mapping.dateFormat} onChange={(v) => setMapping({ ...mapping, dateFormat: v })} options={[{ value: 'M/D/Y', label: 'M/D/Y (US)' }, { value: 'D/M/Y', label: 'D/M/Y' }, { value: 'ISO', label: 'YYYY-MM-DD' }]} />
             <Select label="Description column" value={mapping.merchantCol} onChange={(v) => setMapping({ ...mapping, merchantCol: v })} options={headerOpts} />
@@ -341,7 +341,7 @@ function ZHQImport({ onNavigate }) {
             <span className="zt-eyebrow" style={{ display: 'block', marginBottom: 6 }}>Amount</span>
             <SegmentedControl options={['signed', 'debitCredit']} value={mapping.amountMode} onChange={(v) => setMapping({ ...mapping, amountMode: v })} size="sm" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
             {mapping.amountMode === 'signed' ? (
               <Select label="Amount column" value={mapping.amountCol} onChange={(v) => setMapping({ ...mapping, amountCol: v })} options={headerOpts} />
             ) : (

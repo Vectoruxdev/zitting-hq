@@ -1,9 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Family HQ",
   description: "The Zitting household command center.",
+};
+
+// Mobile-critical: render at device width (not a zoomed-out desktop canvas),
+// allow zoom for accessibility, and tint the notch/status bar.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0E0E10",
 };
 
 export default function RootLayout({

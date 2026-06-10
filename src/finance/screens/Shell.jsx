@@ -4,7 +4,7 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
   const { Icon, Avatar } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
   return (
-    <aside style={{
+    <aside className="zhq-sidebar" style={{
       width: 'var(--sidebar-w)', flex: 'none', height: '100%',
       display: 'flex', flexDirection: 'column',
       background: 'var(--bg-app)', borderRight: '1px solid var(--border-hairline)',
@@ -61,18 +61,18 @@ function ZHQTopbar({ title, onNavigate }) {
     setTheme(t);
   };
   return (
-    <header style={{
+    <header className="zhq-topbar" style={{
       height: 'var(--topbar-h)', flex: 'none',
       display: 'flex', alignItems: 'center', gap: 16,
       padding: '0 26px', borderBottom: '1px solid var(--border-hairline)',
     }}>
-      <h1 style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>{title}</h1>
+      <h1 style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
       <div style={{ flex: 1 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px 0 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 200 }}>
+      <div className="zhq-desktop-only" style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px 0 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 200 }}>
         <Icon name="search" size={16} />
         <span style={{ fontSize: 13 }}>Search transactions…</span>
       </div>
-      <SegmentedControl options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />
+      <SegmentedControl className="zhq-desktop-only" options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />
       <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />
       <div style={{ position: 'relative' }}>
         <IconButton icon="bell" label="Notifications" variant="solid" onClick={() => onNavigate && onNavigate('notifications')} />
@@ -84,6 +84,65 @@ function ZHQTopbar({ title, onNavigate }) {
   );
 }
 
+// Primary destinations for the mobile bottom tab bar (everything else lives in
+// the "More" sheet). Ordered for the daily flow.
+const BOTTOM_NAV_IDS = ['overview', 'transactions', 'accounts', 'import'];
+
+function ZHQBottomNav({ active, onNavigate, onLogout }) {
+  const { Icon } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA;
+  const nav = (D && D.nav) || [];
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const go = (id) => { setMoreOpen(false); onNavigate && onNavigate(id); };
+  const primary = BOTTOM_NAV_IDS.map((id) => nav.find((n) => n.id === id)).filter(Boolean);
+  const moreActive = moreOpen || !BOTTOM_NAV_IDS.includes(active);
+
+  return (
+    <>
+      <nav className="zhq-bottomnav">
+        {primary.map((item) => (
+          <button key={item.id} type="button" className="zhq-bottomnav-item" data-active={item.id === active ? 'true' : 'false'} onClick={() => go(item.id)}>
+            <Icon name={item.icon} size={21} />
+            {item.label}
+          </button>
+        ))}
+        <button type="button" className="zhq-bottomnav-item" data-active={moreActive ? 'true' : 'false'} onClick={() => setMoreOpen(true)}>
+          <Icon name="grid" size={21} />
+          More
+        </button>
+      </nav>
+
+      {moreOpen ? (
+        <div className="zhq-sheet-overlay" onClick={() => setMoreOpen(false)}>
+          <div className="zhq-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="zhq-sheet-grip" />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
+              {nav.map((item) => (
+                <button key={item.id} type="button" className="zhq-nav-item" data-active={item.id === active ? 'true' : 'false'} onClick={() => go(item.id)}>
+                  <Icon name={item.icon} size={18} className="zhq-nav-icon" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ height: 1, background: 'var(--border-hairline)', margin: '10px 4px' }} />
+            <button type="button" className="zhq-nav-item" onClick={() => go('settings')}>
+              <Icon name="settings" size={18} className="zhq-nav-icon" /> Settings
+            </button>
+            <button type="button" className="zhq-nav-item" onClick={() => go('member')}>
+              <Icon name="eye" size={18} className="zhq-nav-icon" /> View as member
+            </button>
+            {onLogout ? (
+              <button type="button" className="zhq-nav-item" onClick={() => { setMoreOpen(false); onLogout(); }}>
+                <Icon name="logout" size={18} className="zhq-nav-icon" /> Log out
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function ZHQShell({ active, onNavigate, title, children, loading, onLogout }) {
   const { LoadingBar } = window.ZittingHQDesignSystem_c9e528;
   return (
@@ -92,10 +151,11 @@ function ZHQShell({ active, onNavigate, title, children, loading, onLogout }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <ZHQTopbar title={title} onNavigate={onNavigate} />
         <div style={{ height: 2, flex: 'none' }}>{loading && LoadingBar ? <LoadingBar /> : null}</div>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '26px' }}>
+        <main className="zhq-main" style={{ flex: 1, overflowY: 'auto', padding: '26px' }}>
           <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>{children}</div>
         </main>
       </div>
+      <ZHQBottomNav active={active} onNavigate={onNavigate} onLogout={onLogout} />
     </div>
   );
 }

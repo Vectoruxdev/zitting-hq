@@ -1180,8 +1180,11 @@ export async function updateCategory(
   return { ok: true as const };
 }
 
+/** System categories the engine depends on — never user-deletable. */
+const PROTECTED_CATEGORY_IDS = new Set([UNCATEGORIZED_ID, "transfer"]);
+
 export async function deleteCategory(id: string) {
-  if (id === UNCATEGORIZED_ID) return { ok: false as const, error: "Cannot delete Uncategorized" };
+  if (PROTECTED_CATEGORY_IDS.has(id)) return { ok: false as const, error: "Cannot delete this category" };
   const database = requireDb();
   await database.transaction(async (tx) => {
     const [unc] = await tx.select().from(s.categories).where(eq(s.categories.id, UNCATEGORIZED_ID));
@@ -1192,6 +1195,39 @@ export async function deleteCategory(id: string) {
     await tx.delete(s.transactionSplits).where(eq(s.transactionSplits.categoryId, id));
     await tx.update(s.categorizationRules).set({ enabled: false }).where(eq(s.categorizationRules.categoryId, id));
     await tx.delete(s.categories).where(eq(s.categories.id, id));
+  });
+  return { ok: true as const };
+}
+
+// ====================================================================
+// Category groups (parent categories)
+// ====================================================================
+/** Groups that hold a system category — can't be deleted out from under it. */
+const PROTECTED_GROUP_IDS = new Set(["transfers", "other"]);
+
+export async function createCategoryGroup(args: { id: string; name: string; sortOrder?: number }) {
+  const database = requireDb();
+  let sortOrder = args.sortOrder;
+  if (sortOrder == null) {
+    const existing = await database.select({ so: s.categoryGroups.sortOrder }).from(s.categoryGroups);
+    sortOrder = existing.reduce((mx, g) => Math.max(mx, g.so), -1) + 1;
+  }
+  await database.insert(s.categoryGroups).values({ id: args.id, name: args.name, sortOrder });
+  return { ok: true as const, id: args.id };
+}
+
+export async function updateCategoryGroup(id: string, patch: { name?: string; sortOrder?: number }) {
+  await requireDb().update(s.categoryGroups).set(patch).where(eq(s.categoryGroups.id, id));
+  return { ok: true as const };
+}
+
+/** Delete a parent group; its subcategories move to "Other" so nothing orphans. */
+export async function deleteCategoryGroup(id: string) {
+  if (PROTECTED_GROUP_IDS.has(id)) return { ok: false as const, error: "Cannot delete this group" };
+  const database = requireDb();
+  await database.transaction(async (tx) => {
+    await tx.update(s.categories).set({ groupId: "other" }).where(eq(s.categories.groupId, id));
+    await tx.delete(s.categoryGroups).where(eq(s.categoryGroups.id, id));
   });
   return { ok: true as const };
 }

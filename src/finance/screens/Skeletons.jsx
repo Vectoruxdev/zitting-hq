@@ -41,7 +41,7 @@ function ZHQScreenSkeleton() {
       </div>
 
       {/* stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-4)', gap: 14 }}>
         {[0, 1, 2, 3].map((i) => (
           <ZHQSkelCard key={i}>
             <Skeleton width={80} height={10} />
@@ -54,7 +54,7 @@ function ZHQScreenSkeleton() {
       </div>
 
       {/* two panels */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.05fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 16 }}>
         <ZHQSkelCard>
           <Skeleton width={180} height={16} />
           <div style={{ height: 18 }} />

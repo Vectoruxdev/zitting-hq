@@ -119,7 +119,7 @@ function ZHQAllocRuleModal({ open, onClose, editing }) {
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
         <TextInput label="Rule name" value={name} onChange={setName} placeholder={scheduled ? 'Monthly savings' : 'Tithe'} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
           <Select label="From account" value={fromId} onChange={setFromId} placeholder="Choose account" options={acctOpts} />
           <Select label="To account" value={toId} onChange={setToId} placeholder="Choose account" options={acctOpts} />
         </div>
@@ -133,7 +133,7 @@ function ZHQAllocRuleModal({ open, onClose, editing }) {
 
         {scheduled ? (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: cadence === 'semimonthly' ? '1fr' : '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: cadence === 'semimonthly' ? '1fr' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
               <Select label="How often" value={cadence} onChange={setCadence} options={CADENCE_OPTS} />
               {cadence !== 'semimonthly' ? (
                 <TextInput label="Starts" value={anchorDate} onChange={setAnchorDate} type="date" />
@@ -234,7 +234,7 @@ function ZHQAllocations() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-split)', gap: 20, alignItems: 'start' }}>
       {/* Rule list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>

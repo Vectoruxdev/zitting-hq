@@ -174,11 +174,11 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <TextInput label="Account name" value={name} onChange={setName} placeholder="Main Checking" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
             <TextInput label="Institution" value={institution} onChange={setInstitution} placeholder="Mountain America CU" />
             <TextInput label="Last 4 (mask)" value={mask} onChange={setMask} placeholder="4021" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
             <Select label="Type" value={type} onChange={setType} options={typeOpts} />
             <Select label="Mapped to" value={who} onChange={setWho} options={whoOpts} />
           </div>
@@ -228,7 +228,7 @@ function ZHQAccountDetail({ acct, onBack }) {
       </div>
       <ZHQEditAccountModal open={showEdit} acct={acct} onClose={() => setShowEdit(false)} onDeleted={onBack} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 16 }}>
         <Card padding={24}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
             <span style={{ width: 42, height: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name={credit ? 'creditCard' : 'bank'} size={20} /></span>
@@ -317,11 +317,11 @@ function ZHQAddAccountModal({ open, onClose }) {
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <TextInput label="Account name" value={name} onChange={setName} placeholder="Main Checking" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
           <TextInput label="Institution" value={institution} onChange={setInstitution} placeholder="Mountain America CU" />
           <TextInput label="Last 4 (mask)" value={mask} onChange={setMask} placeholder="4021" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: 12 }}>
           <Select label="Type" value={type} onChange={setType} options={[{ value: 'checking', label: 'Checking' }, { value: 'savings', label: 'Savings' }, { value: 'credit', label: 'Credit card' }]} />
           <Select label="Mapped to" value={who} onChange={setWho} options={[{ value: 'Household', label: 'Household' }, ...members.map((m) => ({ value: m.name, label: m.name }))]} />
         </div>
@@ -446,7 +446,7 @@ function ZHQAccounts({ onNavigate }) {
             <span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
             <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{list.length}</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-3)', gap: 14 }}>
             {list.map((a) => <ZHQAccountCard key={a.id} acct={a} onOpen={openAccount} />)}
             {title === 'Checking' ? (
               <button onClick={() => setShowAdd(true)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 132, border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-lg)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', font: 'inherit' }}>
