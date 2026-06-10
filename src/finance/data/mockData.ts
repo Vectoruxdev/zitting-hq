@@ -80,6 +80,7 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 'groceries', name: 'Groceries', method: 'Fixed', value: 600, dest: 'Groceries budget', icon: 'pie' },
     { id: 'sarah', name: "Sarah's allowance", method: 'Fixed', value: 400, dest: "Sarah's wallet", icon: 'wallet' },
     { id: 'savings', name: 'Savings', method: 'Remainder', value: null, dest: 'Emergency Fund', icon: 'target' },
+    { id: 'auto-ef', name: 'Auto-save to Emergency Fund', method: 'Fixed', value: 500, dest: 'Emergency Fund', icon: 'transfers', trigger: 'scheduled', cadence: 'monthly', anchorDate: '2026-06-01', nextRunDate: '2026-07-01', nextRunLabel: 'Next · Jul 1' },
   ],
 
   member: {

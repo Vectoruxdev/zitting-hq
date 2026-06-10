@@ -59,6 +59,7 @@ function ZHQNewTransferModal({ open, onClose }) {
         </div>
         <Select label="For (optional)" value={memberId} onChange={setMemberId} placeholder="Household"
           options={[{ value: '', label: 'Household' }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
+        <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>Set a future planned date to schedule it — it'll wait on your checklist and check off automatically once the transfer posts.</span>
         {toId && toId === fromId ? <span style={{ fontSize: 12, color: 'var(--negative)' }}>From and To must differ.</span> : null}
       </div>
     </Modal>

@@ -229,6 +229,12 @@ export const allocationRules = pgTable("allocation_rules", {
   trigger: text("trigger").notNull().default("on_income"), // manual | on_income | scheduled
   enabled: boolean("enabled").notNull().default(true),
   incomeMatch: text("income_match"), // optional merchant/stream key; null = any income
+  // Time-based scheduling (trigger = "scheduled"). The cron generates a planned
+  // transfer each cycle. Scheduled rules are Fixed-amount (see mutations).
+  cadence: text("cadence"), // weekly | biweekly | semimonthly | monthly | quarterly | yearly (null = not scheduled)
+  anchorDate: date("anchor_date"), // reference date: weekday (weekly) or day-of-month (monthly+)
+  nextRunDate: date("next_run_date"), // when the next planned transfer generates
+  lastRunDate: date("last_run_date"), // audit / catch-up bookkeeping
   icon: text("icon"),
   sortOrder: integer("sort_order").notNull().default(0),
 });

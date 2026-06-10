@@ -130,6 +130,11 @@ ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS member_id text;
 ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS trigger text NOT NULL DEFAULT 'on_income';
 ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS enabled boolean NOT NULL DEFAULT true;
 ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS income_match text;
+-- scheduled (time-based) transfer rules (0007)
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS cadence text;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS anchor_date date;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS next_run_date date;
+ALTER TABLE allocation_rules ADD COLUMN IF NOT EXISTS last_run_date date;
 CREATE TABLE IF NOT EXISTS transfer_instances (
   id serial PRIMARY KEY,
   rule_id text,

@@ -13,6 +13,7 @@ import { computeMemberProgress } from "./allowance";
 import { dedupeKey, markDuplicates, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
+import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./schedule";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -623,6 +624,8 @@ export async function createAllocationRule(args: {
   trigger?: string;
   enabled?: boolean;
   incomeMatch?: string | null;
+  cadence?: string | null; // scheduled rules only
+  anchorDate?: string | null; // scheduled rules only (YYYY-MM-DD)
   icon?: string | null;
 }) {
   const database = requireDb();
@@ -630,10 +633,16 @@ export async function createAllocationRule(args: {
   const dest = (await accountLabel(args.toAccountId)) ?? args.name;
   const existing = await database.select({ so: s.allocationRules.sortOrder }).from(s.allocationRules);
   const sortOrder = existing.reduce((mx, r) => Math.max(mx, r.so), -1) + 1;
+  // Scheduled rules are Fixed-amount, time-driven (no income context). Compute
+  // the first run date from cadence + anchor.
+  const scheduled = args.trigger === "scheduled";
+  const cadence = scheduled ? (args.cadence ?? "monthly") : null;
+  const anchorDate = scheduled ? (args.anchorDate ?? todayISO()) : null;
+  const nextRunDate = scheduled && cadence ? firstRunOnOrAfter(cadence as Cadence, anchorDate, todayISO()) : null;
   await database.insert(s.allocationRules).values({
     id,
     name: args.name,
-    method: args.method,
+    method: scheduled ? "Fixed" : args.method,
     value: args.value == null ? null : String(args.value),
     dest,
     fromAccountId: args.fromAccountId ?? null,
@@ -642,6 +651,9 @@ export async function createAllocationRule(args: {
     trigger: args.trigger ?? "on_income",
     enabled: args.enabled ?? true,
     incomeMatch: args.incomeMatch ?? null,
+    cadence,
+    anchorDate,
+    nextRunDate,
     icon: args.icon ?? "transfers",
     sortOrder,
   });
@@ -660,6 +672,8 @@ export async function updateAllocationRule(
     trigger?: string;
     enabled?: boolean;
     incomeMatch?: string | null;
+    cadence?: string | null;
+    anchorDate?: string | null;
     icon?: string | null;
     sortOrder?: number;
   }
@@ -678,8 +692,25 @@ export async function updateAllocationRule(
   if (patch.trigger !== undefined) values.trigger = patch.trigger;
   if (patch.enabled !== undefined) values.enabled = patch.enabled;
   if (patch.incomeMatch !== undefined) values.incomeMatch = patch.incomeMatch;
+  if (patch.cadence !== undefined) values.cadence = patch.cadence;
+  if (patch.anchorDate !== undefined) values.anchorDate = patch.anchorDate;
   if (patch.icon !== undefined) values.icon = patch.icon;
   if (patch.sortOrder !== undefined) values.sortOrder = patch.sortOrder;
+  // Recompute the schedule when the trigger/cadence/anchor changes.
+  if (patch.trigger !== undefined || patch.cadence !== undefined || patch.anchorDate !== undefined) {
+    const [cur] = await database.select().from(s.allocationRules).where(eq(s.allocationRules.id, id));
+    const trigger = patch.trigger ?? cur?.trigger;
+    if (trigger === "scheduled") {
+      const cadence = (patch.cadence ?? (cur?.cadence as string | null) ?? "monthly") as Cadence;
+      const anchor = patch.anchorDate ?? (cur?.anchorDate as string | null) ?? todayISO();
+      values.method = "Fixed";
+      values.cadence = cadence;
+      values.anchorDate = anchor;
+      values.nextRunDate = firstRunOnOrAfter(cadence, anchor, todayISO());
+    } else {
+      values.nextRunDate = null; // no longer scheduled → stop generating
+    }
+  }
   if (Object.keys(values).length) {
     await database.update(s.allocationRules).set(values).where(eq(s.allocationRules.id, id));
   }
@@ -864,6 +895,62 @@ export async function reconcilePendingTransfers() {
     }
   });
   return { ok: true as const, matched: recs.length };
+}
+
+/**
+ * Generate planned transfers for every due `scheduled` rule (run daily by the
+ * cron, or on demand). Each due run-date becomes one pending transfer instance;
+ * `triggeredBy = scheduled:<ruleId>:<runDate>` makes it idempotent (re-runs and
+ * catch-up cycles never double-create). Then the rule's nextRunDate is advanced.
+ * The money isn't moved here — these are reminders that `reconcilePendingTransfers`
+ * later auto-checks-off once the real transfer is detected.
+ */
+export async function runScheduledTransfers(today?: string) {
+  const database = requireDb();
+  const todayStr = today ?? todayISO();
+  const rules = await database
+    .select()
+    .from(s.allocationRules)
+    .where(and(eq(s.allocationRules.trigger, "scheduled"), eq(s.allocationRules.enabled, true)));
+
+  let created = 0;
+  for (const r of rules) {
+    const cadence = r.cadence as Cadence | null;
+    const value = Number(r.value ?? 0);
+    if (!cadence || !r.nextRunDate || !r.fromAccountId || !r.toAccountId || !(value > 0)) continue;
+    const anchor = (r.anchorDate as string | null) ?? null;
+    const runs = dueRuns(cadence, anchor, r.nextRunDate as string, todayStr);
+    if (!runs.length) continue;
+
+    for (const runDate of runs) {
+      const triggeredBy = `scheduled:${r.id}:${runDate}`;
+      const [dup] = await database
+        .select({ id: s.transferInstances.id })
+        .from(s.transferInstances)
+        .where(eq(s.transferInstances.triggeredBy, triggeredBy))
+        .limit(1);
+      if (dup) continue;
+      await database.insert(s.transferInstances).values({
+        ruleId: r.id,
+        fromAccountId: r.fromAccountId,
+        toAccountId: r.toAccountId,
+        memberId: r.memberId ?? null,
+        amount: String(value),
+        method: "Fixed",
+        plannedDate: runDate,
+        status: "pending",
+        triggeredBy,
+      });
+      created++;
+    }
+
+    const last = runs[runs.length - 1];
+    await database
+      .update(s.allocationRules)
+      .set({ nextRunDate: nextOccurrence(cadence, anchor, last), lastRunDate: last })
+      .where(eq(s.allocationRules.id, r.id));
+  }
+  return { ok: true as const, created };
 }
 
 // ====================================================================

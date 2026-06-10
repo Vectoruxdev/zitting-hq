@@ -340,6 +340,10 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       trigger: r.trigger ?? "on_income",
       enabled: r.enabled ?? true,
       incomeMatch: r.incomeMatch ?? null,
+      cadence: r.cadence ?? null,
+      anchorDate: (r.anchorDate as string | null) ?? null,
+      nextRunDate: (r.nextRunDate as string | null) ?? null,
+      nextRunLabel: r.nextRunDate ? `Next · ${(() => { const d = parseDate(r.nextRunDate as string); return d ? dayLabel(d) : (r.nextRunDate as string); })()}` : null,
       icon: r.icon,
     }));
     // incomeStreams are derived from transactions (below, in the derived section).

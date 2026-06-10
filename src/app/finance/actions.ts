@@ -347,6 +347,14 @@ export async function reconcilePendingTransfers() {
   refresh();
   return res;
 }
+/** Generate due scheduled transfers now, then reconcile (same as the daily cron). */
+export async function runScheduledTransfersNow() {
+  await ensureOwner();
+  const gen = await m.runScheduledTransfers();
+  const rec = await m.reconcilePendingTransfers();
+  refresh();
+  return { ok: true as const, generated: gen.created, reconciled: rec.matched };
+}
 
 // ---- notifications ----
 /** Mark alerts read for the current viewer (all visible, or a specific set). */

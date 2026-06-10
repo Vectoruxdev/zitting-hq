@@ -97,57 +97,70 @@ export function looksLikeTransfer(merchant: string, type?: string): boolean {
 // ---------------------------------------------------------------------------
 
 const DICTIONARY: [string, string][] = [
-  // groceries
-  ["harmons", "groceries"], ["smith", "groceries"], ["kroger", "groceries"], ["walmart", "groceries"],
-  ["costco", "groceries"], ["trader joe", "groceries"], ["aldi", "groceries"], ["whole foods", "groceries"],
-  ["winco", "groceries"], ["sprouts", "groceries"], ["sam s club", "groceries"], ["instacart", "groceries"],
-  ["safeway", "groceries"], ["fresh market", "groceries"], ["macey", "groceries"],
-  // dining
-  ["chick-fil", "dining"], ["chick fil", "dining"], ["mcdonald", "dining"], ["starbucks", "dining"],
-  ["domino", "dining"], ["pizza", "dining"], ["taco", "dining"], ["wendy", "dining"], ["burger", "dining"],
-  ["chipotle", "dining"], ["panda express", "dining"], ["subway", "dining"], ["dunkin", "dining"],
-  ["in n out", "dining"], ["crumbl", "dining"], ["swig", "dining"], ["cafe", "dining"], ["restaurant", "dining"],
-  ["grubhub", "dining"], ["doordash", "dining"], ["uber eats", "dining"], ["kfc", "dining"], ["cafe rio", "dining"],
-  // transportation
-  ["chevron", "transportation"], ["shell", "transportation"], ["sinclair", "transportation"],
-  ["maverik", "transportation"], ["exxon", "transportation"], ["phillips 66", "transportation"],
-  ["conoco", "transportation"], ["7-eleven", "transportation"], ["uber", "transportation"], ["lyft", "transportation"],
-  ["delta air", "transportation"], ["parking", "transportation"], ["jiffy lube", "transportation"],
-  ["autozone", "transportation"], ["supercharg", "transportation"], ["frontier air", "transportation"],
-  // utilities
-  ["rocky mountain power", "utilities"], ["dominion energy", "utilities"], ["xfinity", "utilities"],
-  ["comcast", "utilities"], ["centurylink", "utilities"], ["verizon", "utilities"], ["t-mobile", "utilities"],
-  ["at&t", "utilities"], ["google fiber", "utilities"], ["questar", "utilities"], ["waste management", "utilities"],
-  // insurance
-  ["state farm", "insurance"], ["geico", "insurance"], ["progressive", "insurance"], ["allstate", "insurance"],
-  ["american family", "insurance"], ["select health", "insurance"], ["blue cross", "insurance"], ["bcbs", "insurance"],
-  // subscriptions
-  ["netflix", "subscriptions"], ["spotify", "subscriptions"], ["hulu", "subscriptions"], ["disney", "subscriptions"],
-  ["apple", "subscriptions"], ["icloud", "subscriptions"], ["amazon prime", "subscriptions"], ["youtube", "subscriptions"],
-  ["hbo", "subscriptions"], ["paramount", "subscriptions"], ["peacock", "subscriptions"], ["audible", "subscriptions"],
-  ["dropbox", "subscriptions"], ["adobe", "subscriptions"], ["openai", "subscriptions"], ["chatgpt", "subscriptions"],
-  ["github", "subscriptions"], ["patreon", "subscriptions"],
-  // shopping
-  ["amazon", "shopping"], ["target", "shopping"], ["best buy", "shopping"], ["home depot", "shopping"],
-  ["lowes", "shopping"], ["ikea", "shopping"], ["etsy", "shopping"], ["ebay", "shopping"], ["old navy", "shopping"],
-  ["nike", "shopping"], ["ulta", "shopping"], ["sephora", "shopping"], ["walgreens", "shopping"], ["cvs", "shopping"],
-  // health
-  ["intermountain", "health"], ["revere health", "health"], ["pharmacy", "health"], ["dental", "health"],
-  ["dentist", "health"], ["clinic", "health"], ["vasa", "health"], ["planet fitness", "health"], ["life time", "health"],
-  // kids
-  ["kindercare", "kids"], ["daycare", "kids"], ["tuition", "kids"],
+  // groceries & household — Costco/Walmart get their own line; the rest are "Other"
+  ["costco", "groc-costco-walmart"], ["walmart", "groc-costco-walmart"], ["sam s club", "groc-costco-walmart"],
+  ["basic american", "groc-basic-american"], ["bee s market", "groc-bees"], ["bees market", "groc-bees"],
+  ["sunset farm", "groc-sunset-farms"], ["sprouts", "groc-health-food"], ["whole foods", "groc-health-food"],
+  ["harmons", "groc-other"], ["smith", "groc-other"], ["kroger", "groc-other"], ["trader joe", "groc-other"],
+  ["aldi", "groc-other"], ["winco", "groc-other"], ["instacart", "groc-other"], ["safeway", "groc-other"],
+  ["fresh market", "groc-other"], ["macey", "groc-other"],
+  // dining / local entertainment
+  ["chick-fil", "te-entertainment-local"], ["chick fil", "te-entertainment-local"], ["mcdonald", "te-entertainment-local"],
+  ["starbucks", "te-entertainment-local"], ["domino", "te-entertainment-local"], ["pizza", "te-entertainment-local"],
+  ["taco", "te-entertainment-local"], ["wendy", "te-entertainment-local"], ["burger", "te-entertainment-local"],
+  ["chipotle", "te-entertainment-local"], ["panda express", "te-entertainment-local"], ["subway", "te-entertainment-local"],
+  ["dunkin", "te-entertainment-local"], ["in n out", "te-entertainment-local"], ["crumbl", "te-entertainment-local"],
+  ["swig", "te-entertainment-local"], ["cafe", "te-entertainment-local"], ["restaurant", "te-entertainment-local"],
+  ["grubhub", "te-entertainment-local"], ["doordash", "te-entertainment-local"], ["uber eats", "te-entertainment-local"],
+  ["kfc", "te-entertainment-local"], ["cafe rio", "te-entertainment-local"],
+  ["vasa", "te-entertainment-local"], ["planet fitness", "te-entertainment-local"], ["life time", "te-entertainment-local"],
+  // automobile — fuel, maintenance, rideshare/parking
+  ["chevron", "auto-fuel"], ["shell", "auto-fuel"], ["sinclair", "auto-fuel"], ["maverik", "auto-fuel"],
+  ["exxon", "auto-fuel"], ["phillips 66", "auto-fuel"], ["conoco", "auto-fuel"], ["7-eleven", "auto-fuel"],
+  ["supercharg", "auto-fuel"], ["jiffy lube", "auto-maintenance"], ["autozone", "auto-maintenance"],
+  ["uber", "auto-other"], ["lyft", "auto-other"], ["parking", "auto-other"],
+  // travel (outside) — air travel
+  ["delta air", "te-travel-outside"], ["frontier air", "te-travel-outside"], ["southwest air", "te-travel-outside"],
+  // utilities (sub-categorized)
+  ["rocky mountain power", "util-electricity"], ["dominion energy", "util-gas"], ["questar", "util-gas"],
+  ["xfinity", "util-phone-internet"], ["comcast", "util-phone-internet"], ["centurylink", "util-phone-internet"],
+  ["verizon", "util-phone-internet"], ["t-mobile", "util-phone-internet"], ["at&t", "util-phone-internet"],
+  ["google fiber", "util-phone-internet"], ["waste management", "util-water-sewer-garbage"],
+  // insurance — auto vs health
+  ["state farm", "auto-insurance"], ["geico", "auto-insurance"], ["progressive", "auto-insurance"],
+  ["allstate", "auto-insurance"], ["american family", "auto-insurance"],
+  ["select health", "ins-health"], ["blue cross", "ins-health"], ["bcbs", "ins-health"],
+  // streaming → local entertainment; software/cloud → misc other
+  ["netflix", "te-entertainment-local"], ["spotify", "te-entertainment-local"], ["hulu", "te-entertainment-local"],
+  ["disney", "te-entertainment-local"], ["youtube", "te-entertainment-local"], ["hbo", "te-entertainment-local"],
+  ["paramount", "te-entertainment-local"], ["peacock", "te-entertainment-local"], ["audible", "te-entertainment-local"],
+  ["apple", "misc-other"], ["icloud", "misc-other"], ["amazon prime", "misc-other"], ["dropbox", "misc-other"],
+  ["adobe", "misc-other"], ["openai", "misc-other"], ["chatgpt", "misc-other"], ["github", "misc-other"], ["patreon", "misc-other"],
+  // home/yard improvements + clothing + medical + general shopping
+  ["home depot", "home-yard-improvements"], ["lowes", "home-yard-improvements"], ["ikea", "home-yard-improvements"],
+  ["old navy", "misc-clothing"], ["nike", "misc-clothing"],
+  ["walgreens", "misc-medical"], ["cvs", "misc-medical"], ["intermountain", "misc-medical"],
+  ["revere health", "misc-medical"], ["pharmacy", "misc-medical"], ["clinic", "misc-medical"],
+  ["dental", "misc-dental"], ["dentist", "misc-dental"],
+  ["amazon", "misc-other"], ["target", "misc-other"], ["best buy", "misc-other"], ["etsy", "misc-other"],
+  ["ebay", "misc-other"], ["ulta", "misc-other"], ["sephora", "misc-other"],
+  // child care + education
+  ["kindercare", "babysitting"], ["daycare", "babysitting"], ["tuition", "misc-education"],
   // income
-  ["adp", "paycheck"], ["payroll", "paycheck"], ["eddyhr", "paycheck"], ["paychex", "paycheck"], ["gusto", "paycheck"],
-  // tithing
-  ["tithing", "tithing"], ["church of jesus christ", "tithing"], ["deseret", "tithing"],
+  ["adp", "income-paycheck"], ["payroll", "income-paycheck"], ["eddyhr", "income-paycheck"],
+  ["paychex", "income-paycheck"], ["gusto", "income-paycheck"],
+  // tithing / charitable
+  ["tithing", "charitable-tithing"], ["church of jesus christ", "charitable-tithing"], ["deseret", "charitable-tithing"],
 ];
 
 const KEYWORDS: [RegExp, string][] = [
-  [/\b(power|electric|energy|utility|water|sewer|natural gas)\b/, "utilities"],
-  [/\binsuranc/, "insurance"],
-  [/\b(mortgage|escrow|hoa)\b/, "housing"],
-  [/\b(payroll|direct dep)\b/, "paycheck"],
-  [/\binterest\b/, "other-income"],
+  [/\b(power|electric|energy)\b/, "util-electricity"],
+  [/\b(water|sewer|garbage|trash)\b/, "util-water-sewer-garbage"],
+  [/\bnatural gas\b/, "util-gas"],
+  [/\binsuranc/, "ins-other"],
+  [/\b(mortgage|escrow|hoa|rent)\b/, "rent"],
+  [/\b(payroll|direct dep)\b/, "income-paycheck"],
+  [/\binterest\b/, "interest-fees"],
 ];
 
 // ---------------------------------------------------------------------------
@@ -224,7 +237,7 @@ export function scoreCategory(txn: TxnLike, opts: { rules?: RuleLike[]; memory?:
   }
 
   // 6. Positive amount with no other signal → likely income.
-  if (txn.amount > 0) return { categoryId: "other-income", confidence: 0.55, source: "income", merchantKey };
+  if (txn.amount > 0) return { categoryId: "income-other", confidence: 0.55, source: "income", merchantKey };
 
   // 7. Give up.
   return { categoryId: "uncategorized", confidence: 0, source: "none", merchantKey };

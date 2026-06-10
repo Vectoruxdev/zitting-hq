@@ -65,11 +65,11 @@ describe("looksLikeTransfer", () => {
 describe("scoreCategory — built-in dictionary", () => {
   const opts = {};
   it("maps common merchants confidently", () => {
-    expect(scoreCategory({ merchant: MACU.netflix, amount: -22.99 }, opts).categoryId).toBe("subscriptions");
-    expect(scoreCategory({ merchant: MACU.harmons, amount: -84.21 }, opts).categoryId).toBe("groceries");
-    expect(scoreCategory({ merchant: MACU.chickfila, amount: -18.75 }, opts).categoryId).toBe("dining");
-    expect(scoreCategory({ merchant: MACU.costco, amount: -60 }, opts).categoryId).toBe("groceries");
-    expect(scoreCategory({ merchant: MACU.adp, amount: 3265.48 }, opts).categoryId).toBe("paycheck");
+    expect(scoreCategory({ merchant: MACU.netflix, amount: -22.99 }, opts).categoryId).toBe("te-entertainment-local");
+    expect(scoreCategory({ merchant: MACU.harmons, amount: -84.21 }, opts).categoryId).toBe("groc-other");
+    expect(scoreCategory({ merchant: MACU.chickfila, amount: -18.75 }, opts).categoryId).toBe("te-entertainment-local");
+    expect(scoreCategory({ merchant: MACU.costco, amount: -60 }, opts).categoryId).toBe("groc-costco-walmart");
+    expect(scoreCategory({ merchant: MACU.adp, amount: 3265.48 }, opts).categoryId).toBe("income-paycheck");
   });
   it("dictionary hits clear the review threshold", () => {
     expect(scoreCategory({ merchant: MACU.netflix, amount: -22.99 }, opts).confidence).toBeGreaterThanOrEqual(REVIEW_THRESHOLD);
@@ -79,7 +79,7 @@ describe("scoreCategory — built-in dictionary", () => {
 describe("scoreCategory — keyword heuristics", () => {
   it("catches utilities by keyword", () => {
     const s = scoreCategory({ merchant: MACU.power, amount: -142.66 }, {});
-    expect(s.categoryId).toBe("utilities");
+    expect(s.categoryId).toBe("util-electricity");
   });
 });
 
@@ -90,7 +90,7 @@ describe("scoreCategory — transfers and income", () => {
   });
   it("treats unknown positive amounts as income", () => {
     const s = scoreCategory({ merchant: "RANDOM DEPOSIT XYZ", amount: 1000 }, {});
-    expect(s.categoryId).toBe("other-income");
+    expect(s.categoryId).toBe("income-other");
     expect(s.source).toBe("income");
   });
   it("returns uncategorized + low confidence when nothing matches", () => {
@@ -103,16 +103,16 @@ describe("scoreCategory — transfers and income", () => {
 describe("scoreCategory — learned memory beats the dictionary", () => {
   it("uses learned category for a known merchant", () => {
     const key = extractMerchant(MACU.netflix); // "netflix"
-    const memory: MemoryMap = new Map([[key, [{ categoryId: "entertainment", count: 4 }]]]);
+    const memory: MemoryMap = new Map([[key, [{ categoryId: "misc-other", count: 4 }]]]);
     const s = scoreCategory({ merchant: MACU.netflix, amount: -22.99 }, { memory });
     expect(s.source).toBe("learned");
-    expect(s.categoryId).toBe("entertainment"); // overrides dictionary's "subscriptions"
+    expect(s.categoryId).toBe("misc-other"); // overrides the dictionary's entertainment mapping
     expect(s.confidence).toBeGreaterThanOrEqual(REVIEW_THRESHOLD);
   });
   it("confidence reflects consistency", () => {
     const key = extractMerchant(MACU.harmons);
-    const mixed: MemoryMap = new Map([[key, [{ categoryId: "groceries", count: 3 }, { categoryId: "shopping", count: 3 }]]]);
-    const consistent: MemoryMap = new Map([[key, [{ categoryId: "groceries", count: 6 }]]]);
+    const mixed: MemoryMap = new Map([[key, [{ categoryId: "groc-other", count: 3 }, { categoryId: "misc-other", count: 3 }]]]);
+    const consistent: MemoryMap = new Map([[key, [{ categoryId: "groc-other", count: 6 }]]]);
     const a = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory: mixed });
     const b = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory: consistent });
     expect(b.confidence).toBeGreaterThan(a.confidence);
@@ -121,10 +121,10 @@ describe("scoreCategory — learned memory beats the dictionary", () => {
 
 describe("scoreCategory — explicit rules win", () => {
   it("rule overrides everything with full confidence", () => {
-    const rules = [{ matchType: "contains", matchValue: "netflix", field: "merchant", categoryId: "shopping", member: null, priority: 10, enabled: true }];
+    const rules = [{ matchType: "contains", matchValue: "netflix", field: "merchant", categoryId: "misc-other", member: null, priority: 10, enabled: true }];
     const s = scoreCategory({ merchant: MACU.netflix, amount: -22.99 }, { rules });
     expect(s.source).toBe("rule");
-    expect(s.categoryId).toBe("shopping");
+    expect(s.categoryId).toBe("misc-other");
     expect(s.confidence).toBe(1);
   });
 });
