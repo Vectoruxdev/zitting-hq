@@ -134,7 +134,19 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .from(s.accounts)
       .catch(() => [] as { id: string; space: string }[]);
     const spaceById = new Map(spaceRows.map((r) => [r.id, r.space]));
-    const allAccountRows = accountColRows.map((a) => ({ ...a, space: spaceById.get(a.id) ?? "household" }));
+    // Available balance read separately + defensively so a not-yet-migrated
+    // `available_balance` column degrades to "no available figure" instead of
+    // breaking this CORE accounts read.
+    const availRows = await db
+      .select({ id: s.accounts.id, available: s.accounts.availableBalance })
+      .from(s.accounts)
+      .catch(() => [] as { id: string; available: string | null }[]);
+    const availById = new Map(availRows.map((r) => [r.id, r.available]));
+    const allAccountRows = accountColRows.map((a) => ({
+      ...a,
+      space: spaceById.get(a.id) ?? "household",
+      availableBalance: availById.get(a.id) ?? null,
+    }));
     // Column-explicit (no `allowance`) so a not-yet-migrated allowance column
     // can't break this CORE read; allowance is read separately + defensively.
     const memberRows = await db
@@ -362,6 +374,12 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           mask: a.mask,
           balance: liveBalance(a),
           openingBalance: n(a.balance),
+          // Bank's available balance (spendable after holds), if reported. Shown
+          // as a secondary line; null when the bank doesn't provide it.
+          available:
+            (a as { availableBalance?: string | null }).availableBalance != null
+              ? n((a as { availableBalance?: string | null }).availableBalance)
+              : null,
           who: a.who,
           managers: managersByAccount.get(a.id) ?? [],
           plaidLinked: plaidLinkedIds.has(a.id),

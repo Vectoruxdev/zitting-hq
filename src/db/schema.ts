@@ -63,6 +63,11 @@ export const accounts = pgTable("accounts", {
   mask: text("mask"),
   type: text("type").notNull(), // checking | savings | credit
   balance: numeric("balance", { precision: 14, scale: 2 }).notNull().default("0"),
+  // Point-in-time AVAILABLE balance from the bank (spendable after pending holds),
+  // captured on each Plaid sync. `balance` (above) is the OPENING balance and the
+  // displayed primary number is the CURRENT balance (opening + txn net). Available
+  // is shown as a secondary figure on the card. Null when the bank doesn't report it.
+  availableBalance: numeric("available_balance", { precision: 14, scale: 2 }),
   who: text("who").notNull().default("Household"),
   // Which workspace this account belongs to. "business" accounts are hidden from
   // the personal/household dashboard + emails and skipped by Plaid sync. (Seam

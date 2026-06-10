@@ -37,6 +37,9 @@ function ZHQAccountCard({ acct, onOpen }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div className="zt-num" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', color: credit ? 'var(--text-primary)' : 'var(--text-primary)' }}>{ZHQMoney(acct.balance, true)}</div>
+          {acct.available != null && acct.available !== acct.balance ? (
+            <div className="zt-num" style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{ZHQMoney(acct.available, false)} available</div>
+          ) : null}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7 }}>
             <Avatar name={acct.who} size="xs" />
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{acct.who}</span>
@@ -257,8 +260,11 @@ function ZHQAccountDetail({ acct, onBack }) {
             </div>
             {acct.dest ? <Badge tone="accent" size="sm" style={{ marginLeft: 'auto' }}>{acct.dest} destination</Badge> : null}
           </div>
-          <div className="zt-eyebrow" style={{ marginBottom: 8 }}>{credit ? 'Current balance' : 'Available balance'}</div>
+          <div className="zt-eyebrow" style={{ marginBottom: 8 }}>Current balance</div>
           <div className="zt-num" style={{ fontSize: 44, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>{ZHQMoney(acct.balance, true)}</div>
+          {acct.available != null && acct.available !== acct.balance ? (
+            <div className="zt-num" style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>{ZHQMoney(acct.available, false)} available</div>
+          ) : null}
           {acct.openingBalance != null && acct.balance !== acct.openingBalance ? (
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
               {ZHQMoney(acct.openingBalance, false)} opening + {ZHQMoney(acct.balance - acct.openingBalance, false)} imported activity

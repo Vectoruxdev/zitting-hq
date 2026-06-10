@@ -218,21 +218,19 @@ export async function syncItem(itemId: string) {
     throw e;
   }
 
-  // 2) Current balances per account (to reconcile our opening balance).
-  // For depository accounts we want the AVAILABLE balance — that's the number
-  // the bank's own app shows as your spendable balance (current minus holds).
-  // For credit/loan accounts `available` is the remaining credit line, so we use
-  // `current` (the amount owed) instead.
-  const balanceByPlaid = new Map<string, number>();
-  const pickBalance = (a: {
-    type?: string | null;
-    balances?: { available?: number | null; current?: number | null } | null;
-  }): number | null => {
-    const bals = a.balances;
-    if (!bals) return null;
-    const isDebt = a.type === "credit" || a.type === "loan";
-    const v = isDebt ? bals.current : bals.available ?? bals.current;
-    return v ?? null;
+  // 2) Balances per account. We reconcile our displayed balance to the bank's
+  // CURRENT balance (the posted ledger balance — the main number on the card)
+  // and separately snapshot the AVAILABLE balance (spendable after pending holds)
+  // for the secondary line. The bank doesn't always report `available`.
+  const balanceByPlaid = new Map<string, number>(); // current (main)
+  const availableByPlaid = new Map<string, number | null>(); // available (snapshot)
+  const capture = (accts: Array<{ account_id: string; balances?: { available?: number | null; current?: number | null } | null }>) => {
+    for (const a of accts) {
+      const bals = a.balances;
+      if (!bals) continue;
+      if (bals.current != null) balanceByPlaid.set(a.account_id, bals.current);
+      availableByPlaid.set(a.account_id, bals.available ?? null);
+    }
   };
   // Seed from accountsGet first — it returns cached balances and is reliable
   // (the same call used at connect). accountsBalanceGet does a LIVE pull from the
@@ -242,20 +240,14 @@ export async function syncItem(itemId: string) {
   // we always have a value to reconcile against.
   try {
     const acc = await plaid.accountsGet({ access_token: item.accessToken });
-    for (const a of acc.data.accounts) {
-      const v = pickBalance(a);
-      if (v != null) balanceByPlaid.set(a.account_id, v);
-    }
+    capture(acc.data.accounts);
   } catch {
     /* fall through to the live balance call */
   }
   // Refresh with the live balance where it succeeds (more up to date).
   try {
     const bal = await plaid.accountsBalanceGet({ access_token: item.accessToken });
-    for (const a of bal.data.accounts) {
-      const v = pickBalance(a);
-      if (v != null) balanceByPlaid.set(a.account_id, v);
-    }
+    capture(bal.data.accounts);
   } catch {
     /* balances are best-effort — accountsGet seed above covers us */
   }
@@ -350,7 +342,16 @@ export async function syncItem(itemId: string) {
       .from(s.transactions)
       .where(eq(s.transactions.accountId, p.accountId));
     const net = balRows.reduce((sum, r) => sum + Number(r.a ?? 0), 0);
+    // Core reconcile: displayed (current) balance = opening + net.
     await database.update(s.accounts).set({ balance: String(bankBal - net) }).where(eq(s.accounts.id, p.accountId));
+    // Available snapshot (point-in-time, not derived). Written separately + defensively
+    // so a not-yet-migrated `available_balance` column can't break the core sync above.
+    const avail = availableByPlaid.get(p.plaidAccountId);
+    await database
+      .update(s.accounts)
+      .set({ availableBalance: avail != null ? String(avail) : null })
+      .where(eq(s.accounts.id, p.accountId))
+      .catch(() => {});
   }
 
   // 5) In-app notifications for what just arrived (owners + managing members).
