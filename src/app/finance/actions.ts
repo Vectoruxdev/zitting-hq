@@ -212,6 +212,25 @@ export async function deleteExpectedIncome(id: string) {
   refresh();
   return res;
 }
+/** Owner: mark a payer (merchant key) as a curated income source. */
+export async function markIncomeSource(args: { matchKey: string; name: string; memberId?: string | null; accountId?: string | null }) {
+  const u = await ensureOwner();
+  const res = await m.markIncomeSource({ ...args, createdBy: u?.memberId ?? null });
+  refresh();
+  return res;
+}
+export async function updateIncomeSource(id: string, patch: Parameters<typeof m.updateIncomeSource>[1]) {
+  await ensureOwner();
+  const res = await m.updateIncomeSource(id, patch);
+  refresh();
+  return res;
+}
+export async function deleteIncomeSource(id: string) {
+  await ensureOwner();
+  const res = await m.deleteIncomeSource(id);
+  refresh();
+  return res;
+}
 /** Move an account to/from the household (business accounts are hidden + sync-skipped). */
 export async function setAccountSpace(id: string, space: "household" | "business") {
   await ensureOwner();

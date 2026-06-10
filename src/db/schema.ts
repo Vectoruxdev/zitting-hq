@@ -359,6 +359,24 @@ export const expectedIncome = pgTable("expected_income", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+/**
+ * Curated income registry — the single source of truth for "what counts as
+ * income." The user marks a payer (by merchant key) as income; ALL deposits from
+ * that payer (past + future) then count, and ONLY marked sources drive the
+ * transfer-coverage forecast and the allowance paycheck math. (The raw
+ * `transactions.income` boolean is just amount>0 and is too broad.)
+ */
+export const incomeSources = pgTable("income_sources", {
+  id: text("id").primaryKey(),
+  matchKey: text("match_key").notNull().unique(), // extractMerchant key identifying the payer
+  name: text("name").notNull(),
+  memberId: text("member_id").references(() => familyMembers.id), // whose income; null = household
+  accountId: text("account_id").references(() => accounts.id), // deposit account (for coverage matching)
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const incomeStreams = pgTable("income_streams", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

@@ -505,13 +505,17 @@ export async function commitImport(args: {
     .catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
   const perCheckByEarner = new Map<string, (typeof perCheckRules)[number]>();
   for (const r of perCheckRules) if (!perCheckByEarner.has(r.memberId)) perCheckByEarner.set(r.memberId, r);
+  // Income registry: which payer (merchant key) is whose income. A check fires an
+  // earner's per-paycheck rule only when its payer is a registered income source.
+  const incomeSrcRows = await activeIncomeSources();
+  const ownerByKey = new Map(incomeSrcRows.map((r) => [r.matchKey, r.memberId] as const));
 
   for (const row of incomeRows) {
     const g = await generateTransfersForIncome(row.id);
     generated += g.created;
-    // If this paycheck belongs to an earner with a per-paycheck allowance rule,
-    // evaluate the check on its own and emit suggested allowance transfers.
-    const rule = row.memberId ? perCheckByEarner.get(row.memberId) : undefined;
+    // Fire the per-paycheck rule of the earner who owns this check's payer source.
+    const owner = ownerByKey.get(extractMerchant(row.merchant)) ?? null;
+    const rule = owner ? perCheckByEarner.get(owner) : undefined;
     if (rule) {
       const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
       if (!keys || !keys.length || keys.includes(extractMerchant(row.merchant))) {
@@ -1208,18 +1212,77 @@ export async function runScheduledTransfers(today?: string) {
 }
 
 // ====================================================================
+// Income registry (curated "what counts as income")
+// ====================================================================
+/** All active income sources (defensive — empty before the migration). */
+export async function activeIncomeSources() {
+  return requireDb()
+    .select()
+    .from(s.incomeSources)
+    .where(eq(s.incomeSources.active, true))
+    .catch(() => [] as (typeof s.incomeSources.$inferSelect)[]);
+}
+/** Set of payer merchant keys registered as a given member's income. */
+export async function incomeKeysForMember(memberId: string): Promise<Set<string>> {
+  const rows = await activeIncomeSources();
+  return new Set(rows.filter((r) => r.memberId === memberId).map((r) => r.matchKey));
+}
+/** Mark a payer (merchant key) as an income source. Upsert on matchKey. */
+export async function markIncomeSource(args: {
+  matchKey: string;
+  name: string;
+  memberId?: string | null;
+  accountId?: string | null;
+  createdBy?: string | null;
+}) {
+  const database = requireDb();
+  const [existing] = await database.select({ id: s.incomeSources.id }).from(s.incomeSources).where(eq(s.incomeSources.matchKey, args.matchKey));
+  if (existing) {
+    await database
+      .update(s.incomeSources)
+      .set({ name: args.name, memberId: args.memberId ?? null, accountId: args.accountId ?? null, active: true })
+      .where(eq(s.incomeSources.id, existing.id));
+    return { ok: true as const, id: existing.id };
+  }
+  const id = crypto.randomUUID();
+  await database.insert(s.incomeSources).values({
+    id,
+    matchKey: args.matchKey,
+    name: args.name,
+    memberId: args.memberId ?? null,
+    accountId: args.accountId ?? null,
+    createdBy: args.createdBy ?? null,
+  });
+  return { ok: true as const, id };
+}
+export async function updateIncomeSource(id: string, patch: { name?: string; memberId?: string | null; accountId?: string | null; active?: boolean }) {
+  await requireDb().update(s.incomeSources).set(patch).where(eq(s.incomeSources.id, id));
+  return { ok: true as const };
+}
+export async function deleteIncomeSource(id: string) {
+  await requireDb().delete(s.incomeSources).where(eq(s.incomeSources.id, id));
+  return { ok: true as const };
+}
+
+// ====================================================================
 // Performance allowances
 // ====================================================================
 const round2money = (n: number) => Math.round(n * 100) / 100;
 
-/** Income/non-transfer paychecks for a member, with the merchant key for matching. */
+/**
+ * A member's paychecks = income, non-transfer txns whose payer (merchant key) is
+ * a registered income source owned by that member. Curated, not the broad
+ * amount>0 `income` flag — so refunds/one-offs never count.
+ */
 async function paycheckTxnsFor(memberId: string) {
   const database = requireDb();
+  const keys = await incomeKeysForMember(memberId);
+  if (!keys.size) return [] as { amount: string | null; date: unknown; merchant: string }[];
   const rows = await database
     .select({ amount: s.transactions.amount, date: s.transactions.date, merchant: s.transactions.merchant })
     .from(s.transactions)
-    .where(and(eq(s.transactions.memberId, memberId), eq(s.transactions.income, true), eq(s.transactions.isTransfer, false)));
-  return rows;
+    .where(and(eq(s.transactions.income, true), eq(s.transactions.isTransfer, false)));
+  return rows.filter((r) => keys.has(extractMerchant(r.merchant)));
 }
 
 /**
@@ -1355,11 +1418,14 @@ export async function maybeGeneratePerCheckAllowance(txnId: number) {
     })
     .from(s.transactions)
     .where(eq(s.transactions.id, txnId));
-  if (!t || !t.income || t.isTransfer || !t.memberId) return { ok: true as const, created: 0 };
+  if (!t || !t.income || t.isTransfer) return { ok: true as const, created: 0 };
+  // The earner is whoever owns this payer in the income registry (not txn attribution).
+  const owner = (await activeIncomeSources()).find((src) => src.matchKey === extractMerchant(t.merchant))?.memberId ?? null;
+  if (!owner) return { ok: true as const, created: 0 };
   const rules = await database
     .select()
     .from(s.allowanceRules)
-    .where(and(eq(s.allowanceRules.memberId, t.memberId), eq(s.allowanceRules.period, "per_paycheck"), eq(s.allowanceRules.enabled, true)))
+    .where(and(eq(s.allowanceRules.memberId, owner), eq(s.allowanceRules.period, "per_paycheck"), eq(s.allowanceRules.enabled, true)))
     .catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
   const rule = rules[0];
   if (!rule) return { ok: true as const, created: 0 };

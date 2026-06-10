@@ -76,6 +76,7 @@ function emptyData(): FinanceData {
   d.budgets = [];
   d.rules = [];
   d.incomeStreams = [];
+  d.income = { sources: [], candidates: [], totalMonthly: 0, totalMonthlyLabel: "$0" };
   d.bills = [];
   d.goals = [];
   d.savingsStats = { totalSaved: 0, totalSavedDisplay: "$0", monthlyContrib: 0, monthlyContribDisplay: "$0", activeCount: 0, onTrackCount: 0 };
@@ -248,6 +249,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Manually-entered / adjusted expected income for the transfer-coverage forecast
     // (migration 0008) — defensive so a pre-migration DB just uses auto-forecasts.
     const expectedIncomeRows = await db.select().from(s.expectedIncome).catch(() => [] as (typeof s.expectedIncome.$inferSelect)[]);
+    // Curated income registry (migration 0009) — the source of truth for "what
+    // counts as income." Only marked payers drive forecasting + allowances.
+    const incomeSourceRows = await db.select().from(s.incomeSources).catch(() => [] as (typeof s.incomeSources.$inferSelect)[]);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -707,14 +711,18 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const todayISO = new Date().toISOString().slice(0, 10);
       const labelFor = (iso: string | null) => { const d = parseDate(iso); return d ? dayLabel(d) : null; };
 
-      // Income sources from history (income, non-transfer) grouped by merchant key.
+      // Only CURATED income sources count (not every positive deposit). Build the
+      // payer registry set; forecasting falls back to cash-only when nothing is marked.
+      const incomeRegistry = new Map(incomeSourceRows.filter((r) => r.active).map((r) => [r.matchKey, r]));
       const sourceMap = new Map<string, IncomeSourceInput>();
       for (const t of txnRows) {
         if (!t.income || t.isTransfer) continue;
         const iso = t.date as string | null;
         if (!iso) continue;
         const key = extractMerchant(t.merchant);
-        const e = sourceMap.get(key) || { key, name: t.merchant, accountId: t.accountId, points: [] };
+        if (!incomeRegistry.has(key)) continue; // unmarked payer → not income
+        const reg = incomeRegistry.get(key)!;
+        const e = sourceMap.get(key) || { key, name: reg.name, accountId: reg.accountId ?? t.accountId, points: [] };
         e.points.push({ dateISO: iso, amount: n(t.amount) });
         e.accountId = t.accountId ?? e.accountId; // most-recent deposit account
         sourceMap.set(key, e);
@@ -976,6 +984,44 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     }));
     data.bills = detectRecurring(detectInput, now);
     data.incomeStreams = detectIncomeStreams(detectInput, now);
+
+    // --- curated income registry: marked sources (with detected stats) + unmarked candidates ---
+    {
+      const detectedByKey = new Map((data.incomeStreams as { id: string }[]).map((d) => [d.id, d as Record<string, unknown>]));
+      const acctByKey = new Map<string, string>();
+      for (const t of txnRows) {
+        if (!t.income || t.isTransfer || !t.accountId) continue;
+        acctByKey.set(extractMerchant(t.merchant), t.accountId); // most-recent deposit account
+      }
+      const registered = incomeSourceRows.filter((r) => r.active);
+      const regKeys = new Set(registered.map((r) => r.matchKey));
+      const sources = registered.map((r) => {
+        const d = detectedByKey.get(r.matchKey) as { monthly?: number; cadence?: string; last?: string; next?: string; status?: string; spark?: number[] } | undefined;
+        const acctId = r.accountId ?? acctByKey.get(r.matchKey) ?? null;
+        const monthly = d?.monthly ?? 0;
+        return {
+          id: r.id,
+          matchKey: r.matchKey,
+          name: r.name,
+          memberId: r.memberId,
+          memberName: r.memberId ? memberById.get(r.memberId)?.name ?? null : null,
+          accountId: acctId,
+          accountLabel: acctId ? accountLabel(acctById.get(acctId)) : null,
+          monthly,
+          monthlyLabel: money0(monthly),
+          cadence: d?.cadence ?? null,
+          last: d?.last ?? null,
+          next: d?.next ?? null,
+          status: d?.status ?? "on-track",
+          spark: d?.spark ?? [],
+        };
+      });
+      const candidates = (data.incomeStreams as { id: string; name: string; sub: string | null; monthly: number; cadence: string; next: string | null }[])
+        .filter((d) => !regKeys.has(d.id))
+        .map((d) => ({ matchKey: d.id, name: d.name, sub: d.sub, monthly: d.monthly, monthlyLabel: money0(d.monthly), cadence: d.cadence, next: d.next, accountId: acctByKey.get(d.id) ?? null }));
+      const totalMonthly = sources.reduce((sum, x) => sum + x.monthly, 0);
+      data.income = { sources, candidates, totalMonthly, totalMonthlyLabel: money0(totalMonthly) };
+    }
 
     // The "current" month for stats/donut: this calendar month if it has any
     // transactions, else the most recent month that does — so imported history

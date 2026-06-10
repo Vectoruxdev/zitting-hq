@@ -181,13 +181,25 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Transfer (exclude from spending)</span>
             <Toggle checked={!!txn.isTransfer} onChange={() => onToggleTransfer(txn)} />
           </div>
-          {txn.income && !txn.isTransfer ? (
-            <div style={{ padding: '11px 0', borderTop: '1px solid var(--border-hairline)', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-              {txn.who && txn.who !== 'Household'
-                ? <>Counts as <b style={{ color: 'var(--text-secondary)' }}>{txn.who}</b>&rsquo;s paycheck for their allowance rule.</>
-                : <>Attribute this deposit to a person (above) to count it as their paycheck for allowance rules.</>}
-            </div>
-          ) : null}
+          {txn.income && !txn.isTransfer ? (() => {
+            const DD = window.ZHQ_DATA || {};
+            const marked = ((DD.income && DD.income.sources) || []).find((s) => s.matchKey === txn.sourceKey);
+            return (
+              <div style={{ padding: '12px 0', borderTop: '1px solid var(--border-hairline)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: marked ? 'var(--accent)' : 'var(--text-tertiary)', lineHeight: 1.5 }}>
+                  {marked
+                    ? <>✓ Counts as income{marked.memberName ? ` · ${marked.memberName}` : ''}</>
+                    : <>Not counted as income yet. Mark this payer so its deposits drive forecasts &amp; allowances.</>}
+                </div>
+                {!marked && window.ZHQ_API && window.ZHQ_API.markIncomeSource && txn.sourceKey ? (
+                  <Button variant="secondary" size="sm" onClick={async () => {
+                    await window.ZHQ_API.markIncomeSource({ matchKey: txn.sourceKey, name: txn.merchant, memberId: txn.memberId || null, accountId: txn.accountId || null });
+                    window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+                  }}>Mark as income</Button>
+                ) : null}
+              </div>
+            );
+          })() : null}
           {txn.transferPairId ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 0', borderTop: '1px solid var(--border-hairline)' }}>
               <div style={{ minWidth: 0 }}>
