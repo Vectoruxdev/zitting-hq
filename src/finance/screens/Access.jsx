@@ -120,9 +120,10 @@ function ZHQAccess() {
   }
 
   const statusBadge = (m) => {
+    if (m.active) return <Badge tone="positive" size="sm">Active</Badge>;
     if (m.status === 'invited') return <Badge tone="warning" size="sm">Invited</Badge>;
-    if (m.status === 'active' || m.email) return <Badge tone="positive" size="sm">Login</Badge>;
-    return <Badge tone="neutral" size="sm">No login</Badge>;
+    if (m.email) return <Badge tone="neutral" size="sm">Not signed in</Badge>;
+    return <Badge tone="neutral" size="sm">Tag-only</Badge>;
   };
 
   return (
@@ -150,10 +151,12 @@ function ZHQAccess() {
               ) : (isOwner && m.role === 'member' ? (
                 <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 3 }}>No accounts yet · assign on the Accounts screen</div>
               ) : null); })()}
+              {m.active && m.lastSeen ? (
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 3 }}>Last opened {m.lastSeen}</div>
+              ) : null}
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {statusBadge(m)}
-              {isOwner ? <MemberAllowanceCell m={m} /> : null}
               {isOwner ? (
                 <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 124 }} />
               ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}

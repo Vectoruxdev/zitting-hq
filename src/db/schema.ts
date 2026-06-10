@@ -33,6 +33,7 @@ export const familyMembers = pgTable("family_members", {
   color: text("color"), // avatar tone
   allowance: numeric("allowance", { precision: 14, scale: 2 }), // monthly spending money (owner-set); null = none
   digestOptIn: boolean("digest_opt_in").notNull().default(true), // receives the email spending digest
+  lastSeenAt: timestamp("last_seen_at"), // last time they opened the app (presence = they've signed in)
   createdAt: timestamp("created_at").defaultNow(),
 });
 

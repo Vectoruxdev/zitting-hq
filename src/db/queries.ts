@@ -159,6 +159,12 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
       .from(s.familyMembers)
       .catch(() => [] as { id: string; allowance: string | null }[]);
+    // Last-seen (new column, migration 0013) — separate defensive read so a
+    // pre-migration DB degrades to "never seen" instead of breaking the member read.
+    const lastSeenRows = await db
+      .select({ id: s.familyMembers.id, lastSeenAt: s.familyMembers.lastSeenAt })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; lastSeenAt: Date | null }[]);
     // Read digest opt-in separately (new column) so a pre-migration DB doesn't
     // break the core member read.
     const digestOptInRows = await db
@@ -185,6 +191,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
 
     // --- account ↔ member assignment (who's "in charge of" each account) ---
     const allowanceById = new Map(allowanceRows.map((r) => [r.id, n(r.allowance)]));
+    const lastSeenById = new Map(lastSeenRows.map((r) => [r.id, r.lastSeenAt ? new Date(r.lastSeenAt) : null]));
     const digestOptInById = new Map(digestOptInRows.map((r) => [r.id, r.digestOptIn]));
     const managersByAccount = new Map<string, { id: string; name: string; color: string | null }[]>();
     const accountsByMember = new Map<string, Set<string>>();
@@ -213,16 +220,23 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       excludeFromBudget: c.excludeFromBudget,
       sortOrder: c.sortOrder,
     }));
-    data.members = memberRows.map((m) => ({
-      id: m.id,
-      name: m.name,
-      role: m.role,
-      email: m.email,
-      status: m.status,
-      color: m.color,
-      allowance: allowanceById.get(m.id) ?? 0,
-      digestOptIn: digestOptInById.get(m.id) ?? true,
-    }));
+    const seenNow = new Date();
+    data.members = memberRows.map((m) => {
+      const seen = lastSeenById.get(m.id) ?? null;
+      return {
+        id: m.id,
+        name: m.name,
+        role: m.role,
+        email: m.email,
+        status: m.status,
+        color: m.color,
+        allowance: allowanceById.get(m.id) ?? 0,
+        digestOptIn: digestOptInById.get(m.id) ?? true,
+        // Presence of a last-seen stamp means they've signed in at least once.
+        active: !!seen,
+        lastSeen: seen ? relTime(seen, seenNow) : null,
+      };
+    });
 
     // --- email digest settings (for the Notifications settings card) ---
     {

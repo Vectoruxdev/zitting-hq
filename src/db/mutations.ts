@@ -6,7 +6,7 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, isNull, lt } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
@@ -301,6 +301,22 @@ export async function setMemberAllowance(memberId: string, amount: number | null
   const value = amount == null || !Number.isFinite(amount) ? null : String(amount);
   await requireDb().update(s.familyMembers).set({ allowance: value }).where(eq(s.familyMembers.id, memberId));
   return { ok: true as const };
+}
+
+/** Record that a member just opened the app. Throttled (only writes if the last
+ *  stamp is missing or older than ~10 min) and defensive (no-op pre-migration),
+ *  so it's cheap to call on every authenticated load. */
+export async function touchMemberLastSeen(memberId: string | null | undefined) {
+  if (!memberId || !db) return;
+  try {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    await db
+      .update(s.familyMembers)
+      .set({ lastSeenAt: new Date() })
+      .where(and(eq(s.familyMembers.id, memberId), or(isNull(s.familyMembers.lastSeenAt), lt(s.familyMembers.lastSeenAt, cutoff))));
+  } catch {
+    /* column not migrated yet — ignore */
+  }
 }
 
 // ====================================================================

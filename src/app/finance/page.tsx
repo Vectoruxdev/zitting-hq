@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import FinanceClient from "@/finance/FinanceClient";
 import { getFinanceData } from "@/db/queries";
+import { touchMemberLastSeen } from "@/db/mutations";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 
@@ -17,6 +18,9 @@ export default async function FinancePage() {
   // When auth is configured, require a session. When it isn't (e.g. local dev
   // with no Supabase env), fall through as owner so the app stays usable.
   if (isAuthConfigured && !user) redirect("/login?redirect=/finance");
+
+  // Record "last opened the app" (throttled + defensive) for the People & Access view.
+  if (user?.memberId) await touchMemberLastSeen(user.memberId);
 
   const data = await getFinanceData({ memberId: user?.memberId ?? null, role: user?.role ?? "owner" });
   return <FinanceClient data={data} role={user?.role ?? "owner"} name={user?.name} />;

@@ -283,3 +283,6 @@ CREATE TABLE IF NOT EXISTS digest_log (
   sent_at timestamp DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_digestlog_period ON digest_log (recipient_email, period_key, kind);
+
+-- ---- member last-seen (0013) ----
+ALTER TABLE family_members ADD COLUMN IF NOT EXISTS last_seen_at timestamp;
