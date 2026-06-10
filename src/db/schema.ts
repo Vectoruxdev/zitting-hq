@@ -74,6 +74,11 @@ export const accounts = pgTable("accounts", {
   // the personal/household dashboard + emails and skipped by Plaid sync. (Seam
   // for a future Business tab.)
   space: text("space").notNull().default("household"), // household | business
+  // Declutter only: "collapsed" accounts are still fully counted everywhere, but
+  // on the Accounts screen they're tucked into a single combined "Other accounts"
+  // card instead of each getting its own card. (Distinct from `space=business`,
+  // which excludes from counting + sync.)
+  collapsed: boolean("collapsed").notNull().default(false),
   syncedLabel: text("synced_label"),
   status: text("status").notNull().default("good"), // good | attention
   destLabel: text("dest_label"), // transfer-destination tag, if any
@@ -335,6 +340,24 @@ export const allowanceSplits = pgTable(
     index("idx_allowance_splits_rule").on(t.ruleId),
   ]
 );
+
+/**
+ * Manually-entered / adjusted expected income for the transfer-coverage forecast.
+ * A row with `sourceKey` overrides that detected source's auto-forecast occurrence
+ * (the "adjust this paycheck"); without it, a standalone one-off expected deposit
+ * (e.g. a bonus). Feeds `data.transferReadiness`. Cleared by the user.
+ */
+export const expectedIncome = pgTable("expected_income", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  expectedDate: date("expected_date").notNull(),
+  sourceKey: text("source_key"), // detected merchant key being overridden; null = one-off
+  accountId: text("account_id").references(() => accounts.id), // deposit target (for source matching)
+  status: text("status").notNull().default("pending"), // pending | received | skipped
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 export const incomeStreams = pgTable("income_streams", {
   id: text("id").primaryKey(),

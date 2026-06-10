@@ -198,10 +198,31 @@ export async function deleteAllowanceRule(ruleId: string) {
   refresh();
   return res;
 }
+/** Owner: add an expected paycheck/deposit (or override a forecast) for coverage. */
+export async function addExpectedIncome(args: { label: string; amount: number; expectedDate: string; sourceKey?: string | null; accountId?: string | null }) {
+  const u = await ensureOwner();
+  const res = await m.addExpectedIncome({ ...args, createdBy: u?.memberId ?? null });
+  refresh();
+  return res;
+}
+/** Owner: remove a manually-entered expected income row. */
+export async function deleteExpectedIncome(id: string) {
+  await ensureOwner();
+  const res = await m.deleteExpectedIncome(id);
+  refresh();
+  return res;
+}
 /** Move an account to/from the household (business accounts are hidden + sync-skipped). */
 export async function setAccountSpace(id: string, space: "household" | "business") {
   await ensureOwner();
   const res = await m.setAccountSpace(id, space);
+  refresh();
+  return res;
+}
+/** Set Accounts-screen visibility: shown | grouped (tucked, still counted) | hidden. */
+export async function setAccountVisibility(id: string, mode: "shown" | "grouped" | "hidden") {
+  await ensureOwner();
+  const res = await m.setAccountVisibility(id, mode);
   refresh();
   return res;
 }

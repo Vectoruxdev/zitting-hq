@@ -17,6 +17,7 @@ import { isEmailConfigured } from "@/lib/email";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
 import { computePerfAllowance } from "./perfAllowance";
+import { forecastIncome, computeCoverage, type IncomeSourceInput } from "./forecast";
 import { extractMerchant } from "./categorize";
 import { mergePrefs } from "./notifyPrefs";
 import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
@@ -101,6 +102,7 @@ function emptyData(): FinanceData {
   d.memberHome = null;
   d.allowanceRules = [];
   d.incomeHistory = {};
+  d.transferReadiness = null;
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
   d.permissions = null;
   return d;
@@ -146,10 +148,17 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .from(s.accounts)
       .catch(() => [] as { id: string; available: string | null }[]);
     const availById = new Map(availRows.map((r) => [r.id, r.available]));
+    // Declutter flag — read defensively (pre-migration → all expanded).
+    const collapsedRows = await db
+      .select({ id: s.accounts.id, collapsed: s.accounts.collapsed })
+      .from(s.accounts)
+      .catch(() => [] as { id: string; collapsed: boolean }[]);
+    const collapsedById = new Map(collapsedRows.map((r) => [r.id, r.collapsed]));
     const allAccountRows = accountColRows.map((a) => ({
       ...a,
       space: spaceById.get(a.id) ?? "household",
       availableBalance: availById.get(a.id) ?? null,
+      collapsed: collapsedById.get(a.id) ?? false,
     }));
     // Column-explicit (no `allowance`) so a not-yet-migrated allowance column
     // can't break this CORE read; allowance is read separately + defensively.
@@ -236,6 +245,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // pre-migration DB degrades to "no allowance rules" not a wipe.
     const allowanceRuleRows = await db.select().from(s.allowanceRules).catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
     const allowanceSplitRows = await db.select().from(s.allowanceSplits).catch(() => [] as (typeof s.allowanceSplits.$inferSelect)[]);
+    // Manually-entered / adjusted expected income for the transfer-coverage forecast
+    // (migration 0008) — defensive so a pre-migration DB just uses auto-forecasts.
+    const expectedIncomeRows = await db.select().from(s.expectedIncome).catch(() => [] as (typeof s.expectedIncome.$inferSelect)[]);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -397,6 +409,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           who: a.who,
           managers: managersByAccount.get(a.id) ?? [],
           plaidLinked: plaidLinkedIds.has(a.id),
+          // Declutter only — still counted everywhere; the Accounts screen tucks
+          // these into one "Other accounts" card.
+          collapsed: !!(a as { collapsed?: boolean }).collapsed,
           synced: syncedLabelFor(a.id, a.syncedLabel),
           status: a.status,
           trend: a.trend ?? [],
@@ -685,6 +700,104 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const pendingTotal = duePending.reduce((sum, r) => sum + n(r.amount), 0);
     data.transfersPending = duePending.length;
     data.transfersPendingTotal = money2(pendingTotal);
+
+    // --- transfer coverage cockpit (cash vs. due-soon transfers + paycheck forecast) ---
+    {
+      const HORIZON = 30;
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const labelFor = (iso: string | null) => { const d = parseDate(iso); return d ? dayLabel(d) : null; };
+
+      // Income sources from history (income, non-transfer) grouped by merchant key.
+      const sourceMap = new Map<string, IncomeSourceInput>();
+      for (const t of txnRows) {
+        if (!t.income || t.isTransfer) continue;
+        const iso = t.date as string | null;
+        if (!iso) continue;
+        const key = extractMerchant(t.merchant);
+        const e = sourceMap.get(key) || { key, name: t.merchant, accountId: t.accountId, points: [] };
+        e.points.push({ dateISO: iso, amount: n(t.amount) });
+        e.accountId = t.accountId ?? e.accountId; // most-recent deposit account
+        sourceMap.set(key, e);
+      }
+      const autoForecasts = forecastIncome([...sourceMap.values()], todayISO, 45);
+      // Manual rows override a source's auto-forecast (by key); one-offs add on top.
+      const overriddenKeys = new Set(expectedIncomeRows.filter((r) => r.sourceKey && r.status === "pending").map((r) => r.sourceKey));
+      const forecastDisplay = [
+        ...autoForecasts
+          .filter((f) => !overriddenKeys.has(f.key))
+          .map((f) => ({ id: null as string | null, key: f.key, name: f.name, accountId: f.accountId, dateISO: f.dateISO, dateLabel: labelFor(f.dateISO), amount: f.amount, amountLabel: money2(f.amount), confidence: f.confidence, samples: f.samples, source: "auto" as const })),
+        ...expectedIncomeRows
+          .filter((r) => r.status === "pending")
+          .map((r) => ({ id: r.id, key: r.sourceKey ?? r.id, name: r.label, accountId: r.accountId, dateISO: r.expectedDate as string, dateLabel: labelFor(r.expectedDate as string), amount: n(r.amount), amountLabel: money2(n(r.amount)), confidence: "manual" as const, samples: 0, source: (r.sourceKey ? "override" : "manual") as "override" | "manual" })),
+      ].sort((a, b) => (a.dateISO < b.dateISO ? -1 : 1));
+
+      // Pending transfers → coverage transfers; cash = source accounts' available (or live) balance.
+      const covTransfers = instanceRows
+        .filter((r) => r.status === "pending")
+        .map((r) => ({ amount: n(r.amount), fromAccountId: r.fromAccountId, dueISO: (r.plannedDate as string | null)?.slice(0, 10) ?? null }));
+      const cashBySource: Record<string, number> = {};
+      for (const t of covTransfers) {
+        const id = t.fromAccountId;
+        if (!id || id in cashBySource) continue;
+        const a = acctById.get(id) as (typeof accountRows)[number] & { availableBalance?: string | null };
+        cashBySource[id] = a ? (a.availableBalance != null ? n(a.availableBalance) : liveBalance(a)) : 0;
+      }
+      const cov = computeCoverage({
+        transfers: covTransfers,
+        cashBySource,
+        income: forecastDisplay.map((f) => ({ dateISO: f.dateISO, amount: f.amount, accountId: f.accountId })),
+        todayISO,
+        horizonDays: HORIZON,
+      });
+
+      const bySource = cov.bySource
+        .filter((b) => b.accountId !== "__none__")
+        .map((b) => ({
+          accountId: b.accountId,
+          name: acctById.get(b.accountId) ? accountLabel(acctById.get(b.accountId)) : "Account",
+          needed: b.needed,
+          have: b.have,
+          short: b.short,
+          shortLabel: money2(b.short),
+        }));
+
+      const gapLabel = money2(cov.gap);
+      const coverDateLabel = labelFor(cov.coverDateISO);
+      const coverByDateLabel = labelFor(cov.coverByDateISO);
+      let message: string;
+      if (cov.verdict === "covered") {
+        message = cov.upcomingTotal > 0
+          ? `Covered — ${money2(cov.cashOnHand)} on hand covers ${money2(cov.upcomingTotal)} due in the next 30 days.`
+          : "No transfers due in the next 30 days.";
+      } else if (cov.verdict === "covered_by_paycheck") {
+        message = `Short ${gapLabel} today — expected income${coverDateLabel ? ` by ${coverDateLabel}` : ""} covers it before it's due.`;
+      } else {
+        message = `Short ${money2(cov.shortAfterForecast)} — add it${coverByDateLabel ? ` before ${coverByDateLabel}` : ""}.`;
+      }
+
+      data.transferReadiness = {
+        horizonDays: HORIZON,
+        windowLabel: "next 30 days",
+        upcomingTotal: cov.upcomingTotal,
+        upcomingTotalLabel: money2(cov.upcomingTotal),
+        cashOnHand: cov.cashOnHand,
+        cashLabel: money2(cov.cashOnHand),
+        gap: cov.gap,
+        gapLabel,
+        coveredNow: cov.coveredNow,
+        verdict: cov.verdict,
+        bySource,
+        forecast: forecastDisplay,
+        coverByDateISO: cov.coverByDateISO,
+        coverByDateLabel,
+        coverDateISO: cov.coverDateISO,
+        coverDateLabel,
+        coveredByForecast: cov.coveredByForecast,
+        shortAfterForecast: cov.shortAfterForecast,
+        shortAfterForecastLabel: money2(cov.shortAfterForecast),
+        message,
+      };
+    }
     // Scope to the viewer: a member sees only their own + household-wide
     // alerts; owner/partner see owner + household-wide. Newest first (by real
     // createdAt, falling back to sortOrder for legacy rows).

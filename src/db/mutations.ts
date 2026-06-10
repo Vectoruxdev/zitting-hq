@@ -268,6 +268,22 @@ export async function setAccountSpace(id: string, space: "household" | "business
   return { ok: true as const };
 }
 
+/**
+ * Set an account's visibility on the Accounts screen:
+ *  - "shown"   → its own card, counted everywhere
+ *  - "grouped" → tucked into the combined "Other accounts" card, STILL counted
+ *  - "hidden"  → excluded from the household view + emails + sync (space=business)
+ * One write keeps `space` + `collapsed` consistent (no intermediate state).
+ */
+export async function setAccountVisibility(id: string, mode: "shown" | "grouped" | "hidden") {
+  const values =
+    mode === "hidden"
+      ? { space: "business", collapsed: false }
+      : { space: "household", collapsed: mode === "grouped" };
+  await requireDb().update(s.accounts).set(values).where(eq(s.accounts.id, id));
+  return { ok: true as const };
+}
+
 // ---- member ↔ account assignment + allowance ----
 
 /** Accounts a member is "in charge of". Fail-closed (empty set) on any error. */
@@ -1428,6 +1444,33 @@ export async function deleteAllowanceRule(ruleId: string) {
     .set({ status: "skipped" })
     .where(and(eq(s.transferInstances.status, "pending"), like(s.transferInstances.triggeredBy, `allowance:${ruleId}:%`)));
   await database.delete(s.allowanceRules).where(eq(s.allowanceRules.id, ruleId)); // cascade drops splits
+  return { ok: true as const };
+}
+
+// ---- expected income (transfer-coverage forecast overrides / one-offs) ----
+export async function addExpectedIncome(args: {
+  label: string;
+  amount: number;
+  expectedDate: string; // ISO YYYY-MM-DD
+  sourceKey?: string | null;
+  accountId?: string | null;
+  createdBy?: string | null;
+}) {
+  const database = requireDb();
+  const id = crypto.randomUUID();
+  await database.insert(s.expectedIncome).values({
+    id,
+    label: args.label,
+    amount: String(args.amount),
+    expectedDate: args.expectedDate,
+    sourceKey: args.sourceKey ?? null,
+    accountId: args.accountId ?? null,
+    createdBy: args.createdBy ?? null,
+  });
+  return { ok: true as const, id };
+}
+export async function deleteExpectedIncome(id: string) {
+  await requireDb().delete(s.expectedIncome).where(eq(s.expectedIncome.id, id));
   return { ok: true as const };
 }
 

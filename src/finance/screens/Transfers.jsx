@@ -158,6 +158,104 @@ function ZHQNewTransferModal({ open, onClose }) {
   );
 }
 
+function ZHQExpectedIncomeModal({ open, onClose, prefill }) {
+  const { Modal, TextInput, Select, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const D = window.ZHQ_DATA || {};
+  const accts = (D.accountsFlat || []).map((a) => ({ value: a.id, label: a.label || a.name }));
+  const [label, setLabel] = React.useState('');
+  const [amount, setAmount] = React.useState('');
+  const [date, setDate] = React.useState('');
+  const [acct, setAcct] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    if (!open) return;
+    setLabel(prefill?.name || '');
+    setAmount(prefill?.amount != null ? String(prefill.amount) : '');
+    setDate(prefill?.dateISO || '');
+    setAcct(prefill?.accountId || '');
+  }, [open, prefill]);
+  const numv = parseFloat(String(amount).replace(/[^0-9.-]/g, ''));
+  const valid = label.trim() && !isNaN(numv) && numv > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  async function save() {
+    if (!valid || !API.addExpectedIncome) return;
+    setBusy(true);
+    try {
+      await API.addExpectedIncome({ label: label.trim(), amount: numv, expectedDate: date, sourceKey: prefill?.sourceKey || null, accountId: acct || null });
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      onClose();
+    } finally { setBusy(false); }
+  }
+  return (
+    <Modal open={open} onClose={onClose} title={prefill?.sourceKey ? 'Adjust expected paycheck' : 'Add expected income'} width={420}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !valid}>Save</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <TextInput label="Label" value={label} onChange={setLabel} placeholder="Paycheck, bonus…" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <TextInput label="Amount" value={amount} onChange={setAmount} inputMode="decimal" prefix="$" placeholder="2,950" />
+          <TextInput label="Expected date" value={date} onChange={setDate} type="date" />
+        </div>
+        <Select label="Deposits into (optional)" value={acct} onChange={setAcct} options={[{ value: '', label: 'Any account' }, ...accts]} />
+        {prefill?.sourceKey ? <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)' }}>This overrides the auto-estimate for this paycheck.</p> : null}
+      </div>
+    </Modal>
+  );
+}
+
+function ZHQCoverageCard({ R, onAdd, onAdjust, onDelete, busy }) {
+  const { Card, Icon, Button } = window.ZittingHQDesignSystem_c9e528;
+  if (!R) return null;
+  const tone = R.verdict === 'covered' ? 'positive' : R.verdict === 'short' ? 'negative' : 'warning';
+  const border = R.verdict === 'covered' ? 'var(--green-tint)' : R.verdict === 'short' ? 'var(--negative)' : 'var(--warning)';
+  const icon = R.verdict === 'covered' ? 'check' : R.verdict === 'short' ? 'alert' : 'clock';
+  const shorts = (R.bySource || []).filter((s) => s.short > 0);
+  const Tile = ({ label, value, color }) => (
+    <div style={{ flex: 1, minWidth: 92 }}>
+      <div className="zt-eyebrow" style={{ marginBottom: 4 }}>{label}</div>
+      <div className="zt-num" style={{ fontSize: 22, fontWeight: 600, color: color || 'var(--text-primary)' }}>{value}</div>
+    </div>
+  );
+  return (
+    <Card padding={20} style={{ border: `1px solid ${border}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+        <Icon name={icon} size={18} style={{ color: `var(--${tone})`, flexShrink: 0, marginTop: 1 }} />
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>{R.message}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <Tile label="To move" value={R.upcomingTotalLabel} />
+        <Tile label="Cash on hand" value={R.cashLabel} />
+        <Tile label="Gap" value={R.gap > 0 ? R.gapLabel : '$0'} color={R.gap > 0 ? 'var(--negative)' : 'var(--accent)'} />
+      </div>
+      {shorts.length ? (
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 12 }}>
+          {shorts.map((s) => <div key={s.accountId} style={{ marginTop: 2 }}>Short {s.shortLabel} in {s.name}</div>)}
+        </div>
+      ) : null}
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-hairline)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <span className="zt-eyebrow">Expected income</span>
+          <span style={{ flex: 1 }} />
+          <Button variant="ghost" size="sm" iconLeft={<Icon name="plus" size={13} />} onClick={onAdd}>Add</Button>
+        </div>
+        {(R.forecast || []).length ? R.forecast.map((f, i) => (
+          <div key={(f.id || f.key || 'f') + i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{f.dateLabel}{f.source === 'auto' ? ` · ${f.confidence} confidence` : f.source === 'override' ? ' · adjusted' : ' · expected'}</div>
+            </div>
+            <span className="zt-num" style={{ fontSize: 14, fontWeight: 600, color: 'var(--positive)' }}>{f.amountLabel}</span>
+            {f.source === 'auto' ? (
+              <button onClick={() => onAdjust(f)} title="Adjust this estimate" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', minWidth: 28 }}><Icon name="pencil" size={14} /></button>
+            ) : (
+              <button onClick={() => onDelete(f)} disabled={busy} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', minWidth: 28 }}><Icon name="x" size={14} /></button>
+            )}
+          </div>
+        )) : <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>No upcoming income detected yet — add an expected paycheck.</div>}
+      </div>
+    </Card>
+  );
+}
+
 function ZHQTransfers() {
   const { Card, Icon, Button, Tabs, ChecklistRow, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const API = window.ZHQ_API || {};
@@ -169,6 +267,8 @@ function ZHQTransfers() {
   const [tab, setTab] = React.useState('upcoming');
   const [showAdd, setShowAdd] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [expModal, setExpModal] = React.useState(null); // null | { prefill }
+  const readiness = D.transferReadiness || null;
 
   const pendingCount = D.transfersPending ?? upcoming.length;
   const pendingTotal = D.transfersPendingTotal ?? '$0';
@@ -202,8 +302,16 @@ function ZHQTransfers() {
     setBusy(true);
     try { await API.deleteTransferInstance(t.id); refresh(); } finally { setBusy(false); }
   }
+  async function deleteExpected(f) {
+    if (!f.id || !API.deleteExpectedIncome) return;
+    setBusy(true);
+    try { await API.deleteExpectedIncome(f.id); refresh(); } finally { setBusy(false); }
+  }
+  const adjustForecast = (f) => setExpModal({ prefill: { name: f.name, amount: f.amount, dateISO: f.dateISO, accountId: f.accountId, sourceKey: f.key } });
 
   const modal = <ZHQNewTransferModal open={showAdd} onClose={() => setShowAdd(false)} />;
+  const expIncomeModal = <ZHQExpectedIncomeModal open={!!expModal} onClose={() => setExpModal(null)} prefill={expModal?.prefill} />;
+  const coverageCard = <ZHQCoverageCard R={readiness} busy={busy} onAdd={() => setExpModal({ prefill: null })} onAdjust={adjustForecast} onDelete={deleteExpected} />;
 
   if (!upcoming.length && !scheduled.length && !past.length) {
     return (
@@ -219,6 +327,9 @@ function ZHQTransfers() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Coverage cockpit — cash vs. due-soon transfers + paycheck forecast */}
+      {coverageCard}
+
       {/* Pending banner */}
       <Card padding={24}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
@@ -290,6 +401,7 @@ function ZHQTransfers() {
       )}
 
       {modal}
+      {expIncomeModal}
     </div>
   );
 }

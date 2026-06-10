@@ -97,7 +97,7 @@ function ZHQOpeningBalanceRow({ acct }) {
 }
 
 function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
-  const { Modal, TextInput, Select, Button, Icon, Checkbox, Avatar } = window.ZittingHQDesignSystem_c9e528;
+  const { Modal, TextInput, Select, SegmentedControl, Button, Icon, Checkbox, Avatar } = window.ZittingHQDesignSystem_c9e528;
   const API = window.ZHQ_API || {};
   const members = window.ZHQ_DATA.members || [];
   const [name, setName] = React.useState(acct.name || '');
@@ -107,6 +107,7 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
   const [who, setWho] = React.useState(acct.who || 'Household');
   const [dest, setDest] = React.useState(acct.dest || '');
   const [managerIds, setManagerIds] = React.useState((acct.managers || []).map((m) => m.id));
+  const [vis, setVis] = React.useState(acct.collapsed ? 'grouped' : 'shown');
   const [busy, setBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
 
@@ -115,6 +116,7 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
     setName(acct.name || ''); setInstitution(acct.inst || ''); setMask(acct.mask || '');
     setType(acct.type || 'checking'); setWho(acct.who || 'Household'); setDest(acct.dest || '');
     setManagerIds((acct.managers || []).map((m) => m.id));
+    setVis(acct.collapsed ? 'grouped' : 'shown');
     setConfirmDelete(false);
   }, [acct.id]);
 
