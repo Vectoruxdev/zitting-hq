@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as s from "@/db/schema";
-import { runScheduledTransfers, reconcilePendingTransfers, createNotification } from "@/db/mutations";
+import { runScheduledTransfers, runMonthlyAllowances, reconcilePendingTransfers, createNotification } from "@/db/mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,7 @@ export async function GET(req: Request) {
   try {
     const today = todayISO();
     const generated = await runScheduledTransfers(today);
+    const allowances = await runMonthlyAllowances(new Date());
     const reconciled = await reconcilePendingTransfers();
 
     // Daily nudges: a per-item reminder for each transfer reaching its date
@@ -75,6 +76,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       generated: generated.created,
+      allowances: allowances.created,
       reconciled: reconciled.matched,
       notified,
     });

@@ -113,6 +113,13 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Transfer (exclude from spending)</span>
             <Toggle checked={!!txn.isTransfer} onChange={() => onToggleTransfer(txn)} />
           </div>
+          {txn.income && !txn.isTransfer ? (
+            <div style={{ padding: '11px 0', borderTop: '1px solid var(--border-hairline)', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+              {txn.who && txn.who !== 'Household'
+                ? <>Counts as <b style={{ color: 'var(--text-secondary)' }}>{txn.who}</b>&rsquo;s paycheck for their allowance rule.</>
+                : <>Attribute this deposit to a person (above) to count it as their paycheck for allowance rules.</>}
+            </div>
+          ) : null}
           {txn.transferPairId ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 0', borderTop: '1px solid var(--border-hairline)' }}>
               <div style={{ minWidth: 0 }}>

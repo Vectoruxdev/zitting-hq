@@ -6,10 +6,11 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, inArray, or, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, or, isNull, lt, like } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
+import { computePerfAllowance } from "./perfAllowance";
 import { channelsFor, mergePrefs } from "./notifyPrefs";
 import { findExactDuplicates } from "./dedupe";
 import { dedupeKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
@@ -464,7 +465,13 @@ export async function commitImport(args: {
   // transfers whose real transaction just landed.
   let generated = 0;
   const incomeRows = await database
-    .select({ id: s.transactions.id })
+    .select({
+      id: s.transactions.id,
+      memberId: s.transactions.memberId,
+      amount: s.transactions.amount,
+      date: s.transactions.date,
+      merchant: s.transactions.merchant,
+    })
     .from(s.transactions)
     .where(
       and(
@@ -473,9 +480,34 @@ export async function commitImport(args: {
         eq(s.transactions.isTransfer, false)
       )
     );
+  // Per-paycheck allowance rules keyed by earner — evaluated per imported check.
+  // Defensive: a pre-migration DB (no allowance_rules table) just skips this.
+  const perCheckRules = await database
+    .select()
+    .from(s.allowanceRules)
+    .where(and(eq(s.allowanceRules.period, "per_paycheck"), eq(s.allowanceRules.enabled, true)))
+    .catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
+  const perCheckByEarner = new Map<string, (typeof perCheckRules)[number]>();
+  for (const r of perCheckRules) if (!perCheckByEarner.has(r.memberId)) perCheckByEarner.set(r.memberId, r);
+
   for (const row of incomeRows) {
     const g = await generateTransfersForIncome(row.id);
     generated += g.created;
+    // If this paycheck belongs to an earner with a per-paycheck allowance rule,
+    // evaluate the check on its own and emit suggested allowance transfers.
+    const rule = row.memberId ? perCheckByEarner.get(row.memberId) : undefined;
+    if (rule) {
+      const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
+      if (!keys || !keys.length || keys.includes(extractMerchant(row.merchant))) {
+        const ag = await generateAllowanceTransfers({
+          ruleId: rule.id,
+          periodKey: `check:${row.id}`,
+          income: Number(row.amount ?? 0),
+          plannedDate: (row.date as string | null) ?? null,
+        });
+        generated += ag.created;
+      }
+    }
   }
   const reconciled = await reconcilePendingTransfers();
 
@@ -633,6 +665,8 @@ export async function updateTransaction(id: number, patch: TxnPatch, opts?: { le
     }
     await learnTxn(before.merchant, patch.categoryId, patch.memberId ?? before.memberId ?? null);
   }
+  // Attributing an income deposit to an earner fires their per-paycheck allowance.
+  if (patch.memberId !== undefined && patch.memberId) await maybeGeneratePerCheckAllowance(id).catch(() => {});
   return { ok: true as const };
 }
 
@@ -655,6 +689,10 @@ export async function bulkUpdateTransactions(ids: number[], patch: TxnPatch, opt
       }
       await learnTxn(row.merchant, patch.categoryId, patch.memberId ?? row.memberId ?? null);
     }
+  }
+  // Attributing income deposits to an earner fires their per-paycheck allowance.
+  if (patch.memberId !== undefined && patch.memberId) {
+    for (const id of ids) await maybeGeneratePerCheckAllowance(id).catch(() => {});
   }
   return { ok: true as const };
 }
@@ -1151,6 +1189,318 @@ export async function runScheduledTransfers(today?: string) {
       .where(eq(s.allocationRules.id, r.id));
   }
   return { ok: true as const, created };
+}
+
+// ====================================================================
+// Performance allowances
+// ====================================================================
+const round2money = (n: number) => Math.round(n * 100) / 100;
+
+/** Income/non-transfer paychecks for a member, with the merchant key for matching. */
+async function paycheckTxnsFor(memberId: string) {
+  const database = requireDb();
+  const rows = await database
+    .select({ amount: s.transactions.amount, date: s.transactions.date, merchant: s.transactions.merchant })
+    .from(s.transactions)
+    .where(and(eq(s.transactions.memberId, memberId), eq(s.transactions.income, true), eq(s.transactions.isTransfer, false)));
+  return rows;
+}
+
+/**
+ * Sum a member's tagged paychecks within a period. `incomeMatchKeys` (the rule's
+ * employer keys) narrows to specific payroll sources; null = all income tagged to
+ * the member. `inPeriod` buckets by the ISO date string (caller decides month vs check).
+ */
+export async function sumPaychecks(
+  memberId: string,
+  incomeMatchKeys: string[] | null,
+  inPeriod: (iso: string) => boolean
+): Promise<number> {
+  const rows = await paycheckTxnsFor(memberId);
+  let sum = 0;
+  for (const r of rows) {
+    const iso = r.date as string | null;
+    if (!iso || !inPeriod(iso)) continue;
+    if (incomeMatchKeys && incomeMatchKeys.length && !incomeMatchKeys.includes(extractMerchant(r.merchant))) continue;
+    sum += Number(r.amount ?? 0);
+  }
+  return round2money(sum);
+}
+
+/** Pending/settled counts for a rule's already-generated payouts in a period. */
+export async function allowancePeriodState(ruleId: string, periodKey: string) {
+  const database = requireDb();
+  const rows = await database
+    .select({ status: s.transferInstances.status })
+    .from(s.transferInstances)
+    .where(like(s.transferInstances.triggeredBy, `allowance:${ruleId}:${periodKey}:%`));
+  const total = rows.length;
+  const pending = rows.filter((r) => r.status === "pending").length;
+  return { total, pending, settled: total - pending };
+}
+
+/**
+ * Compute an allowance rule's payouts for a period and emit one SUGGESTED transfer
+ * per payout into transfer_instances (not a real bank move). Idempotent per payout
+ * via triggeredBy = `allowance:<ruleId>:<periodKey>:<recipientMemberId>`, so re-runs
+ * never double-create. The suggestions auto-complete via reconcilePendingTransfers
+ * once Plaid detects the matching real transfer between the accounts.
+ */
+export async function generateAllowanceTransfers(args: {
+  ruleId: string;
+  periodKey: string;
+  income: number;
+  plannedDate?: string | null;
+}) {
+  const database = requireDb();
+  const [rule] = await database.select().from(s.allowanceRules).where(eq(s.allowanceRules.id, args.ruleId));
+  if (!rule || !rule.enabled) return { ok: true as const, created: 0 };
+
+  const splitRows = await database
+    .select()
+    .from(s.allowanceSplits)
+    .where(eq(s.allowanceSplits.ruleId, args.ruleId));
+
+  const result = computePerfAllowance({
+    income: args.income,
+    goal: Number(rule.goalAmount ?? 0),
+    min: Number(rule.minAmount ?? 0),
+    bonusType: (rule.bonusType as "percent" | "fixed") ?? "percent",
+    bonusBasis: (rule.bonusBasis as "overage" | "gross") ?? "overage",
+    bonusValue: Number(rule.bonusValue ?? 0),
+    splits: splitRows.map((sp) => ({ memberId: sp.memberId, pct: Number(sp.pct ?? 0), toAccountId: sp.toAccountId })),
+    earnerMemberId: rule.memberId,
+    earnerToAccountId: rule.toAccountId,
+    fromAccountId: rule.fromAccountId,
+  });
+  if (!result.payouts.length) return { ok: true as const, created: 0 };
+
+  const nameRows = await database.select({ id: s.familyMembers.id, name: s.familyMembers.name }).from(s.familyMembers);
+  const nameById = new Map(nameRows.map((m) => [m.id, m.name]));
+
+  let created = 0;
+  await database.transaction(async (tx) => {
+    for (const p of result.payouts) {
+      const triggeredBy = `allowance:${args.ruleId}:${args.periodKey}:${p.memberId}`;
+      const [dup] = await tx
+        .select({ id: s.transferInstances.id })
+        .from(s.transferInstances)
+        .where(eq(s.transferInstances.triggeredBy, triggeredBy))
+        .limit(1);
+      if (dup) continue;
+      await tx.insert(s.transferInstances).values({
+        ruleId: null, // allowance rows live in a separate table; provenance is triggeredBy
+        fromAccountId: p.fromAccountId,
+        toAccountId: p.toAccountId,
+        memberId: p.memberId,
+        amount: String(p.amount),
+        method: "allowance",
+        plannedDate: args.plannedDate ?? null,
+        status: "pending",
+        triggeredBy,
+        note: `${rule.name} — ${nameById.get(p.memberId) ?? "member"}`,
+      });
+      created++;
+    }
+  });
+
+  if (created > 0) {
+    await createNotification({
+      type: "allowance",
+      tone: "accent",
+      title: "New allowance suggestion",
+      body: `${rule.name}: ${created} transfer${created > 1 ? "s" : ""} to make`,
+      icon: "transfers",
+      audience: "owners",
+      linkTo: "transfers",
+      dedupeKey: `allowance:${args.ruleId}:${args.periodKey}`,
+    });
+  }
+  return { ok: true as const, created };
+}
+
+/**
+ * Fire per-paycheck allowance generation when an income txn is attributed to an
+ * earner. Plaid paychecks arrive unattributed, so the per-paycheck rule can't run
+ * at import — it runs here, the moment someone tags the deposit to the earner.
+ * Idempotent (triggeredBy = allowance:<rule>:check:<txnId>:<member>); defensive so
+ * a pre-migration DB (no allowance_rules) just no-ops.
+ */
+export async function maybeGeneratePerCheckAllowance(txnId: number) {
+  const database = requireDb();
+  const [t] = await database
+    .select({
+      memberId: s.transactions.memberId,
+      amount: s.transactions.amount,
+      date: s.transactions.date,
+      merchant: s.transactions.merchant,
+      income: s.transactions.income,
+      isTransfer: s.transactions.isTransfer,
+    })
+    .from(s.transactions)
+    .where(eq(s.transactions.id, txnId));
+  if (!t || !t.income || t.isTransfer || !t.memberId) return { ok: true as const, created: 0 };
+  const rules = await database
+    .select()
+    .from(s.allowanceRules)
+    .where(and(eq(s.allowanceRules.memberId, t.memberId), eq(s.allowanceRules.period, "per_paycheck"), eq(s.allowanceRules.enabled, true)))
+    .catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
+  const rule = rules[0];
+  if (!rule) return { ok: true as const, created: 0 };
+  const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
+  if (keys && keys.length && !keys.includes(extractMerchant(t.merchant))) return { ok: true as const, created: 0 };
+  return generateAllowanceTransfers({
+    ruleId: rule.id,
+    periodKey: `check:${txnId}`,
+    income: Number(t.amount ?? 0),
+    plannedDate: (t.date as string | null) ?? null,
+  });
+}
+
+/** Owner: create or update an allowance rule + its splits (delete-then-insert). */
+export async function saveAllowanceRule(payload: {
+  id?: string | null;
+  name: string;
+  memberId: string;
+  enabled?: boolean;
+  period: "monthly" | "per_paycheck";
+  goalAmount: number;
+  minAmount: number;
+  bonusType: "percent" | "fixed";
+  bonusBasis: "overage" | "gross";
+  bonusValue: number;
+  incomeMatchKeys: string[] | null;
+  fromAccountId: string;
+  toAccountId: string;
+  gateOnReview?: boolean;
+  splits: { memberId: string; pct: number; toAccountId: string }[];
+}) {
+  const database = requireDb();
+  const id = payload.id || crypto.randomUUID();
+  const values = {
+    id,
+    name: payload.name,
+    memberId: payload.memberId,
+    enabled: payload.enabled ?? true,
+    period: payload.period,
+    goalAmount: String(payload.goalAmount),
+    minAmount: String(payload.minAmount),
+    bonusType: payload.bonusType,
+    bonusBasis: payload.bonusBasis,
+    bonusValue: String(payload.bonusValue),
+    incomeMatchKeys: payload.incomeMatchKeys && payload.incomeMatchKeys.length ? payload.incomeMatchKeys : null,
+    fromAccountId: payload.fromAccountId,
+    toAccountId: payload.toAccountId,
+    gateOnReview: payload.gateOnReview ?? true,
+  };
+  // Dedup splits by member; never include the earner as their own split row.
+  const seen = new Set<string>();
+  const splits = payload.splits.filter(
+    (sp) => sp.memberId && sp.memberId !== payload.memberId && sp.toAccountId && !seen.has(sp.memberId) && seen.add(sp.memberId)
+  );
+  await database.transaction(async (tx) => {
+    if (payload.id) {
+      await tx.update(s.allowanceRules).set(values).where(eq(s.allowanceRules.id, id));
+    } else {
+      const existing = await tx.select({ so: s.allowanceRules.sortOrder }).from(s.allowanceRules);
+      const sortOrder = existing.reduce((mx, r) => Math.max(mx, r.so), -1) + 1;
+      await tx.insert(s.allowanceRules).values({ ...values, sortOrder });
+    }
+    await tx.delete(s.allowanceSplits).where(eq(s.allowanceSplits.ruleId, id));
+    if (splits.length) {
+      await tx.insert(s.allowanceSplits).values(
+        splits.map((sp) => ({ ruleId: id, memberId: sp.memberId, pct: String(sp.pct), toAccountId: sp.toAccountId }))
+      );
+    }
+  });
+  return { ok: true as const, id };
+}
+
+/**
+ * Delete an allowance rule. History (auto/done suggestions) is preserved; still
+ * `pending` allowance suggestions for this rule are marked `skipped` so they drop
+ * off the to-do list without losing the audit trail.
+ */
+export async function deleteAllowanceRule(ruleId: string) {
+  const database = requireDb();
+  await database
+    .update(s.transferInstances)
+    .set({ status: "skipped" })
+    .where(and(eq(s.transferInstances.status, "pending"), like(s.transferInstances.triggeredBy, `allowance:${ruleId}:%`)));
+  await database.delete(s.allowanceRules).where(eq(s.allowanceRules.id, ruleId)); // cascade drops splits
+  return { ok: true as const };
+}
+
+// Local copies matching computeMemberProgress's month bucketing (year-month0).
+const allowanceMonthKey = (dt: Date) => `${dt.getFullYear()}-${dt.getMonth()}`;
+const parseISO = (iso: string | null): Date | null => {
+  if (!iso) return null;
+  const d = new Date(iso + "T00:00:00");
+  return isNaN(d.getTime()) ? null : d;
+};
+const SETTLE_DAY = 3; // wait a few days into the new month so straggler paychecks land
+
+/**
+ * Monthly allowance evaluation (run daily by the transfers cron). For each enabled
+ * `monthly` rule whose just-closed month hasn't been processed yet — and, if gated,
+ * whose earner has fully reviewed that month — sum the earner's paychecks for the
+ * closed month and emit suggested allowance transfers. Idempotent via
+ * `lastProcessedPeriod` (set after processing) plus the per-payout triggeredBy guard.
+ * `now` is injected for testability. Held off until SETTLE_DAY of the new month.
+ */
+export async function runMonthlyAllowances(now: Date) {
+  const database = requireDb();
+  if (now.getDate() < SETTLE_DAY) return { ok: true as const, created: 0, processed: 0 };
+  const closedMonth = allowanceMonthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const plannedDate = now.toISOString().slice(0, 10);
+
+  const rules = await database
+    .select()
+    .from(s.allowanceRules)
+    .where(and(eq(s.allowanceRules.period, "monthly"), eq(s.allowanceRules.enabled, true)))
+    .catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
+
+  let created = 0;
+  let processed = 0;
+  for (const rule of rules) {
+    if (rule.lastProcessedPeriod === closedMonth) continue;
+
+    if (rule.gateOnReview) {
+      const managed = await database
+        .select({ accountId: s.accountMembers.accountId })
+        .from(s.accountMembers)
+        .where(eq(s.accountMembers.memberId, rule.memberId))
+        .catch(() => [] as { accountId: string }[]);
+      const managedIds = managed.map((m) => m.accountId);
+      const gateTxns = managedIds.length
+        ? await database
+            .select({ accountId: s.transactions.accountId, date: s.transactions.date, reviewed: s.transactions.reviewed })
+            .from(s.transactions)
+            .where(inArray(s.transactions.accountId, managedIds))
+        : [];
+      const prog = computeMemberProgress(
+        gateTxns.map((t) => ({ accountId: t.accountId, date: t.date as string | null, reviewed: t.reviewed })),
+        managedIds,
+        now
+      );
+      if (!prog.allowanceUnlocked) continue; // closed month not fully reviewed yet — wait
+    }
+
+    const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
+    const income = await sumPaychecks(rule.memberId, keys, (iso) => {
+      const d = parseISO(iso);
+      return !!d && allowanceMonthKey(d) === closedMonth;
+    });
+
+    const res = await generateAllowanceTransfers({ ruleId: rule.id, periodKey: closedMonth, income, plannedDate });
+    created += res.created;
+    processed++;
+    await database
+      .update(s.allowanceRules)
+      .set({ lastProcessedPeriod: closedMonth })
+      .where(eq(s.allowanceRules.id, rule.id));
+  }
+  return { ok: true as const, created, processed };
 }
 
 // ====================================================================

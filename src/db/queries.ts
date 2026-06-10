@@ -16,6 +16,8 @@ import { asc, eq } from "drizzle-orm";
 import { isEmailConfigured } from "@/lib/email";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
+import { computePerfAllowance } from "./perfAllowance";
+import { extractMerchant } from "./categorize";
 import { mergePrefs } from "./notifyPrefs";
 import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
 import { scoreCategory, type MemoryMap, type RuleLike } from "./categorize";
@@ -97,6 +99,7 @@ function emptyData(): FinanceData {
   d.trend = { income: [0, 0, 0, 0, 0, 0], spending: [0, 0, 0, 0, 0, 0], labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"] };
   d.member = null;
   d.memberHome = null;
+  d.allowanceRules = [];
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
   d.permissions = null;
   return d;
@@ -228,6 +231,10 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .from(s.familyMembers)
       .catch(() => [] as { id: string; digestOptIn: boolean }[]);
     const [digestRow] = await db.select().from(s.digestSettings).where(eq(s.digestSettings.id, "household")).catch(() => []);
+    // Performance-allowance rules + splits (migration 0007) — defensive so a
+    // pre-migration DB degrades to "no allowance rules" not a wipe.
+    const allowanceRuleRows = await db.select().from(s.allowanceRules).catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
+    const allowanceSplitRows = await db.select().from(s.allowanceSplits).catch(() => [] as (typeof s.allowanceSplits.$inferSelect)[]);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -595,7 +602,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         amount: money2(n(r.amount)),
         due: dt ? (r.status === "pending" ? `Due ${dayLabel(dt)}` : dayLabel(dt)) : r.status === "pending" ? "Pending" : "",
         state,
-        icon: r.method === "manual" ? "transfers" : "repeat",
+        icon: r.method === "allowance" ? "wallet" : r.method === "manual" ? "transfers" : "repeat",
+        note: r.note ?? null,
         member: mem,
         status: r.status,
         fromAccountId: r.fromAccountId,
@@ -1055,6 +1063,98 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     };
     data.permissions = null;
 
+    // --- performance allowances (rules + live current-month preview) ---
+    const curMonthKey = monthKey(now);
+    const allowanceSplitsByRule = new Map<string, typeof allowanceSplitRows>();
+    for (const sp of allowanceSplitRows) {
+      const arr = allowanceSplitsByRule.get(sp.ruleId) || [];
+      arr.push(sp);
+      allowanceSplitsByRule.set(sp.ruleId, arr);
+    }
+    // Earner's current calendar-month paycheck income for a rule (preview only).
+    const allowanceIncomeFor = (rule: (typeof allowanceRuleRows)[number]): number => {
+      const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
+      let sum = 0;
+      for (const t of txnRows) {
+        if (t.memberId !== rule.memberId || !t.income || t.isTransfer) continue;
+        const dt = parseDate(t.date as string | null);
+        if (!dt || monthKey(dt) !== curMonthKey) continue;
+        if (keys && keys.length && !keys.includes(extractMerchant(t.merchant))) continue;
+        sum += n(t.amount);
+      }
+      return Math.round(sum * 100) / 100;
+    };
+    const allowancePreviewFor = (rule: (typeof allowanceRuleRows)[number]) => {
+      const splits = (allowanceSplitsByRule.get(rule.id) ?? []).map((sp) => ({
+        memberId: sp.memberId,
+        pct: n(sp.pct),
+        toAccountId: sp.toAccountId,
+      }));
+      const income = allowanceIncomeFor(rule);
+      const result = computePerfAllowance({
+        income,
+        goal: n(rule.goalAmount),
+        min: n(rule.minAmount),
+        bonusType: (rule.bonusType as "percent" | "fixed") ?? "percent",
+        bonusBasis: (rule.bonusBasis as "overage" | "gross") ?? "overage",
+        bonusValue: n(rule.bonusValue),
+        splits,
+        earnerMemberId: rule.memberId,
+        earnerToAccountId: rule.toAccountId,
+        fromAccountId: rule.fromAccountId,
+      });
+      return { income, result, splits };
+    };
+
+    data.allowanceRules = allowanceRuleRows.map((rule) => {
+      const { income, result, splits } = allowancePreviewFor(rule);
+      return {
+        id: rule.id,
+        name: rule.name,
+        memberId: rule.memberId,
+        memberName: memberById.get(rule.memberId)?.name ?? "Member",
+        enabled: rule.enabled,
+        period: rule.period,
+        goal: n(rule.goalAmount),
+        goalLabel: money0(n(rule.goalAmount)),
+        min: n(rule.minAmount),
+        minLabel: money0(n(rule.minAmount)),
+        bonusType: rule.bonusType,
+        bonusBasis: rule.bonusBasis,
+        bonusValue: n(rule.bonusValue),
+        incomeMatchKeys: (rule.incomeMatchKeys as string[] | null) ?? null,
+        fromAccountId: rule.fromAccountId,
+        fromAccountLabel: accountLabel(acctById.get(rule.fromAccountId)),
+        toAccountId: rule.toAccountId,
+        toAccountLabel: accountLabel(acctById.get(rule.toAccountId)),
+        gateOnReview: rule.gateOnReview,
+        splits: splits.map((sp) => ({
+          memberId: sp.memberId,
+          memberName: memberById.get(sp.memberId)?.name ?? "Member",
+          pct: sp.pct,
+          toAccountId: sp.toAccountId,
+          toAccountLabel: accountLabel(acctById.get(sp.toAccountId)),
+        })),
+        status: {
+          periodLabel: rule.period === "per_paycheck" ? "each paycheck" : "this month",
+          income,
+          incomeLabel: money0(income),
+          over: result.over,
+          overage: result.overage,
+          bonusPool: result.bonusPool,
+          bonusLabel: money0(result.bonusPool),
+          warnings: result.warnings,
+          payouts: result.payouts.map((p) => ({
+            memberId: p.memberId,
+            memberName: memberById.get(p.memberId)?.name ?? "Member",
+            amount: p.amount,
+            amountLabel: money2(p.amount),
+            kind: p.kind,
+          })),
+        },
+      };
+    });
+
     // --- member home (categorize tasks + allowance gating) ---
     const buildMemberHome = (mid: string) => {
       const managedIds = [...(accountsByMember.get(mid) ?? [])];
@@ -1114,9 +1214,42 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         .slice()
         .reverse();
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+      // Performance allowance, if this member is an earner (or just a recipient).
+      const myPendingAllowance = instanceRows
+        .filter((i) => i.memberId === mid && i.status === "pending" && (i.triggeredBy ?? "").startsWith("allowance:"))
+        .map((i) => ({ amount: n(i.amount), amountLabel: money2(n(i.amount)), note: i.note ?? null }));
+      const earnerRule = allowanceRuleRows.find((r) => r.memberId === mid && r.enabled);
+      let performance: Record<string, unknown> | null = null;
+      if (earnerRule) {
+        const { income, result } = allowancePreviewFor(earnerRule);
+        const myPayout = result.payouts.find((p) => p.memberId === mid);
+        const goal = n(earnerRule.goalAmount);
+        performance = {
+          ruleName: earnerRule.name,
+          period: earnerRule.period,
+          periodLabel: earnerRule.period === "per_paycheck" ? "per paycheck" : "this month",
+          goal,
+          goalLabel: money0(goal),
+          income,
+          incomeLabel: money0(income),
+          over: result.over,
+          pct: goal > 0 ? Math.min(100, Math.round((income / goal) * 100)) : 0,
+          minLabel: money2(n(earnerRule.minAmount)),
+          bonus: result.earnerBonus,
+          bonusLabel: money2(result.earnerBonus),
+          projected: myPayout?.amount ?? 0,
+          projectedLabel: money2(myPayout?.amount ?? 0),
+          pendingTransfers: myPendingAllowance,
+        };
+      } else if (myPendingAllowance.length) {
+        performance = { recipientOnly: true, pendingTransfers: myPendingAllowance };
+      }
+
       return {
         memberId: mid,
         name: memberById.get(mid)?.name ?? "there",
+        performance,
         allowance,
         allowanceLabel: money0(allowance),
         spent,

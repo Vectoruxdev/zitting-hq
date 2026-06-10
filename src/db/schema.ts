@@ -20,6 +20,7 @@ import {
   timestamp,
   date,
   index,
+  uniqueIndex,
   primaryKey,
 } from "drizzle-orm/pg-core";
 
@@ -286,6 +287,52 @@ export const transferInstances = pgTable(
     index("idx_ti_rule").on(t.ruleId),
     index("idx_ti_income").on(t.triggerIncomeTxnId),
     index("idx_ti_accounts").on(t.fromAccountId, t.toAccountId, t.status),
+  ]
+);
+
+/**
+ * Performance-based allowance rules. An "earner" member has an income goal and a
+ * minimum allowance floor; when their tagged paychecks beat the goal a bonus is
+ * computed (fixed $ or % of the overage / whole income) and split across recipient
+ * members (`allowance_splits`); the earner keeps the remainder. Firing a rule emits
+ * SUGGESTED transfers into `transfer_instances` (not real bank moves) that
+ * auto-complete via `reconcilePendingTransfers` once Plaid sees the real transfer.
+ * The displayed/derived per-period status is computed in getFinanceData.
+ */
+export const allowanceRules = pgTable("allowance_rules", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }), // the earner
+  enabled: boolean("enabled").notNull().default(true),
+  period: text("period").notNull().default("monthly"), // monthly | per_paycheck (goal is in this unit)
+  goalAmount: numeric("goal_amount", { precision: 14, scale: 2 }).notNull(),
+  minAmount: numeric("min_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  bonusType: text("bonus_type").notNull().default("percent"), // percent | fixed
+  bonusBasis: text("bonus_basis").notNull().default("overage"), // overage | gross (ignored when fixed)
+  bonusValue: numeric("bonus_value", { precision: 14, scale: 2 }).notNull().default("0"),
+  // Merchant keys that identify the earner's paychecks; null = all income tagged to the earner.
+  incomeMatchKeys: jsonb("income_match_keys").$type<string[]>(),
+  fromAccountId: text("from_account_id").notNull().references(() => accounts.id), // transfer source
+  toAccountId: text("to_account_id").notNull().references(() => accounts.id), // earner's deposit account
+  gateOnReview: boolean("gate_on_review").notNull().default(true), // monthly only: require prev month reviewed
+  lastProcessedPeriod: text("last_processed_period"), // monthly idempotency/settle bookkeeping (e.g. "2026-5")
+  createdAt: timestamp("created_at").defaultNow(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Bonus recipients for an allowance rule (the earner is the implicit remainder). */
+export const allowanceSplits = pgTable(
+  "allowance_splits",
+  {
+    id: serial("id").primaryKey(),
+    ruleId: text("rule_id").notNull().references(() => allowanceRules.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }), // recipient
+    pct: numeric("pct", { precision: 5, scale: 2 }).notNull(),
+    toAccountId: text("to_account_id").notNull().references(() => accounts.id), // recipient's deposit account
+  },
+  (t) => [
+    uniqueIndex("uq_allowance_split").on(t.ruleId, t.memberId),
+    index("idx_allowance_splits_rule").on(t.ruleId),
   ]
 );
 

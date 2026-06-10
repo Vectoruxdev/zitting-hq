@@ -184,6 +184,20 @@ export async function setMemberAllowance(memberId: string, amount: number | null
   refresh();
   return res;
 }
+/** Owner: create/update a performance-allowance rule (+ its bonus splits). */
+export async function saveAllowanceRule(payload: Parameters<typeof m.saveAllowanceRule>[0]) {
+  await ensureOwner();
+  const res = await m.saveAllowanceRule(payload);
+  refresh();
+  return res;
+}
+/** Owner: delete an allowance rule (pending suggestions are skipped, history kept). */
+export async function deleteAllowanceRule(ruleId: string) {
+  await ensureOwner();
+  const res = await m.deleteAllowanceRule(ruleId);
+  refresh();
+  return res;
+}
 /** Move an account to/from the household (business accounts are hidden + sync-skipped). */
 export async function setAccountSpace(id: string, space: "household" | "business") {
   await ensureOwner();

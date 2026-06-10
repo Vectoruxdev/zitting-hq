@@ -150,6 +150,7 @@ function ZHQSpendable() {
   const goals = (D.goals || []).filter((g) => !g.archived);
   const allowance = H ? H.allowance : 0;
   const unlocked = H ? H.allowanceUnlocked : true;
+  const perf = (H && H.performance) || null;
 
   const filteredActivity = acctFilter === 'all' ? activity : activity.filter((t) => t.accountId === acctFilter);
 
@@ -222,6 +223,47 @@ function ZHQSpendable() {
                   </>
                 )}
               </div>
+
+              {/* performance allowance */}
+              {perf && !perf.recipientOnly ? (
+                <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', padding: 22, border: `1px solid ${perf.over ? 'var(--green-tint)' : 'var(--border-hairline)'}` }}>
+                  <div className="zt-eyebrow" style={{ marginBottom: 12 }}>Performance · {perf.periodLabel}</div>
+                  <div className="zt-num" style={{ fontSize: 36, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--text-primary)' }}>{perf.incomeLabel}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8 }}>of {perf.goalLabel} goal</div>
+                  <div style={{ marginTop: 14 }}>
+                    <ProgressBar value={Math.min(perf.pct, 100)} max={100} height={9} />
+                  </div>
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-hairline)' }}>
+                    {perf.over ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, color: 'var(--accent)', fontWeight: 600 }}>
+                        <Icon name="check" size={16} /> Beat goal — {perf.bonusLabel} bonus · allowance {perf.projectedLabel}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>Minimum allowance {perf.minLabel}. Beat {perf.goalLabel} to earn a bonus.</span>
+                    )}
+                  </div>
+                  {perf.pendingTransfers && perf.pendingTransfers.length ? (
+                    <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+                      {perf.pendingTransfers.map((t, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, paddingTop: 6 }}>
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.note || 'Allowance transfer'}</span>
+                          <span className="zt-num" style={{ color: 'var(--text-secondary)' }}>{t.amountLabel} pending</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : perf && perf.recipientOnly && perf.pendingTransfers.length ? (
+                <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', padding: 22, border: '1px solid var(--green-tint)' }}>
+                  <div className="zt-eyebrow" style={{ marginBottom: 10 }}>Bonus coming your way</div>
+                  {perf.pendingTransfers.map((t, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, paddingTop: 6, fontSize: 13.5 }}>
+                      <span style={{ color: 'var(--text-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.note || 'Allowance bonus'}</span>
+                      <span className="zt-num" style={{ color: 'var(--accent)', fontWeight: 600 }}>{t.amountLabel}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               {/* personal budgets */}
               {budgets.length ? (
