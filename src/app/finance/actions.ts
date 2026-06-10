@@ -405,6 +405,14 @@ export async function markNotificationsRead(ids?: number[]) {
   return res;
 }
 
+/** Owner sets which events notify, and on which channel (in-app / push). */
+export async function setNotificationPref(event: string, patch: { enabled?: boolean; inApp?: boolean; push?: boolean }) {
+  await ensureOwner();
+  const res = await m.setNotificationPref(event, patch);
+  refresh();
+  return res;
+}
+
 // ---- web push (device notifications) ----
 /** Register this device for push, tagged to the signed-in person. */
 export async function subscribePush(sub: { endpoint: string; p256dh: string; auth: string }) {

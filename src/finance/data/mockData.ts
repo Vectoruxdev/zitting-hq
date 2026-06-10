@@ -21,6 +21,7 @@ export const MOCK_FINANCE_DATA: any = {
   ],
 
   learned: [],
+  notifPrefs: [],
 
   stats: {
     totalCash: '$84,920',

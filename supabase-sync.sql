@@ -249,3 +249,12 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at timestamp DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_push_member ON push_subscriptions (member_id);
+
+-- ---- notification preferences (0012) ----
+CREATE TABLE IF NOT EXISTS notification_prefs (
+  event text PRIMARY KEY,
+  enabled boolean NOT NULL DEFAULT true,
+  in_app boolean NOT NULL DEFAULT true,
+  push boolean NOT NULL DEFAULT true,
+  updated_at timestamp DEFAULT now()
+);

@@ -395,6 +395,17 @@ export const notifications = pgTable(
   (t) => [index("idx_notif_member").on(t.memberId), index("idx_notif_dedupe").on(t.dedupeKey)]
 );
 
+// Per-event notification preferences (owner-controlled). One row per event key;
+// missing rows default to fully on (fail-open) so notifications work before the
+// migration runs. Gated at createNotification.
+export const notificationPrefs = pgTable("notification_prefs", {
+  event: text("event").primaryKey(), // new_transactions | large_charges | member_complete | member_nudges
+  enabled: boolean("enabled").notNull().default(true),
+  inApp: boolean("in_app").notNull().default(true),
+  push: boolean("push").notNull().default(true),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const notificationRules = pgTable("notification_rules", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),

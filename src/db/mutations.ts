@@ -10,6 +10,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
+import { channelsFor, mergePrefs } from "./notifyPrefs";
 import { dedupeKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
@@ -1058,6 +1059,11 @@ export async function createNotification(args: {
   dedupeKey?: string | null; // idempotency — skip if one already exists
 }) {
   const database = requireDb();
+  // Owner preferences: a disabled event fires nothing; channel toggles gate the
+  // in-app feed row and the device push independently. Fail-open if the prefs
+  // table isn't there yet (pre-migration) or the type isn't tunable.
+  const ch = channelsFor(args.type, await loadNotifPrefRows());
+  if (!ch.enabled) return { ok: true as const, skipped: true as const };
   // Idempotency: never double-post the same logical alert (webhook + cron, etc.)
   if (args.dedupeKey) {
     const dup = await database
@@ -1067,38 +1073,76 @@ export async function createNotification(args: {
       .limit(1);
     if (dup.length) return { ok: true as const, skipped: true as const };
   }
-  const existing = await database.select({ so: s.notifications.sortOrder }).from(s.notifications);
-  const sortOrder = existing.reduce((mx, n) => Math.max(mx, n.so), -1) + 1;
-  await database.insert(s.notifications).values({
-    type: args.type,
-    tone: args.tone ?? "info",
-    title: args.title,
-    body: args.body ?? null,
-    icon: args.icon ?? "bell",
-    timeLabel: args.timeLabel ?? null,
-    unread: true,
-    audience: args.audience ?? "owners",
-    memberId: args.memberId ?? null,
-    linkTo: args.linkTo ?? null,
-    dedupeKey: args.dedupeKey ?? null,
-    sortOrder,
-  });
+  if (ch.inApp) {
+    const existing = await database.select({ so: s.notifications.sortOrder }).from(s.notifications);
+    const sortOrder = existing.reduce((mx, n) => Math.max(mx, n.so), -1) + 1;
+    await database.insert(s.notifications).values({
+      type: args.type,
+      tone: args.tone ?? "info",
+      title: args.title,
+      body: args.body ?? null,
+      icon: args.icon ?? "bell",
+      timeLabel: args.timeLabel ?? null,
+      unread: true,
+      audience: args.audience ?? "owners",
+      memberId: args.memberId ?? null,
+      linkTo: args.linkTo ?? null,
+      dedupeKey: args.dedupeKey ?? null,
+      sortOrder,
+    });
+  }
   // Fan the same alert out to subscribed devices (best-effort — a push failure
   // must never undo the stored notification). Dynamic import keeps the web-push
   // dependency out of paths that never notify.
-  try {
-    const { sendPushToAudience } = await import("@/lib/push");
-    await sendPushToAudience({
-      audience: args.audience ?? "owners",
-      memberId: args.memberId ?? null,
-      title: args.title,
-      body: args.body ?? null,
-      linkTo: args.linkTo ?? null,
-      tag: args.dedupeKey ?? args.type,
-    });
-  } catch {
-    /* push is optional */
+  if (ch.push) {
+    try {
+      const { sendPushToAudience } = await import("@/lib/push");
+      await sendPushToAudience({
+        audience: args.audience ?? "owners",
+        memberId: args.memberId ?? null,
+        title: args.title,
+        body: args.body ?? null,
+        linkTo: args.linkTo ?? null,
+        tag: args.dedupeKey ?? args.type,
+      });
+    } catch {
+      /* push is optional */
+    }
   }
+  return { ok: true as const };
+}
+
+/** Load stored notification prefs (defensive — empty if the table isn't migrated). */
+async function loadNotifPrefRows() {
+  const rows = await requireDb()
+    .select()
+    .from(s.notificationPrefs)
+    .catch(() => [] as { event: string; enabled: boolean; inApp: boolean; push: boolean }[]);
+  return rows.map((r) => ({ event: r.event, enabled: r.enabled, inApp: r.inApp, push: r.push }));
+}
+
+/** Full preference list (catalog merged with stored overrides) for the UI. */
+export async function getNotificationPrefs() {
+  return mergePrefs(await loadNotifPrefRows());
+}
+
+/** Upsert one event's preferences. */
+export async function setNotificationPref(
+  event: string,
+  patch: { enabled?: boolean; inApp?: boolean; push?: boolean }
+) {
+  const database = requireDb();
+  const cur = mergePrefs(await loadNotifPrefRows()).find((m) => m.event === event);
+  const next = {
+    event,
+    enabled: patch.enabled ?? cur?.enabled ?? true,
+    inApp: patch.inApp ?? cur?.inApp ?? true,
+    push: patch.push ?? cur?.push ?? true,
+  };
+  await database
+    .insert(s.notificationPrefs)
+    .values({ ...next, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: s.notificationPrefs.event, set: { enabled: next.enabled, inApp: next.inApp, push: next.push, updatedAt: new Date() } });
   return { ok: true as const };
 }
 

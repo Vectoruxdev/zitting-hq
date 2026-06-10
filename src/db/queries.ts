@@ -15,6 +15,7 @@
 import { asc } from "drizzle-orm";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
+import { mergePrefs } from "./notifyPrefs";
 import { projectGoal, canViewGoal } from "./savings";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
@@ -76,6 +77,7 @@ function emptyData(): FinanceData {
   d.notifications = [];
   d.notifRules = [];
   d.learned = [];
+  d.notifPrefs = [];
   d.receiptItems = [];
   d.categories = [];
   d.allCategories = [];
@@ -142,6 +144,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
     // Learned merchant→category memory (for the owner "What it's learned" view).
     const memoryRows = await db.select().from(s.merchantMemory).catch(() => []);
+    // Owner notification preferences (defensive — empty before the migration).
+    const notifPrefRows = await db.select().from(s.notificationPrefs).catch(() => [] as { event: string; enabled: boolean; inApp: boolean; push: boolean }[]);
     // Which of our accounts are linked to a Plaid (auto-syncing) bank.
     const plaidAcctRows = await db.select({ accountId: s.plaidAccounts.accountId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null }[]);
     const plaidLinkedIds = new Set(plaidAcctRows.map((r) => r.accountId).filter(Boolean) as string[]);
@@ -593,6 +597,10 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     } else {
       data.learned = [];
     }
+    // Notification preferences (owner/partner only — the panel is owner-facing).
+    data.notifPrefs = isMemberView
+      ? []
+      : mergePrefs(notifPrefRows.map((r) => ({ event: r.event, enabled: r.enabled, inApp: r.inApp, push: r.push })));
     data.notifRules = notifRuleRows.map((r) => ({
       id: r.id,
       name: r.name,
