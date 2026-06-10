@@ -123,6 +123,35 @@ async function penalizeTxn(desc: string, categoryId: string, delta = 1) {
   await penalizeMerchant(exactMerchantKey(desc), categoryId, delta);
 }
 
+/** All memory rows whose key is the given token key OR a precise "x:" key
+ *  derived from it (so owner-facing "forget/relabel" hits both tiers). */
+async function memoryRowsForKey(tokenKey: string) {
+  const rows = await requireDb().select().from(s.merchantMemory);
+  const exactPrefix = "x:" + tokenKey;
+  return rows.filter((r) => r.merchantKey === tokenKey || r.merchantKey.startsWith(exactPrefix));
+}
+
+/** Forget everything learned for a merchant (both key tiers). */
+export async function forgetMerchant(tokenKey: string) {
+  if (!tokenKey) return { ok: true as const };
+  const database = requireDb();
+  const rows = await memoryRowsForKey(tokenKey);
+  const ids = rows.map((r) => r.id);
+  if (ids.length) await database.delete(s.merchantMemory).where(inArray(s.merchantMemory.id, ids));
+  return { ok: true as const, removed: ids.length };
+}
+
+/** Authoritatively set what a merchant is learned as: clear its prior memory,
+ *  then seed a confident entry so the engine uses it from now on. */
+export async function setMerchantCategory(tokenKey: string, categoryId: string, member?: string | null) {
+  if (!tokenKey || !categoryId) return { ok: true as const };
+  await forgetMerchant(tokenKey);
+  // Seed both tiers with a solid count so it wins immediately.
+  await learnMerchant(tokenKey, categoryId, member ?? null, 5);
+  await learnMerchant("x:" + tokenKey, categoryId, member ?? null, 5);
+  return { ok: true as const };
+}
+
 /** Suggest categories for a batch of rows (used by import + Plaid sync). */
 export async function suggestCategories(
   rows: { merchant: string; amount: number; accountId?: string | null; type?: string | null; isTransfer?: boolean }[]

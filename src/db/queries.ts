@@ -75,6 +75,7 @@ function emptyData(): FinanceData {
   d.past = [];
   d.notifications = [];
   d.notifRules = [];
+  d.learned = [];
   d.receiptItems = [];
   d.categories = [];
   d.allCategories = [];
@@ -139,6 +140,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Member-managed accounts + per-member allowance (migration 0005) — defensive
     // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
     const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
+    // Learned merchant→category memory (for the owner "What it's learned" view).
+    const memoryRows = await db.select().from(s.merchantMemory).catch(() => []);
     // Which of our accounts are linked to a Plaid (auto-syncing) bank.
     const plaidAcctRows = await db.select({ accountId: s.plaidAccounts.accountId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null }[]);
     const plaidLinkedIds = new Set(plaidAcctRows.map((r) => r.accountId).filter(Boolean) as string[]);
@@ -550,6 +553,45 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         },
         ...data.notifications,
       ];
+    }
+    // What the auto-categorizer has learned (owner/partner only). Aggregated by
+    // the broad token key (the precise "x:" tier is internal); each merchant
+    // shows its winning category, how strongly, when last reinforced, and any
+    // competing categories — so the owner can watch it learn and spot-fix.
+    if (!isMemberView) {
+      const byKey = new Map<string, { total: number; lastSeen: number; cats: Map<string, { count: number; member: string | null }> }>();
+      for (const r of memoryRows) {
+        if (!r.categoryId || r.merchantKey.startsWith("x:")) continue; // token tier only
+        const g = byKey.get(r.merchantKey) || { total: 0, lastSeen: 0, cats: new Map() };
+        g.total += r.count;
+        const seen = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+        if (seen > g.lastSeen) g.lastSeen = seen;
+        const c = g.cats.get(r.categoryId) || { count: 0, member: r.member };
+        c.count += r.count;
+        g.cats.set(r.categoryId, c);
+        byKey.set(r.merchantKey, g);
+      }
+      data.learned = [...byKey.entries()]
+        .map(([key, g]) => {
+          const ranked = [...g.cats.entries()].sort((a, b) => b[1].count - a[1].count);
+          const [topId, top] = ranked[0];
+          const cat = catById.get(topId);
+          return {
+            key,
+            categoryId: topId,
+            category: cat?.name ?? topId,
+            color: cat?.color ?? "var(--gray-500)",
+            count: top.count,
+            total: g.total,
+            share: g.total > 0 ? Math.round((top.count / g.total) * 100) : 100,
+            member: top.member ? memberById.get(top.member)?.name ?? null : null,
+            lastSeen: g.lastSeen ? relTime(new Date(g.lastSeen), new Date()) : null,
+            alts: ranked.slice(1).map(([id, v]) => ({ category: catById.get(id)?.name ?? id, count: v.count })),
+          };
+        })
+        .sort((a, b) => b.total - a.total || a.key.localeCompare(b.key));
+    } else {
+      data.learned = [];
     }
     data.notifRules = notifRuleRows.map((r) => ({
       id: r.id,

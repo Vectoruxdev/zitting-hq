@@ -308,6 +308,20 @@ export async function recategorizeAll(opts?: { onlyUnreviewed?: boolean }) {
   refresh();
   return res;
 }
+// ---- learned memory (owner spot-fixes) ----
+export async function forgetLearnedMerchant(key: string) {
+  await ensureOwner();
+  const res = await m.forgetMerchant(key);
+  refresh();
+  return res;
+}
+export async function setLearnedMerchant(key: string, categoryId: string) {
+  await ensureOwner();
+  const res = await m.setMerchantCategory(key, categoryId);
+  refresh();
+  return res;
+}
+
 export async function rebuildMemoryFromHistory() {
   await ensureOwner();
   const res = await m.rebuildMemoryFromHistory();

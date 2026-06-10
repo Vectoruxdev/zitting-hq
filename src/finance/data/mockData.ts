@@ -9,6 +9,7 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 'transactions', label: 'Transactions', icon: 'list' },
     { id: 'import', label: 'Import', icon: 'arrowDown' },
     { id: 'categories', label: 'Categories', icon: 'pie' },
+    { id: 'learned', label: 'Learned', icon: 'sparkles' },
     { id: 'budgets', label: 'Budgets', icon: 'pie' },
     { id: 'income', label: 'Income', icon: 'trendingUp' },
     { id: 'bills', label: 'Bills', icon: 'repeat' },
@@ -18,6 +19,8 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 'receipts', label: 'Receipts', icon: 'receipt' },
     { id: 'ask', label: 'Ask AI', icon: 'sparkles' },
   ],
+
+  learned: [],
 
   stats: {
     totalCash: '$84,920',

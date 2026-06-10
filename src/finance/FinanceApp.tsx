@@ -44,6 +44,7 @@ import "./screens/Spendable.jsx";
 import "./screens/Onboarding.jsx";
 import "./screens/Import.jsx";
 import "./screens/Categories.jsx";
+import "./screens/Learned.jsx";
 import "./screens/shared/pushPrompt.jsx";
 import "./plaidLink.js";
 import "./push.js";
@@ -146,6 +147,7 @@ export default function FinanceApp({
     transactions: { title: "Transactions", render: (nav) => React.createElement(w.ZHQTransactions, { onNavigate: nav }) },
     import: { title: "Import transactions", render: (nav) => React.createElement(w.ZHQImport, { onNavigate: nav }) },
     categories: { title: "Categories", render: () => React.createElement(w.ZHQCategories) },
+    learned: { title: "What it's learned", render: () => React.createElement(w.ZHQLearned) },
     budgets: { title: "Budgets", render: () => React.createElement(w.ZHQBudgets) },
     income: { title: "Income", render: () => React.createElement(w.ZHQIncome) },
     bills: { title: "Bills & recurring", render: () => React.createElement(w.ZHQBills) },
