@@ -198,6 +198,22 @@ export async function markTransfer(id: number, isTransfer: boolean) {
   refresh();
   return res;
 }
+/** Bulk-categorize merchant groups at once (returns an undo snapshot). */
+export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[]) {
+  const allIds = groups.flatMap((g) => g.ids);
+  const u = await ensureCanEditTxns(allIds);
+  const res = await m.applyBulkCategories(groups);
+  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
+  refresh();
+  return res;
+}
+/** Undo a bulk apply — restore exact prior category + reviewed state. */
+export async function restoreTransactionCategories(pairs: { id: number; categoryId: string | null; reviewed: boolean }[]) {
+  await ensureCanEditTxns(pairs.map((p) => p.id));
+  const res = await m.restoreTransactionCategories(pairs);
+  refresh();
+  return res;
+}
 export async function autoLinkTransfers() {
   await ensureOwner();
   const res = await m.autoLinkTransfers();

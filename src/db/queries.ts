@@ -16,6 +16,8 @@ import { asc } from "drizzle-orm";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
 import { mergePrefs } from "./notifyPrefs";
+import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
+import { scoreCategory, type MemoryMap, type RuleLike } from "./categorize";
 import { projectGoal, canViewGoal } from "./savings";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
@@ -78,6 +80,7 @@ function emptyData(): FinanceData {
   d.notifRules = [];
   d.learned = [];
   d.notifPrefs = [];
+  d.bulkGroups = [];
   d.receiptItems = [];
   d.categories = [];
   d.allCategories = [];
@@ -601,6 +604,63 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     data.notifPrefs = isMemberView
       ? []
       : mergePrefs(notifPrefRows.map((r) => ({ event: r.event, enabled: r.enabled, inApp: r.inApp, push: r.push })));
+
+    // --- bulk-categorize groups (merchant-clustered triage) ---
+    // Reuse the engine to suggest a category per merchant cluster. Viewer-scoped
+    // (members see only their accounts). Transfers are excluded (not categorized).
+    {
+      const memMap: MemoryMap = new Map();
+      for (const r of memoryRows) {
+        if (!r.categoryId) continue;
+        const arr = memMap.get(r.merchantKey) || [];
+        arr.push({ categoryId: r.categoryId, count: r.count, member: r.member, lastSeen: r.updatedAt ? new Date(r.updatedAt).getTime() : undefined });
+        memMap.set(r.merchantKey, arr);
+      }
+      const rules = catRuleRows as unknown as RuleLike[];
+      const catKind = new Map(catRows.map((c) => [c.id, c.kind]));
+      const nowMs = Date.now();
+      const bulkInput = txnRows
+        .filter((t) => !t.isTransfer && canSeeAccount(t.accountId))
+        .map((t) => ({ id: t.id, merchant: t.merchant, categoryId: t.categoryId, reviewed: t.reviewed, amount: n(t.amount), accountId: t.accountId, date: t.date as string | null }));
+      const groups = buildMerchantGroups(bulkInput).slice(0, 250);
+      const rangeLbl = (iso: string | null) => {
+        const d = parseDate(iso);
+        return d ? dayLabel(d) : "";
+      };
+      data.bulkGroups = groups.map((g) => {
+        const sug = scoreCategory({ merchant: g.sampleMerchant, amount: g.net !== 0 ? g.net : -1 }, { rules, memory: memMap, catKind, now: nowMs });
+        const curId = dominantCategory(g.catCounts);
+        const curCat = curId ? catById.get(curId) : undefined;
+        const sugCat = sug.categoryId && sug.categoryId !== "uncategorized" ? catById.get(sug.categoryId) : undefined;
+        return {
+          key: g.key,
+          merchant: g.key.replace(/\b\w/g, (m) => m.toUpperCase()),
+          ids: g.ids,
+          count: g.count,
+          unreviewed: g.unreviewed,
+          uncategorized: g.uncategorized,
+          spend: g.totalSpend,
+          spendLabel: money2(g.totalSpend),
+          currentCategoryId: curId,
+          currentCategory: curCat?.name ?? null,
+          currentColor: curCat?.color ?? null,
+          mixed: Object.keys(g.catCounts).filter((k) => k && k !== "uncategorized").length > 1,
+          suggestion: sugCat
+            ? {
+                categoryId: sug.categoryId,
+                name: sugCat.name,
+                color: sugCat.color,
+                confidence: sug.confidence,
+                confidencePct: Math.round(sug.confidence * 100),
+                reason: sug.reason ?? null,
+                source: sug.source,
+              }
+            : null,
+          accounts: g.accountIds.map((id) => acctById.get(id)?.name ?? "—"),
+          dateRange: g.minDate ? (g.minDate === g.maxDate ? rangeLbl(g.minDate) : `${rangeLbl(g.minDate)} – ${rangeLbl(g.maxDate)}`) : "",
+        };
+      });
+    }
     data.notifRules = notifRuleRows.map((r) => ({
       id: r.id,
       name: r.name,

@@ -7,6 +7,7 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
     { id: 'accounts', label: 'Accounts', icon: 'wallet' },
     { id: 'transactions', label: 'Transactions', icon: 'list' },
+    { id: 'bulk', label: 'Tidy up', icon: 'sparkles' },
     { id: 'import', label: 'Import', icon: 'arrowDown' },
     { id: 'categories', label: 'Categories', icon: 'pie' },
     { id: 'learned', label: 'Learned', icon: 'sparkles' },
@@ -22,6 +23,7 @@ export const MOCK_FINANCE_DATA: any = {
 
   learned: [],
   notifPrefs: [],
+  bulkGroups: [],
 
   stats: {
     totalCash: '$84,920',

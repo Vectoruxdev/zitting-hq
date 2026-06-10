@@ -613,6 +613,56 @@ export async function confirmTransactions(ids: number[]) {
   return { ok: true as const };
 }
 
+/**
+ * Apply categories to many merchant groups at once. Snapshots the prior
+ * category + reviewed state of every affected row FIRST (returned for undo),
+ * then categorizes each group through the normal learning loop (so bulk
+ * categorizing also trains the engine). One round trip for the whole batch.
+ */
+export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[]) {
+  const database = requireDb();
+  const allIds = [...new Set(groups.flatMap((g) => g.ids))];
+  if (!allIds.length) return { ok: true as const, updated: 0, undo: [] as { id: number; categoryId: string | null; reviewed: boolean }[] };
+  const before = await database
+    .select({ id: s.transactions.id, categoryId: s.transactions.categoryId, reviewed: s.transactions.reviewed })
+    .from(s.transactions)
+    .where(inArray(s.transactions.id, allIds));
+  const undo = before.map((r) => ({ id: r.id, categoryId: r.categoryId, reviewed: r.reviewed }));
+  let updated = 0;
+  for (const g of groups) {
+    if (!g.ids.length || !g.categoryId) continue;
+    await bulkUpdateTransactions(g.ids, { categoryId: g.categoryId }, { learn: true });
+    updated += g.ids.length;
+  }
+  return { ok: true as const, updated, undo };
+}
+
+/** Restore exact prior category + reviewed state (the Undo for a bulk apply).
+ *  Does NOT re-train memory. */
+export async function restoreTransactionCategories(pairs: { id: number; categoryId: string | null; reviewed: boolean }[]) {
+  if (!pairs.length) return { ok: true as const };
+  const database = requireDb();
+  const cats = await catMap();
+  // Group identical (categoryId, reviewed) targets so we can bulk-update each.
+  const byTarget = new Map<string, { categoryId: string | null; reviewed: boolean; ids: number[] }>();
+  for (const p of pairs) {
+    const k = `${p.categoryId ?? ""}|${p.reviewed ? 1 : 0}`;
+    const t = byTarget.get(k) || { categoryId: p.categoryId, reviewed: p.reviewed, ids: [] };
+    t.ids.push(p.id);
+    byTarget.set(k, t);
+  }
+  await database.transaction(async (tx) => {
+    for (const t of byTarget.values()) {
+      const c = t.categoryId ? cats.get(t.categoryId) : undefined;
+      await tx
+        .update(s.transactions)
+        .set({ categoryId: t.categoryId, category: c?.name ?? null, color: c?.color ?? null, reviewed: t.reviewed })
+        .where(inArray(s.transactions.id, t.ids));
+    }
+  });
+  return { ok: true as const };
+}
+
 export async function markTransfer(id: number, isTransfer: boolean) {
   return updateTransaction(id, { isTransfer, categoryId: isTransfer ? "transfer" : undefined });
 }
