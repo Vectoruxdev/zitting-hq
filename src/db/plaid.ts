@@ -104,23 +104,43 @@ export async function exchangePublicToken(publicToken: string, createdBy: string
     });
   }
 
-  // Create + link one of our accounts per Plaid account (first connect only).
+  // Reconnecting a bank gives a NEW item + NEW Plaid account_ids for the SAME
+  // real accounts. Match incoming accounts to existing ones by institution +
+  // mask + name + type and RE-USE them, so a re-link doesn't create duplicates.
+  const instName = institutionName || "";
+  const acctKey = (mask: string | null | undefined, name: string | null | undefined, type: string) =>
+    `${mask ?? ""}|${(name || "").trim().toLowerCase()}|${type}`;
+  const existingByKey = new Map<string, string>();
+  if (instName) {
+    const existing = await database
+      .select({ id: s.accounts.id, mask: s.accounts.mask, name: s.accounts.name, type: s.accounts.type })
+      .from(s.accounts)
+      .where(eq(s.accounts.institution, instName));
+    for (const a of existing) if (!existingByKey.has(acctKey(a.mask, a.name, a.type))) existingByKey.set(acctKey(a.mask, a.name, a.type), a.id);
+  }
+
   for (const pa of acctsRes.data.accounts) {
     const [mapped] = await database
       .select()
       .from(s.plaidAccounts)
       .where(eq(s.plaidAccounts.plaidAccountId, pa.account_id));
     if (mapped) continue;
-    const ourId = crypto.randomUUID();
-    await database.insert(s.accounts).values({
-      id: ourId,
-      name: pa.name || pa.official_name || "Account",
-      institution: institutionName || "",
-      type: mapAccountType(pa.type, pa.subtype),
-      mask: pa.mask || null,
-      who: "Household",
-      syncedLabel: "Synced just now",
-    });
+    const type = mapAccountType(pa.type, pa.subtype);
+    const key = acctKey(pa.mask, pa.name || pa.official_name, type);
+    let ourId = existingByKey.get(key); // re-use the matching existing account if any
+    if (!ourId) {
+      ourId = crypto.randomUUID();
+      await database.insert(s.accounts).values({
+        id: ourId,
+        name: pa.name || pa.official_name || "Account",
+        institution: instName,
+        type,
+        mask: pa.mask || null,
+        who: "Household",
+        syncedLabel: "Synced just now",
+      });
+      existingByKey.set(key, ourId);
+    }
     await database.insert(s.plaidAccounts).values({
       itemId,
       plaidAccountId: pa.account_id,
@@ -130,6 +150,23 @@ export async function exchangePublicToken(publicToken: string, createdBy: string
       type: pa.type,
       subtype: pa.subtype ?? null,
     });
+  }
+
+  // A reconnect REPLACES the prior connection for this institution. Drop the old
+  // item(s) (different item_id) + their account mappings so accounts aren't
+  // double-synced and the dead item doesn't linger. The accounts are kept (now
+  // linked to the new item), so balances/history carry over.
+  if (institutionId) {
+    const oldItems = await database
+      .select({ itemId: s.plaidItems.itemId, accessToken: s.plaidItems.accessToken })
+      .from(s.plaidItems)
+      .where(eq(s.plaidItems.institutionId, institutionId));
+    for (const it of oldItems) {
+      if (it.itemId === itemId) continue;
+      try { await plaid.itemRemove({ access_token: it.accessToken }); } catch { /* best-effort revoke */ }
+      await database.delete(s.plaidAccounts).where(eq(s.plaidAccounts.itemId, it.itemId));
+      await database.delete(s.plaidItems).where(eq(s.plaidItems.itemId, it.itemId));
+    }
   }
 
   const result = await syncItem(itemId);
