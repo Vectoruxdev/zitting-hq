@@ -153,14 +153,15 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
     } finally { setBusy(false); }
   }
 
-  async function moveToBusiness() {
-    if (!API.setAccountSpace) return;
+  async function changeVis(mode) {
+    if (!API.setAccountVisibility || mode === vis) return;
+    setVis(mode);
     setBusy(true);
     try {
-      await API.setAccountSpace(acct.id, 'business');
+      await API.setAccountVisibility(acct.id, mode);
       window.ZHQ_REFRESH && window.ZHQ_REFRESH();
-      onClose();
-      onDeleted && onDeleted(); // it leaves the household list → go back
+      // Hidden accounts leave the household entirely → return to the list.
+      if (mode === 'hidden') { onClose(); onDeleted && onDeleted(); }
     } finally { setBusy(false); }
   }
 
@@ -222,12 +223,19 @@ function ZHQEditAccountModal({ open, acct, onClose, onDeleted }) {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTop: '1px solid var(--border-hairline)', paddingTop: 14 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-primary)' }}>Hide this account</div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.5 }}>Keeps its transactions out of the household dashboard &amp; emails and pauses its sync (good for business accounts). Unhide anytime from "Show hidden accounts".</div>
+          <div style={{ borderTop: '1px solid var(--border-hairline)', paddingTop: 14 }}>
+            <span className="zt-eyebrow" style={{ display: 'block', marginBottom: 8 }}>Visibility on the Accounts screen</span>
+            <SegmentedControl
+              full
+              value={vis === 'hidden' ? 'shown' : vis}
+              onChange={changeVis}
+              options={[{ value: 'shown', label: 'Shown' }, { value: 'grouped', label: 'Grouped' }, { value: 'hidden', label: 'Hidden' }]}
+            />
+            <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 8, lineHeight: 1.5 }}>
+              {vis === 'grouped'
+                ? "Tucked into one “Other accounts” card to reduce clutter — still counted everywhere."
+                : "Its own card on the Accounts screen, counted everywhere. Choose “Grouped” to tuck rarely-used accounts into one card, or “Hidden” to remove an account from the dashboard, emails, and sync entirely (e.g. business)."}
             </div>
-            <Button variant="secondary" size="sm" onClick={moveToBusiness} disabled={busy} style={{ flex: 'none' }}>Hide</Button>
           </div>
         </div>
       )}
@@ -458,6 +466,56 @@ function ZHQBusinessAccounts() {
   );
 }
 
+/* One combined card for "grouped" accounts — still counted everywhere, just
+ * tucked together to declutter. Collapsed by default; expands to a list. */
+function ZHQOtherAccountsCard({ accounts, onOpen }) {
+  const { Card, Button, Icon } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(null);
+  if (!accounts.length) return null;
+  const total = accounts.reduce((s, a) => s + a.balance, 0);
+
+  async function ungroup(id, e) {
+    e.stopPropagation();
+    if (!API.setAccountVisibility) return;
+    setBusy(id);
+    try { await API.setAccountVisibility(id, 'shown'); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } finally { setBusy(null); }
+  }
+
+  return (
+    <Card bordered padding={open ? 18 : 14}>
+      <button onClick={() => setOpen((v) => !v)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', padding: 0, textAlign: 'left' }}>
+        <span style={{ width: 38, height: 38, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name="wallet" size={18} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>Other accounts</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{accounts.length} account{accounts.length === 1 ? '' : 's'} · tap to {open ? 'collapse' : 'expand'}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
+          <span className="zt-num" style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>{ZHQMoney(total, false)}</span>
+          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={16} style={{ color: 'var(--text-tertiary)' }} />
+        </div>
+      </button>
+
+      {open ? (
+        <div style={{ marginTop: 12, borderTop: '1px solid var(--border-hairline)' }}>
+          {accounts.map((a, i) => (
+            <div key={a.id} onClick={() => onOpen(a)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 2px', cursor: 'pointer', borderBottom: i === accounts.length - 1 ? 'none' : '1px solid var(--border-hairline)' }}>
+              <span style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 8, background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}><Icon name={a.balance < 0 ? 'creditCard' : 'bank'} size={15} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }} className="zt-num">{a.inst}{a.mask ? ` ••${a.mask}` : ''}</div>
+              </div>
+              <span className="zt-num" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', flex: 'none' }}>{ZHQMoney(a.balance, false)}</span>
+              <Button variant="ghost" size="sm" onClick={(e) => ungroup(a.id, e)} disabled={busy === a.id} style={{ flex: 'none' }}>{busy === a.id ? '…' : 'Ungroup'}</Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 function ZHQAccounts({ onNavigate }) {
   const { Card, Button, Icon, StatTile } = window.ZittingHQDesignSystem_c9e528;
   const A = window.ZHQ_DATA.accounts || { checking: [], savings: [], credit: [] };
@@ -474,7 +532,14 @@ function ZHQAccounts({ onNavigate }) {
   if (openId && !open) { window.__zhqOpenAccount = null; }
   if (open) return <ZHQAccountDetail acct={open} onBack={closeAccount} />;
 
-  const groups = [['Checking', A.checking], ['Savings', A.savings], ['Credit cards', A.credit]];
+  // "Grouped" accounts still count in the stats below, but show as their own
+  // cards only inside the combined "Other accounts" card — not in the type grids.
+  const collapsedAccts = flat.filter((a) => a.collapsed);
+  const groups = [
+    ['Checking', A.checking.filter((a) => !a.collapsed)],
+    ['Savings', A.savings.filter((a) => !a.collapsed)],
+    ['Credit cards', A.credit.filter((a) => !a.collapsed)],
+  ];
   const total = A.checking.length + A.savings.length + A.credit.length;
   const cash = [...A.checking, ...A.savings].reduce((s, a) => s + a.balance, 0);
   const debt = A.credit.reduce((s, a) => s + a.balance, 0);
@@ -518,6 +583,7 @@ function ZHQAccounts({ onNavigate }) {
       <ZHQConnectedBanks />
 
       {groups.map(([title, list]) => (
+        (list.length === 0 && title !== 'Checking') ? null : (
         <div key={title}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 13 }}>
             <span className="zt-eyebrow">{title}</span>
@@ -533,7 +599,10 @@ function ZHQAccounts({ onNavigate }) {
             ) : null}
           </div>
         </div>
+        )
       ))}
+
+      <ZHQOtherAccountsCard accounts={collapsedAccts} onOpen={openAccount} />
 
       <ZHQBusinessAccounts />
 

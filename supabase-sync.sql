@@ -291,3 +291,8 @@ ALTER TABLE family_members ADD COLUMN IF NOT EXISTS last_seen_at timestamp;
 -- "business" accounts are hidden from the household dashboard + emails and
 -- skipped by Plaid sync (seam for a future Business tab).
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS space text NOT NULL DEFAULT 'household';
+
+-- ---- account collapse: tuck into one "Other accounts" card (0015) ----
+-- Declutter only — collapsed accounts are STILL counted everywhere; the Accounts
+-- screen just groups them into a single combined card.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS collapsed boolean NOT NULL DEFAULT false;
