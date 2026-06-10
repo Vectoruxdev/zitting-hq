@@ -805,28 +805,73 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const managedAccounts = managedIds.map((id) => {
         const a = acctById.get(id);
         const p = prog.perAccount.get(id) || { total: 0, reviewed: 0, remaining: 0, done: false };
-        return { id, name: a?.name ?? "Account", label: a ? accountLabel(a) : "—", total: p.total, reviewed: p.reviewed, remaining: p.remaining, done: p.done };
+        const bal = a ? liveBalance(a) : 0;
+        return {
+          id,
+          name: a?.name ?? "Account",
+          label: a ? accountLabel(a) : "—",
+          type: a?.type ?? "checking",
+          mask: a?.mask ?? null,
+          balance: bal,
+          balanceLabel: money2(bal),
+          total: p.total,
+          reviewed: p.reviewed,
+          remaining: p.remaining,
+          done: p.done,
+        };
       });
       const allowance = allowanceById.get(mid) ?? 0;
+      // What the member has spent this month (transactions attributed to them) —
+      // this is the figure personal-allowance budgets track, so it stays
+      // consistent with the owner-side Budgets screen.
+      const spent = memberTotals.get(mid) || 0;
+      const remaining = allowance > 0 ? Math.max(0, allowance - spent) : 0;
+      // The member's personal budgets (owner sets these to a person on Budgets).
+      const myBudgets = budgetRows
+        .filter((b) => b.memberId === mid)
+        .map((b) => {
+          const bSpent = memberTotals.get(mid) || 0;
+          const limit = n(b.limitAmount);
+          return {
+            id: b.id,
+            name: b.name,
+            icon: b.icon ?? undefined,
+            spent: bSpent,
+            spentLabel: money2(bSpent),
+            limit,
+            limitLabel: money2(limit),
+            remaining: Math.max(0, limit - bSpent),
+            remainingLabel: money2(Math.max(0, limit - bSpent)),
+            pct: limit > 0 ? Math.min(100, Math.round((bSpent / limit) * 100)) : 0,
+          };
+        });
+      // All transactions on the member's accounts (reviewed + not), newest
+      // first — drives the browsable Activity tab. Same row shape as data.txns.
+      const myTxns = (data.txns as { id: number; reviewed: boolean; accountId: string | null }[])
+        .filter((t) => t.accountId != null && managedSet.has(t.accountId))
+        .slice()
+        .reverse();
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       return {
         memberId: mid,
         name: memberById.get(mid)?.name ?? "there",
         allowance,
         allowanceLabel: money0(allowance),
+        spent,
+        spentLabel: money2(spent),
+        remaining,
+        remainingLabel: money2(remaining),
         monthLabel: now.toLocaleString("en-US", { month: "long" }),
         prevMonthLabel: prevDate.toLocaleString("en-US", { month: "long" }),
         managedAccounts,
+        budgets: myBudgets,
         totalRemaining: prog.totalRemaining,
         allCaughtUp: prog.allCaughtUp,
         prevMonthRemaining: prog.prevMonthRemaining,
         allowanceUnlocked: prog.allowanceUnlocked,
-        // unreviewed txns on the member's accounts, newest first (drives the
-        // Categorize tab) — same row shape as data.txns.
-        reviewQueue: (data.txns as { id: number; reviewed: boolean; accountId: string | null }[])
-          .filter((t) => !t.reviewed && t.accountId != null && managedSet.has(t.accountId))
-          .slice()
-          .reverse(),
+        // unreviewed txns (Categorize tab) and the full activity list (Activity tab).
+        reviewQueue: myTxns.filter((t) => !t.reviewed),
+        activity: myTxns,
       };
     };
     // Whose home to show: the viewer's own. For an OWNER previewing via

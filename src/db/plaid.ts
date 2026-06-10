@@ -310,7 +310,7 @@ async function emitSyncNotifications(
       await createNotification({
         type: "new-transaction",
         tone: "info",
-        icon: "transactions",
+        icon: "list",
         audience: "owners",
         title: `New transaction · ${fmtUsd(r.amount)}`,
         body: `${r.merchant} — ${r.income ? "deposit at" : "from"} ${bank}.`,
@@ -323,7 +323,7 @@ async function emitSyncNotifications(
       await createNotification({
         type: "new-transactions",
         tone: "info",
-        icon: "transactions",
+        icon: "list",
         audience: "owners",
         title: `${rest.length} new transactions`,
         body: `${fmtUsd(spent)} in spending synced from ${bank}.`,
@@ -358,7 +358,7 @@ async function emitSyncNotifications(
         await createNotification({
           type: "categorize-nudge",
           tone: "accent",
-          icon: "transactions",
+          icon: "list",
           audience: "member",
           memberId,
           title: rows.length === 1 ? "1 new transaction to categorize" : `${rows.length} new transactions to categorize`,

@@ -88,7 +88,9 @@ function ZHQAccess() {
   const API = window.ZHQ_API || {};
   const me = window.ZHQ_USER || {};
   const members = D.members || [];
+  const acctsFlat = D.accountsFlat || [];
   const isOwner = me.role === 'owner';
+  const managedNames = (memberId) => acctsFlat.filter((a) => (a.managers || []).some((mg) => mg.id === memberId)).map((a) => a.name);
 
   const [showAdd, setShowAdd] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -133,6 +135,13 @@ function ZHQAccess() {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{m.name}</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{m.email || 'tag-only'}</div>
+              {(() => { const mng = managedNames(m.id); return mng.length ? (
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 3, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Icon name="creditCard" size={12} /> Manages {mng.join(', ')}
+                </div>
+              ) : (isOwner && m.role === 'member' ? (
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 3 }}>No accounts yet · assign on the Accounts screen</div>
+              ) : null); })()}
             </div>
             <span style={{ flex: 1 }} />
             {statusBadge(m)}
@@ -142,7 +151,7 @@ function ZHQAccess() {
             ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}
             {isOwner && m.status === 'invited' && m.email ? <Button variant="ghost" size="sm" onClick={() => copyLink(m.email)} disabled={busy}>Invite link</Button> : null}
             {isOwner && me.email !== m.email ? (
-              <button onClick={() => remove(m)} disabled={busy} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={16} /></button>
+              <button onClick={() => remove(m)} disabled={busy} title="Remove" className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', padding: 4 }}><Icon name="x" size={16} /></button>
             ) : null}
           </div>
         ))}
