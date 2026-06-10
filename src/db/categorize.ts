@@ -22,6 +22,7 @@ export interface MemoryEntry {
   categoryId: string;
   count: number;
   member?: string | null;
+  lastSeen?: number; // ms epoch of the most recent reinforcement (recency decay)
 }
 export type MemoryMap = Map<string, MemoryEntry[]>;
 
@@ -31,10 +32,41 @@ export interface Suggestion {
   source: "rule" | "transfer" | "learned" | "merchant" | "keyword" | "income" | "none";
   merchantKey: string;
   member?: string | null;
+  reason?: string; // human-readable "why" — surfaced in the UI for trust
+}
+
+/** Engine inputs. `now`/`catKind` are optional but make scoring smarter:
+ *  recency decay needs `now`; the income/expense sign guard needs `catKind`. */
+export interface ScoreOpts {
+  rules?: RuleLike[];
+  memory?: MemoryMap;
+  now?: number; // Date.now() — enables recency weighting of learned memory
+  catKind?: Map<string, string>; // categoryId -> "income" | "expense" | "transfer"
 }
 
 /** Below this, a suggestion should be surfaced for review. */
 export const REVIEW_THRESHOLD = 0.7;
+
+/** Learned memory recency: a correction's weight halves every ~180 days, with a
+ *  floor so old-but-consistent history still counts. */
+const MEMORY_HALF_LIFE_MS = 180 * 24 * 60 * 60 * 1000;
+function recencyWeight(lastSeen: number | undefined, now: number | undefined): number {
+  if (!lastSeen || !now) return 1;
+  const age = Math.max(0, now - lastSeen);
+  return Math.max(0.4, Math.pow(0.5, age / MEMORY_HALF_LIFE_MS));
+}
+function kindOf(catKind: Map<string, string> | undefined, id: string): string | undefined {
+  return catKind?.get(id);
+}
+/** A candidate category is sign-compatible if it doesn't contradict the amount:
+ *  spending (amount<0) can't be an income category; a deposit (amount>0) isn't an
+ *  expense. Transfers and unknown kinds always pass. */
+function signCompatible(kind: string | undefined, amount: number): boolean {
+  if (!kind || kind === "transfer") return true;
+  if (amount < 0 && kind === "income") return false;
+  if (amount > 0 && kind === "expense") return false;
+  return true;
+}
 
 // ---------------------------------------------------------------------------
 // Normalization + merchant extraction
@@ -68,6 +100,8 @@ export function cleanDescription(desc: string): string {
   for (let i = 0; i < 2; i++) s = s.replace(NOISE_PREFIX, " ").trim();
   // remove masks / store numbers / long digit runs / ref numbers
   s = s.replace(/[*#x]{2,}[-\d]*/g, " ").replace(/#\d+/g, " ").replace(/\b\d{3,}\b/g, " ");
+  // drop any token containing a digit (store/ref ids like "2a3b4", "us2a3b4")
+  s = s.replace(/\b[a-z]*\d[a-z0-9]*\b/g, " ");
   // drop tlds, keep brand
   s = s.replace(/\.(com|net|org|co)\b/g, " ");
   // keep letters/spaces
@@ -77,12 +111,55 @@ export function cleanDescription(desc: string): string {
   return s;
 }
 
-/** A stable, learnable key: the first 1-2 meaningful tokens of the cleaned description. */
+/** Leading payment-processor tokens that wrap the real merchant (e.g. "SQ *",
+ *  "TST*", "PAYPAL *"). Stripped so the brand beneath them is what we learn. */
+const PROCESSOR_PREFIX = /^(sq|tst|sp|paypal|pp|ppd|pos|dnh)\s+/;
+
+/**
+ * Canonicalize a cleaned description to one stable brand spelling so learning
+ * generalizes across the many ways a bank writes the same merchant. Conservative
+ * by design — only high-confidence merges. Keep dictionary matching on the raw
+ * string (this only feeds the learnable key).
+ */
+export function canonicalizeBrand(clean: string): string {
+  let s = clean.replace(PROCESSOR_PREFIX, "");
+  s = s
+    .replace(/\bamzn\b/g, "amazon")
+    .replace(/\bamazon mktp\b/g, "amazon")
+    .replace(/\bamazon com\b/g, "amazon")
+    .replace(/\bwal mart\b/g, "walmart")
+    .replace(/\bwm supercenter\b/g, "walmart")
+    .replace(/\bchick fil a?\b/g, "chick fil a")
+    .replace(/\bmcdonald s?\b/g, "mcdonalds");
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** The cleaned, brand-canonical core of a description (shared by both keys). */
+function coreMerchant(desc: string): string {
+  return canonicalizeBrand(cleanDescription(desc));
+}
+
+/** A stable, learnable key: the first 1-2 meaningful tokens of the brand core.
+ *  Broad — generalizes across e.g. "Costco #0456" and "Costco Gas #12". */
 export function extractMerchant(desc: string): string {
-  const clean = cleanDescription(desc);
-  const tokens = clean.split(" ").filter((t) => t && !STOPWORDS.has(t));
+  const core = coreMerchant(desc);
+  const tokens = core.split(" ").filter((t) => t && !STOPWORDS.has(t));
   if (!tokens.length) return normalizeMerchant(desc).split(" ").slice(0, 2).join(" ");
   return tokens.slice(0, 2).join(" ");
+}
+
+/** A precise, learnable key: the full brand core (namespaced with "x:" so it
+ *  never collides with token keys in the same memory map). More specific than
+ *  extractMerchant — lets two long merchants that share a first token learn
+ *  independently. */
+export function exactMerchantKey(desc: string): string {
+  const core = coreMerchant(desc);
+  const norm = core
+    .split(" ")
+    .filter((t) => t && !STOPWORDS.has(t))
+    .join(" ")
+    .trim();
+  return "x:" + (norm || normalizeMerchant(desc)).slice(0, 48);
 }
 
 /** Internal transfer heuristic (MACU patterns). */
@@ -175,72 +252,144 @@ export interface TxnLike {
   isTransfer?: boolean;
 }
 
-/** Legacy first-match rules helper (still used by explicit user rules). */
-export function matchRules(txn: TxnLike, rules: RuleLike[]): { categoryId: string | null; member: string | null } | null {
+/** Amount-condition match for `field:"amount"` rules. Compares ABSOLUTE amount
+ *  (so "> 200" catches a $250 charge whether it's stored +250 or −250).
+ *  matchType: gt | lt | between ("100:300"); else exact-ish equality. */
+function amountMatches(matchType: string, matchValue: string, amount: number): boolean {
+  const abs = Math.abs(amount);
+  const v = (matchValue || "").trim();
+  if (matchType === "gt") return abs > parseFloat(v);
+  if (matchType === "lt") return abs < parseFloat(v);
+  if (matchType === "between") {
+    const [lo, hi] = v.split(":").map((x) => parseFloat(x));
+    if (isNaN(lo) || isNaN(hi)) return false;
+    return abs >= Math.min(lo, hi) && abs <= Math.max(lo, hi);
+  }
+  return String(amount) === v || abs.toFixed(2) === v || abs === parseFloat(v);
+}
+
+/** First-match rules helper (explicit user rules). Returns the category, the
+ *  optional person, and a human reason. Supports merchant/account/amount fields. */
+export function matchRules(
+  txn: TxnLike,
+  rules: RuleLike[]
+): { categoryId: string | null; member: string | null; reason: string } | null {
   const sorted = [...rules].filter((r) => r.enabled).sort((a, b) => a.priority - b.priority || (a.id ?? 0) - (b.id ?? 0));
   const merch = normalizeMerchant(txn.merchant);
   for (const r of sorted) {
-    let hay = "";
-    if (r.field === "merchant") hay = merch;
-    else if (r.field === "account") hay = (txn.accountId ?? "").toLowerCase();
-    else if (r.field === "amount") hay = String(txn.amount);
-    const needle = (r.matchValue || "").toLowerCase();
     let hit = false;
-    if (r.matchType === "exact") hit = hay === needle;
-    else if (r.matchType === "regex") {
-      try { hit = new RegExp(r.matchValue, "i").test(r.field === "merchant" ? txn.merchant : hay); } catch { hit = false; }
-    } else hit = needle.length > 0 && hay.includes(needle);
-    if (hit) return { categoryId: r.categoryId, member: r.member };
+    if (r.field === "amount") {
+      hit = amountMatches(r.matchType, r.matchValue, txn.amount);
+    } else {
+      let hay = "";
+      if (r.field === "account") hay = (txn.accountId ?? "").toLowerCase();
+      else hay = merch; // merchant (default)
+      const needle = (r.matchValue || "").toLowerCase();
+      if (r.matchType === "exact") hit = hay === needle;
+      else if (r.matchType === "regex") {
+        try { hit = new RegExp(r.matchValue, "i").test(r.field === "merchant" ? txn.merchant : hay); } catch { hit = false; }
+      } else hit = needle.length > 0 && hay.includes(needle);
+    }
+    if (hit) return { categoryId: r.categoryId, member: r.member, reason: `Matches your rule (${r.field} ${r.matchType} “${r.matchValue}”)` };
   }
   return null;
 }
 
+interface MemResult { categoryId: string; member: string | null; confidence: number; n: number; ratio: number; }
 /**
- * The main engine. Returns the best category suggestion with confidence + reason.
+ * Score one bucket of learned memory entries for a merchant key. Each entry is
+ * weighted by count × recency; sign-incompatible categories are dropped. The
+ * winner's confidence rises with both its share of the vote (ratio) AND the
+ * amount of evidence (sample-size smoothing) — so a single correction is taken
+ * seriously but not treated as gospel, and a 50/50 split surfaces for review.
  */
-export function scoreCategory(txn: TxnLike, opts: { rules?: RuleLike[]; memory?: MemoryMap }): Suggestion {
+function scoreMemoryEntries(
+  entries: MemoryEntry[] | undefined,
+  txn: TxnLike,
+  opts: ScoreOpts,
+  base: number,
+  spread: number
+): MemResult | null {
+  if (!entries || !entries.length) return null;
+  const weighted = entries
+    .map((e) => ({ e, w: e.count * recencyWeight(e.lastSeen, opts.now) }))
+    .filter(({ e }) => signCompatible(kindOf(opts.catKind, e.categoryId), txn.amount));
+  if (!weighted.length) return null;
+  const total = weighted.reduce((s, x) => s + x.w, 0);
+  const top = weighted.slice().sort((a, b) => b.w - a.w)[0];
+  const ratio = total > 0 ? top.w / total : 1;
+  const smooth = total / (total + 2); // evidence weight: 1 sample → 0.33, 6 → 0.75
+  const confidence = Math.min(0.98, base + spread * ratio * smooth);
+  return { categoryId: top.e.categoryId, member: top.e.member ?? null, confidence, n: Math.round(total), ratio };
+}
+
+/**
+ * The main engine. Layers, strongest first: explicit rules → transfer → learned
+ * memory (exact merchant, then broad token) → merchant dictionary → keyword
+ * heuristics → income-by-sign → unknown. Returns the best category with a
+ * confidence (0-1), the source layer, the learnable merchant key, and a
+ * human-readable reason.
+ */
+export function scoreCategory(txn: TxnLike, opts: ScoreOpts = {}): Suggestion {
   const merchantKey = extractMerchant(txn.merchant);
+  const exactKey = exactMerchantKey(txn.merchant);
   const raw = (txn.merchant || "").toLowerCase();
 
   // 1. Explicit user rules win outright.
   if (opts.rules?.length) {
     const m = matchRules(txn, opts.rules);
-    if (m?.categoryId) return { categoryId: m.categoryId, confidence: 1, source: "rule", merchantKey, member: m.member };
+    if (m?.categoryId) return { categoryId: m.categoryId, confidence: 1, source: "rule", merchantKey, member: m.member, reason: m.reason };
   }
 
   // 2. Internal transfer.
   if (txn.isTransfer || looksLikeTransfer(txn.merchant, txn.type ?? undefined)) {
-    return { categoryId: "transfer", confidence: 0.9, source: "transfer", merchantKey };
+    return { categoryId: "transfer", confidence: 0.9, source: "transfer", merchantKey, reason: "Looks like a transfer between your own accounts" };
   }
 
-  // 3. Learned memory (frequency-weighted).
-  const mem = opts.memory?.get(merchantKey);
-  if (mem && mem.length) {
-    const total = mem.reduce((s, e) => s + e.count, 0);
-    const top = [...mem].sort((a, b) => b.count - a.count)[0];
-    const ratio = total > 0 ? top.count / total : 1;
-    const confidence = Math.min(0.98, 0.72 + 0.25 * ratio);
-    return { categoryId: top.categoryId, confidence, source: "learned", merchantKey, member: top.member ?? null };
+  // 3a. Learned memory — exact merchant first (most specific, highest trust).
+  const exact = scoreMemoryEntries(opts.memory?.get(exactKey), txn, opts, 0.7, 0.28);
+  if (exact) {
+    return { categoryId: exact.categoryId, confidence: exact.confidence, source: "learned", merchantKey, member: exact.member, reason: `You've categorized this exact merchant ${exact.n}× before` };
+  }
+  // 3b. Learned memory — broad token key (generalizes across variants).
+  const tok = scoreMemoryEntries(opts.memory?.get(merchantKey), txn, opts, 0.62, 0.33);
+  if (tok) {
+    return { categoryId: tok.categoryId, confidence: tok.confidence, source: "learned", merchantKey, member: tok.member, reason: `You've categorized “${merchantKey}” ${tok.n}× — ${Math.round(tok.ratio * 100)}% this way` };
   }
 
-  // 4. Built-in merchant dictionary.
+  // 4. Built-in merchant dictionary (sign-guarded).
   for (const [sub, catId] of DICTIONARY) {
-    if (raw.includes(sub)) return { categoryId: catId, confidence: 0.8, source: "merchant", merchantKey };
+    if (raw.includes(sub) && signCompatible(kindOf(opts.catKind, catId), txn.amount)) {
+      return { categoryId: catId, confidence: 0.8, source: "merchant", merchantKey, reason: `Recognized merchant (“${sub}”)` };
+    }
   }
 
-  // 5. Keyword heuristics.
+  // 5. Keyword heuristics (sign-guarded).
   for (const [re, catId] of KEYWORDS) {
-    if (re.test(raw)) {
-      const conf = catId === "paycheck" ? 0.7 : 0.55;
-      return { categoryId: catId, confidence: conf, source: "keyword", merchantKey };
+    if (re.test(raw) && signCompatible(kindOf(opts.catKind, catId), txn.amount)) {
+      const conf = catId.startsWith("income") ? 0.68 : 0.55;
+      return { categoryId: catId, confidence: conf, source: "keyword", merchantKey, reason: "Matched a keyword in the description" };
     }
   }
 
   // 6. Positive amount with no other signal → likely income.
-  if (txn.amount > 0) return { categoryId: "income-other", confidence: 0.55, source: "income", merchantKey };
+  if (txn.amount > 0) return { categoryId: "income-other", confidence: 0.55, source: "income", merchantKey, reason: "Money coming in, with no other signal yet" };
 
-  // 7. Give up.
-  return { categoryId: "uncategorized", confidence: 0, source: "none", merchantKey };
+  // 7. Give up — surfaced for review.
+  return { categoryId: "uncategorized", confidence: 0, source: "none", merchantKey, reason: "No signal yet — categorize it once and I'll remember" };
+}
+
+/** Map an engine source to a short UI label (for "why this category?" chips). */
+export function sourceLabel(source: Suggestion["source"]): string {
+  switch (source) {
+    case "rule": return "Your rule";
+    case "transfer": return "Transfer";
+    case "learned": return "Learned";
+    case "merchant": return "Known merchant";
+    case "keyword": return "Keyword";
+    case "income": return "Income";
+    default: return "Needs review";
+  }
 }
 
 /** Deterministic dedupe key. Prefers the bank's transaction id when present. */

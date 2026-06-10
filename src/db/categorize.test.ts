@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   extractMerchant,
+  exactMerchantKey,
+  canonicalizeBrand,
   cleanDescription,
   scoreCategory,
+  sourceLabel,
   looksLikeTransfer,
   dedupeKey,
   markDuplicates,
@@ -126,6 +129,115 @@ describe("scoreCategory — explicit rules win", () => {
     expect(s.source).toBe("rule");
     expect(s.categoryId).toBe("misc-other");
     expect(s.confidence).toBe(1);
+  });
+});
+
+describe("canonicalizeBrand + keys", () => {
+  it("merges messy brand spellings to one key", () => {
+    expect(canonicalizeBrand("amzn mktp us")).toContain("amazon");
+    expect(canonicalizeBrand("amazon mktp")).toBe("amazon");
+    expect(canonicalizeBrand("wal mart")).toBe("walmart");
+    expect(canonicalizeBrand("wm supercenter")).toBe("walmart");
+  });
+  it("strips payment-processor prefixes so the real merchant is learned", () => {
+    expect(canonicalizeBrand("sq coffee bar")).toBe("coffee bar");
+    expect(canonicalizeBrand("tst the pizza place")).toContain("pizza");
+    expect(canonicalizeBrand("paypal etsy seller")).toContain("etsy");
+  });
+  it("learns the same key across amzn / amazon variants", () => {
+    expect(extractMerchant("Debit Card purch COMMENT: AMZN Mktp US*2A3B4")).toBe(extractMerchant("Debit Card purch COMMENT: Amazon.com"));
+  });
+  it("exact key is namespaced and distinct from the token key", () => {
+    const ex = exactMerchantKey(MACU.netflix);
+    expect(ex.startsWith("x:")).toBe(true);
+    expect(ex).not.toBe(extractMerchant(MACU.netflix));
+  });
+});
+
+describe("scoreCategory — two-tier memory (exact beats token)", () => {
+  it("prefers the exact-merchant memory over the broad token memory", () => {
+    const tokenKey = extractMerchant("Debit Card purch COMMENT: APPLE BILL CA");
+    const exactKey = exactMerchantKey("Debit Card purch COMMENT: APPLE BILL CA");
+    const memory: MemoryMap = new Map([
+      [tokenKey, [{ categoryId: "misc-other", count: 5 }]],
+      [exactKey, [{ categoryId: "te-entertainment-local", count: 2 }]],
+    ]);
+    const s = scoreCategory({ merchant: "Debit Card purch COMMENT: APPLE BILL CA", amount: -9.99 }, { memory });
+    expect(s.source).toBe("learned");
+    expect(s.categoryId).toBe("te-entertainment-local"); // exact wins
+  });
+});
+
+describe("scoreCategory — evidence-calibrated confidence", () => {
+  it("a single correction is less confident than many consistent ones", () => {
+    const key = extractMerchant(MACU.harmons);
+    const one: MemoryMap = new Map([[key, [{ categoryId: "groc-other", count: 1 }]]]);
+    const many: MemoryMap = new Map([[key, [{ categoryId: "groc-other", count: 8 }]]]);
+    const a = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory: one });
+    const b = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory: many });
+    expect(b.confidence).toBeGreaterThan(a.confidence);
+    expect(b.confidence).toBeGreaterThanOrEqual(REVIEW_THRESHOLD);
+  });
+});
+
+describe("scoreCategory — recency weighting", () => {
+  it("weights a recent correction over a stale one", () => {
+    const key = extractMerchant(MACU.harmons);
+    const now = Date.UTC(2026, 5, 1);
+    const yearAgo = Date.UTC(2025, 5, 1);
+    const memory: MemoryMap = new Map([[key, [
+      { categoryId: "misc-other", count: 3, lastSeen: yearAgo },   // stale
+      { categoryId: "groc-other", count: 2, lastSeen: now },        // fresh
+    ]]]);
+    const s = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory, now });
+    expect(s.categoryId).toBe("groc-other"); // recent wins despite lower raw count
+  });
+});
+
+describe("scoreCategory — sign/kind guard", () => {
+  const catKind = new Map([
+    ["income-paycheck", "income"],
+    ["groc-other", "expense"],
+  ]);
+  it("won't suggest an income category for a charge", () => {
+    const key = extractMerchant(MACU.harmons);
+    const memory: MemoryMap = new Map([[key, [{ categoryId: "income-paycheck", count: 9 }]]]);
+    const s = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory, catKind });
+    expect(s.source).not.toBe("learned"); // income candidate dropped → falls through
+    expect(s.categoryId).not.toBe("income-paycheck");
+  });
+  it("still learns an expense category for a charge", () => {
+    const key = extractMerchant(MACU.harmons);
+    const memory: MemoryMap = new Map([[key, [{ categoryId: "groc-other", count: 9 }]]]);
+    const s = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory, catKind });
+    expect(s.categoryId).toBe("groc-other");
+  });
+});
+
+describe("scoreCategory — explainable reasons", () => {
+  it("every suggestion carries a human reason", () => {
+    expect(scoreCategory({ merchant: MACU.netflix, amount: -22.99 }, {}).reason).toBeTruthy();
+    expect(scoreCategory({ merchant: "QWERTY 9999", amount: -1 }, {}).reason).toMatch(/categorize/i);
+    expect(sourceLabel("learned")).toBe("Learned");
+  });
+});
+
+describe("scoreCategory — rule amount operators", () => {
+  const rule = (matchType: string, matchValue: string) => [{
+    matchType, matchValue, field: "amount", categoryId: "misc-other", member: null, priority: 10, enabled: true,
+  }];
+  it("matches amounts over a threshold (abs)", () => {
+    const s = scoreCategory({ merchant: "BIG STORE", amount: -250 }, { rules: rule("gt", "200") });
+    expect(s.source).toBe("rule");
+    expect(s.categoryId).toBe("misc-other");
+  });
+  it("does not match when under the threshold", () => {
+    const s = scoreCategory({ merchant: "BIG STORE", amount: -50 }, { rules: rule("gt", "200") });
+    expect(s.source).not.toBe("rule");
+  });
+  it("matches a between range", () => {
+    expect(scoreCategory({ merchant: "X", amount: -150 }, { rules: rule("between", "100:300") }).source).toBe("rule");
+    expect(scoreCategory({ merchant: "X", amount: -400 }, { rules: rule("between", "100:300") }).source).not.toBe("rule");
   });
 });
 

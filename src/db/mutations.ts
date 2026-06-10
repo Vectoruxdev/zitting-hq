@@ -10,7 +10,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
-import { dedupeKey, markDuplicates, extractMerchant, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
+import { dedupeKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
 import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./schedule";
@@ -54,13 +54,24 @@ async function loadMemory(): Promise<MemoryMap> {
   for (const r of rows) {
     if (!r.categoryId) continue;
     const arr = map.get(r.merchantKey) || [];
-    arr.push({ categoryId: r.categoryId, count: r.count, member: r.member });
+    arr.push({
+      categoryId: r.categoryId,
+      count: r.count,
+      member: r.member,
+      lastSeen: r.updatedAt ? new Date(r.updatedAt).getTime() : undefined,
+    });
     map.set(r.merchantKey, arr);
   }
   return map;
 }
 
-/** Increment the learned memory for a merchant→category (the learning loop). */
+/** categoryId → kind ("income" | "expense" | "transfer") — the sign guard. */
+async function kindMap(): Promise<Map<string, string>> {
+  const rows = await requireDb().select({ id: s.categories.id, kind: s.categories.kind }).from(s.categories);
+  return new Map(rows.map((c) => [c.id, c.kind]));
+}
+
+/** Increment learned memory for a merchant key → category (the learning loop). */
 export async function learnMerchant(merchantKey: string, categoryId: string, member?: string | null, delta = 1) {
   if (!merchantKey || !categoryId || categoryId === UNCATEGORIZED_ID) return;
   const database = requireDb();
@@ -78,13 +89,49 @@ export async function learnMerchant(merchantKey: string, categoryId: string, mem
   }
 }
 
-/** Suggest categories for a batch of rows (used by the import preview). */
+/** Decrement learned memory for a merchant key → category; delete the row when
+ *  it drops to zero. Used for NEGATIVE learning — when the user corrects an
+ *  auto-suggested category, the wrong one fades so it stops being suggested. */
+async function penalizeMerchant(merchantKey: string, categoryId: string, delta = 1) {
+  if (!merchantKey || !categoryId) return;
+  const database = requireDb();
+  const [existing] = await database
+    .select()
+    .from(s.merchantMemory)
+    .where(and(eq(s.merchantMemory.merchantKey, merchantKey), eq(s.merchantMemory.categoryId, categoryId)));
+  if (!existing) return;
+  const next = existing.count - delta;
+  if (next <= 0) {
+    await database.delete(s.merchantMemory).where(eq(s.merchantMemory.id, existing.id));
+  } else {
+    await database.update(s.merchantMemory).set({ count: next, updatedAt: new Date() }).where(eq(s.merchantMemory.id, existing.id));
+  }
+}
+
+/** Learn a category from a full transaction description — reinforces BOTH the
+ *  broad token key and the precise exact key, so future variants and exact
+ *  repeats both benefit. */
+export async function learnTxn(desc: string, categoryId: string, member?: string | null, delta = 1) {
+  if (!desc) return;
+  await learnMerchant(extractMerchant(desc), categoryId, member, delta);
+  await learnMerchant(exactMerchantKey(desc), categoryId, member, delta);
+}
+/** Negative learning for a correction — fade the wrong category on both keys. */
+async function penalizeTxn(desc: string, categoryId: string, delta = 1) {
+  if (!desc) return;
+  await penalizeMerchant(extractMerchant(desc), categoryId, delta);
+  await penalizeMerchant(exactMerchantKey(desc), categoryId, delta);
+}
+
+/** Suggest categories for a batch of rows (used by import + Plaid sync). */
 export async function suggestCategories(
   rows: { merchant: string; amount: number; accountId?: string | null; type?: string | null; isTransfer?: boolean }[]
 ) {
   const rules = await loadRules();
   const memory = await loadMemory();
-  return rows.map((r) => scoreCategory(r, { rules, memory }));
+  const catKind = await kindMap();
+  const now = Date.now();
+  return rows.map((r) => scoreCategory(r, { rules, memory, catKind, now }));
 }
 
 // ====================================================================
@@ -276,7 +323,7 @@ export async function commitImport(args: {
 
   const batchId = crypto.randomUUID();
   const inserts: (typeof s.transactions.$inferInsert)[] = [];
-  const learnQueue: { key: string; categoryId: string; member: string | null }[] = [];
+  const learnQueue: { merchant: string; categoryId: string; member: string | null }[] = [];
   let skipped = 0;
 
   for (const d of decided) {
@@ -291,7 +338,7 @@ export async function commitImport(args: {
     const conf = r.categoryConfidence ?? null;
     const reviewed = r.categorySource === "manual" ? true : (conf ?? 0) >= REVIEW_THRESHOLD;
     if (r.categorySource === "manual" && r.categoryId && r.categoryId !== UNCATEGORIZED_ID) {
-      learnQueue.push({ key: extractMerchant(r.merchant), categoryId: r.categoryId, member: mem?.id ?? r.memberId ?? null });
+      learnQueue.push({ merchant: r.merchant, categoryId: r.categoryId, member: mem?.id ?? r.memberId ?? null });
     }
     inserts.push({
       date: r.date,
@@ -331,7 +378,7 @@ export async function commitImport(args: {
   });
 
   // Learn from rows the user explicitly categorized during import.
-  for (const l of learnQueue) await learnMerchant(l.key, l.categoryId, l.member);
+  for (const l of learnQueue) await learnTxn(l.merchant, l.categoryId, l.member);
 
   // `accounts.balance` is the OPENING balance; the displayed balance is
   // opening + the net of all the account's transactions (see getFinanceData).
@@ -481,14 +528,20 @@ async function buildPatchValues(patch: TxnPatch) {
 
 export async function updateTransaction(id: number, patch: TxnPatch, opts?: { learn?: boolean }) {
   const database = requireDb();
+  // Capture the row BEFORE the update so we know the category being replaced
+  // (for negative learning) and the merchant string.
+  const [before] = await database.select().from(s.transactions).where(eq(s.transactions.id, id));
   const values = await buildPatchValues(patch);
   if (Object.keys(values).length) {
     await database.update(s.transactions).set(values).where(eq(s.transactions.id, id));
   }
-  // Learn merchant→category from a manual recategorization (the learning loop).
-  if (opts?.learn && patch.categoryId) {
-    const [row] = await database.select().from(s.transactions).where(eq(s.transactions.id, id));
-    if (row?.merchant) await learnMerchant(extractMerchant(row.merchant), patch.categoryId, patch.memberId ?? row.memberId ?? null);
+  // Learning loop: reinforce the chosen category and fade the one it replaced.
+  if (opts?.learn && patch.categoryId && before?.merchant) {
+    const oldCat = before.categoryId;
+    if (oldCat && oldCat !== patch.categoryId && oldCat !== UNCATEGORIZED_ID) {
+      await penalizeTxn(before.merchant, oldCat);
+    }
+    await learnTxn(before.merchant, patch.categoryId, patch.memberId ?? before.memberId ?? null);
   }
   return { ok: true as const };
 }
@@ -496,14 +549,21 @@ export async function updateTransaction(id: number, patch: TxnPatch, opts?: { le
 export async function bulkUpdateTransactions(ids: number[], patch: TxnPatch, opts?: { learn?: boolean }) {
   if (!ids.length) return { ok: true as const };
   const database = requireDb();
+  const before = opts?.learn && patch.categoryId
+    ? await database.select().from(s.transactions).where(inArray(s.transactions.id, ids))
+    : [];
   const values = await buildPatchValues(patch);
   if (Object.keys(values).length) {
     await database.update(s.transactions).set(values).where(inArray(s.transactions.id, ids));
   }
   if (opts?.learn && patch.categoryId) {
-    const rows = await database.select().from(s.transactions).where(inArray(s.transactions.id, ids));
-    for (const row of rows) {
-      if (row.merchant) await learnMerchant(extractMerchant(row.merchant), patch.categoryId, row.memberId ?? null);
+    for (const row of before) {
+      if (!row.merchant) continue;
+      const oldCat = row.categoryId;
+      if (oldCat && oldCat !== patch.categoryId && oldCat !== UNCATEGORIZED_ID) {
+        await penalizeTxn(row.merchant, oldCat);
+      }
+      await learnTxn(row.merchant, patch.categoryId, patch.memberId ?? row.memberId ?? null);
     }
   }
   return { ok: true as const };
@@ -517,7 +577,7 @@ export async function confirmTransactions(ids: number[]) {
   await database.update(s.transactions).set({ reviewed: true }).where(inArray(s.transactions.id, ids));
   for (const row of rows) {
     if (row.merchant && row.categoryId && row.categoryId !== UNCATEGORIZED_ID) {
-      await learnMerchant(extractMerchant(row.merchant), row.categoryId, row.memberId ?? null);
+      await learnTxn(row.merchant, row.categoryId, row.memberId ?? null);
     }
   }
   return { ok: true as const };
@@ -1279,13 +1339,15 @@ export async function recategorizeAll(opts?: { onlyUnreviewed?: boolean }) {
   const rules = await loadRules();
   const memory = await loadMemory();
   const cats = await catMap();
+  const catKind = await kindMap();
+  const now = Date.now();
   const rows = await database.select().from(s.transactions);
   let updated = 0;
   for (const t of rows) {
     if (onlyUnreviewed && t.reviewed) continue;
     const sug = scoreCategory(
       { merchant: t.merchant, amount: Number(t.amount), accountId: t.accountId, isTransfer: t.isTransfer },
-      { rules, memory }
+      { rules, memory, catKind, now }
     );
     if (sug.categoryId && sug.categoryId !== t.categoryId) {
       const c = cats.get(sug.categoryId);
@@ -1411,7 +1473,7 @@ export async function rebuildMemoryFromHistory() {
   let learned = 0;
   for (const t of rows) {
     if (t.reviewed && t.merchant && t.categoryId && t.categoryId !== UNCATEGORIZED_ID) {
-      await learnMerchant(extractMerchant(t.merchant), t.categoryId, t.memberId ?? null);
+      await learnTxn(t.merchant, t.categoryId, t.memberId ?? null);
       learned++;
     }
   }
