@@ -531,7 +531,8 @@ export const receiptItems = pgTable("receipt_items", {
 });
 
 // Uploaded receipt images (private 'receipts' storage bucket; the app serves
-// short-lived signed URLs). Matchable to a transaction. supabase-receipts.sql.
+// short-lived signed URLs). Matchable to a transaction. supabase-receipts.sql
+// + supabase-receipt-scan.sql (extracted merchant/total/date + line items).
 export const receipts = pgTable(
   "receipts",
   {
@@ -544,9 +545,31 @@ export const receipts = pgTable(
     transactionId: integer("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
     uploadedBy: text("uploaded_by").references(() => familyMembers.id),
     note: text("note"),
+    // Scan results (Claude vision): what the receipt says.
+    merchant: text("merchant"),
+    total: numeric("total", { precision: 14, scale: 2 }),
+    receiptDate: date("receipt_date"),
+    scanStatus: text("scan_status").notNull().default("none"), // none | scanned | failed | manual
+    // Auto-match: confident matches set transactionId; ambiguous ones land here.
+    suggestedTransactionId: integer("suggested_transaction_id").references(() => transactions.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [index("idx_receipts_status").on(t.status), index("idx_receipts_txn").on(t.transactionId)]
+);
+
+/** Line items read off a receipt (scan or hand-typed) — the per-item breakdown
+ *  shown on the matched transaction. */
+export const receiptLines = pgTable(
+  "receipt_lines",
+  {
+    id: serial("id").primaryKey(),
+    receiptId: text("receipt_id").notNull().references(() => receipts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    qty: numeric("qty", { precision: 10, scale: 2 }),
+    price: numeric("price", { precision: 14, scale: 2 }),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("idx_receipt_lines_receipt").on(t.receiptId)]
 );
 
 // ---- Plaid (automatic bank sync) -----------------------------------------

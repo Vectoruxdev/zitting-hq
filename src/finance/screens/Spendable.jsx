@@ -60,13 +60,18 @@ function MemberCategoryPicker({ onPick, onClose }) {
 
 // One transaction row. `review` mode shows Transfer + Confirm actions; browse
 // mode shows a reviewed checkmark. The category chip is always tappable.
-function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer }) {
+function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onReceipt }) {
   const { Icon, Button, Tag } = window.ZittingHQDesignSystem_c9e528;
   return (
     <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 16, opacity: busy ? 0.5 : 1, border: review && !t.reviewed ? '1px solid var(--border-hairline)' : '1px solid transparent' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.merchant}</div>
+          <div style={{ fontSize: 15.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {t.merchant}
+            {t.receiptId && onReceipt ? (
+              <button onClick={onReceipt} title="View receipt" style={{ background: 'none', border: 'none', padding: '0 0 0 7px', cursor: 'pointer', color: 'var(--accent)', verticalAlign: -2 }}><Icon name="receipt" size={14} /></button>
+            ) : null}
+          </div>
           <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{t.date} · {t.account}</div>
         </div>
         <span className="zt-num" style={{ fontSize: 17, fontWeight: 700, color: t.amt >= 0 ? 'var(--accent)' : 'var(--text-primary)', whiteSpace: 'nowrap' }}>{t.amt >= 0 ? '+' : '−'}${Math.abs(t.amt).toFixed(2)}</span>
@@ -88,6 +93,104 @@ function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* Receipt breakdown — what was bought, line by line, plus the photo. */
+function ReceiptBreakdown({ receipt, onClose }) {
+  const { Modal, Icon, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const [opening, setOpening] = React.useState(false);
+  const money = (v) => (v == null ? '' : (v < 0 ? '−$' : '$') + Math.abs(v).toFixed(2));
+  async function viewPhoto() {
+    if (!API.receiptSignedUrl) return;
+    setOpening(true);
+    try {
+      const r = await API.receiptSignedUrl(receipt.id);
+      if (r && r.ok) window.open(r.url, '_blank', 'noopener');
+    } finally { setOpening(false); }
+  }
+  const lines = receipt.lines || [];
+  return (
+    <Modal open onClose={onClose} title={receipt.merchant || 'Receipt'} width={400}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {receipt.txn ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+            Attached to <b style={{ color: 'var(--text-primary)' }}>{receipt.txn.merchant}</b> · {receipt.txn.date} · {receipt.txn.amount}
+          </div>
+        ) : null}
+        {lines.length ? (
+          <div style={{ maxHeight: '46vh', overflowY: 'auto', borderTop: '1px solid var(--border-hairline)' }}>
+            {lines.map((l, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '9px 2px', borderBottom: '1px solid var(--border-hairline)' }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--text-primary)' }}>
+                  {l.name}{l.qty != null && l.qty !== 1 ? <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}> ×{l.qty}</span> : null}
+                </span>
+                <span className="zt-num" style={{ flex: 'none', fontSize: 13, color: l.price != null && l.price < 0 ? 'var(--accent)' : 'var(--text-secondary)' }}>{money(l.price)}</span>
+              </div>
+            ))}
+            {receipt.totalLabel ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 2px' }}>
+                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>Total</span>
+                <span className="zt-num" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{receipt.totalLabel}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+            No line items yet{receipt.scanStatus === 'failed' ? " — we couldn't read this photo" : ''}.
+          </div>
+        )}
+        <Button variant="secondary" size="md" style={{ width: '100%' }} onClick={viewPhoto} disabled={opening} iconLeft={<Icon name="receipt" size={15} />}>
+          {opening ? 'Opening…' : 'View photo'}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Pick which purchase a receipt belongs to (member's own accounts only). */
+function ReceiptMatchSheet({ receipt, activity, onClose }) {
+  const { Modal, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const [busy, setBusy] = React.useState(false);
+  const candidates = activity.filter((t) => t.amt < 0 && !t.isTransfer && !t.receiptId).slice(0, 40);
+  const suggested = receipt.suggestedTransactionId != null ? candidates.find((t) => t.id === receipt.suggestedTransactionId) : null;
+  async function pick(txnId) {
+    if (!API.matchReceipt) return;
+    setBusy(true);
+    try { await API.matchReceipt(receipt.id, txnId); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); onClose(); }
+    finally { setBusy(false); }
+  }
+  const Row = ({ t, highlight }) => (
+    <button onClick={() => pick(t.id)} disabled={busy} style={{
+      display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+      padding: '12px 10px', borderRadius: 'var(--radius-md)', border: `1px solid ${highlight ? 'var(--green-tint)' : 'var(--border-hairline)'}`,
+      background: highlight ? 'var(--green-glow)' : 'var(--surface-card)', cursor: 'pointer', font: 'inherit', minHeight: 52, opacity: busy ? 0.6 : 1,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.merchant}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{t.date}{highlight ? ' · our best guess' : ''}</div>
+      </div>
+      <span className="zt-num" style={{ flex: 'none', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>−${Math.abs(t.amt).toFixed(2)}</span>
+    </button>
+  );
+  return (
+    <Modal open onClose={onClose} title="Which purchase is this?" width={400}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {receipt.merchant || receipt.totalLabel ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginBottom: 2 }}>
+            Receipt: {[receipt.merchant, receipt.totalLabel].filter(Boolean).join(' · ')}
+          </div>
+        ) : null}
+        {suggested ? <Row t={suggested} highlight /> : null}
+        <div style={{ maxHeight: '44vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {candidates.filter((t) => !suggested || t.id !== suggested.id).map((t) => <Row key={t.id} t={t} />)}
+          {!candidates.length ? <div style={{ padding: '14px 4px', fontSize: 13, color: 'var(--text-tertiary)' }}>No recent purchases to attach this to yet.</div> : null}
+        </div>
+        <Button variant="ghost" size="md" onClick={onClose} disabled={busy}>Not now</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -145,6 +248,33 @@ function ZHQSpendable() {
 
   const accounts = (H && H.managedAccounts) || [];
   const queue = (H && H.reviewQueue) || [];
+  const myReceipts = (H && H.receipts) || [];
+  const [snapBusy, setSnapBusy] = React.useState(false);
+  const [snapResult, setSnapResult] = React.useState(null); // upload outcome banner
+  const [matchSheet, setMatchSheet] = React.useState(null); // receipt being matched
+  const [breakdown, setBreakdown] = React.useState(null); // receipt being viewed
+  const snapInput = React.useRef(null);
+  async function onSnap(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file || !API.uploadReceipt) return;
+    setSnapBusy(true);
+    setSnapResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await API.uploadReceipt(fd);
+      if (res && res.ok === false) setSnapResult({ tone: 'bad', text: res.error || 'Upload failed' });
+      else if (res) {
+        if (res.matchedTxnId != null) setSnapResult({ tone: 'good', text: `Matched${res.merchant ? ` — ${res.merchant}` : ''}${res.total != null ? ` · $${res.total.toFixed(2)}` : ''}. Receipt attached!` });
+        else if (res.scanned) setSnapResult({ tone: 'mid', text: `Read it${res.merchant ? ` — ${res.merchant}` : ''}${res.total != null ? ` · $${res.total.toFixed(2)}` : ''}. Pick which purchase it belongs to below.`, receiptId: res.id });
+        else setSnapResult({ tone: 'mid', text: 'Saved! Attach it to a purchase below.', receiptId: res.id });
+        window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      }
+    } catch {
+      setSnapResult({ tone: 'bad', text: 'Upload failed — try again' });
+    } finally { setSnapBusy(false); }
+  }
   const activity = (H && H.activity) || [];
   const budgets = (H && H.budgets) || [];
   const goals = (D.goals || []).filter((g) => !g.archived);
@@ -250,6 +380,54 @@ function ZHQSpendable() {
                   </span>
                   <Icon name="chevronRight" size={17} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
                 </button>
+              ) : null}
+
+              {/* snap a receipt — opens the camera on mobile, gets scanned + matched */}
+              <input ref={snapInput} type="file" accept="image/*" capture="environment" onChange={onSnap} style={{ display: 'none' }} />
+              <button onClick={() => snapInput.current && snapInput.current.click()} disabled={snapBusy} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left', opacity: snapBusy ? 0.6 : 1 }}>
+                <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="camera" size={18} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>{snapBusy ? 'Reading your receipt…' : 'Snap a receipt'}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{snapBusy ? 'Hang tight — this takes a couple seconds.' : "We'll read it and attach it to the right purchase."}</span>
+                </span>
+                <Icon name="chevronRight" size={17} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+              </button>
+              {snapResult ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', marginTop: 10, borderRadius: 'var(--radius-md)', background: snapResult.tone === 'good' ? 'var(--green-glow)' : 'var(--surface-card)', border: `1px solid ${snapResult.tone === 'good' ? 'var(--green-tint)' : snapResult.tone === 'bad' ? 'var(--negative)' : 'var(--border-hairline)'}` }}>
+                  <Icon name={snapResult.tone === 'good' ? 'check' : snapResult.tone === 'bad' ? 'alert' : 'receipt'} size={16} style={{ color: snapResult.tone === 'good' ? 'var(--accent)' : snapResult.tone === 'bad' ? 'var(--negative)' : 'var(--text-secondary)', flex: 'none' }} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.4 }}>{snapResult.text}</span>
+                  {snapResult.receiptId ? (
+                    <Button variant="secondary" size="sm" onClick={() => { const r = myReceipts.find((x) => x.id === snapResult.receiptId); if (r) { setMatchSheet(r); setSnapResult(null); } }}>Pick</Button>
+                  ) : null}
+                  <button onClick={() => setSnapResult(null)} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={14} /></button>
+                </div>
+              ) : null}
+
+              {/* receipts — tap a matched one for the item-by-item breakdown */}
+              {myReceipts.length ? (
+                <>
+                  {sectionTitle('Your receipts')}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {myReceipts.slice(0, 6).map((r) => {
+                      const matched = !!r.txn;
+                      return (
+                        <button key={r.id} onClick={() => (matched ? setBreakdown(r) : setMatchSheet(r))} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 14px', borderRadius: 'var(--radius-md)', border: `1px solid ${matched ? 'var(--border-hairline)' : 'var(--green-tint)'}`, background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+                          <span style={{ flex: 'none', width: 36, height: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: matched ? 'var(--surface-sunken)' : 'var(--green-glow)', color: matched ? 'var(--text-secondary)' : 'var(--accent)' }}><Icon name="receipt" size={17} /></span>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant || (r.txn && r.txn.merchant) || 'Receipt'}</span>
+                            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {matched
+                                ? `${r.lines && r.lines.length ? `${r.lines.length} item${r.lines.length === 1 ? '' : 's'}` : 'Attached'}${r.txn.date ? ` · ${r.txn.date}` : ''}`
+                                : r.suggestedTxn ? `Looks like ${r.suggestedTxn.merchant} — tap to confirm` : 'Tap to attach to a purchase'}
+                            </span>
+                          </span>
+                          {r.totalLabel ? <span className="zt-num" style={{ flex: 'none', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{r.totalLabel}</span> : null}
+                          {!matched ? <Badge tone="positive" size="sm">Match</Badge> : <Icon name="chevronRight" size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               ) : null}
 
               {/* performance allowance */}
@@ -434,7 +612,8 @@ function ZHQSpendable() {
                     <MemberTxnRow key={t.id} t={t} review={false} busy={busy === t.id}
                       onEditCat={() => setPicker(t.id)}
                       onConfirm={() => confirmOne(t.id)}
-                      onTransfer={() => markTransfer(t.id)} />
+                      onTransfer={() => markTransfer(t.id)}
+                      onReceipt={t.receiptId ? () => { const r = myReceipts.find((x) => x.id === t.receiptId); if (r) setBreakdown(r); } : null} />
                   ))}
                 </div>
               )}
@@ -537,6 +716,12 @@ function ZHQSpendable() {
         <div className="zhq-phone-home" style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 134, height: 5, background: 'var(--paper-200)', opacity: 0.4, borderRadius: 999 }} />
       </div>
 
+      {matchSheet ? (
+        <ReceiptMatchSheet receipt={matchSheet} activity={activity} onClose={() => setMatchSheet(null)} />
+      ) : null}
+      {breakdown ? (
+        <ReceiptBreakdown receipt={breakdown} onClose={() => setBreakdown(null)} />
+      ) : null}
       {picker != null ? (
         <MemberCategoryPicker
           onClose={() => setPicker(null)}

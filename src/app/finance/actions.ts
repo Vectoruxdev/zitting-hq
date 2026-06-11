@@ -8,6 +8,8 @@ import * as m from "@/db/mutations";
 import * as plaidDb from "@/db/plaid";
 import { sendDigestPreview } from "@/db/digestSend";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { scanReceiptImage, isScanConfigured } from "@/lib/receiptScan";
+import { findReceiptMatch } from "@/db/receiptMatch";
 
 async function ensureOwner() {
   if (!isAuthConfigured) return; // local dev / no auth → allow
@@ -700,6 +702,14 @@ export async function sendDigestTest() {
 
 // ---- receipts (uploaded images) ----
 
+/** Any signed-in family member (receipts are a family-wide capture flow). */
+async function ensureFamilyMember() {
+  if (!isAuthConfigured) return null; // local dev / no auth → allow
+  const u = await getCurrentUser();
+  if (!u) throw new Error("Not authorized");
+  return u;
+}
+
 /** Owner/partner guard for household-level receipt management. */
 async function ensureOwnerOrPartner() {
   if (!isAuthConfigured) return; // local dev / no auth → allow
@@ -712,12 +722,13 @@ const RECEIPTS_BUCKET = "receipts";
 const RECEIPT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
 /**
- * Upload a receipt image into the private 'receipts' bucket + record it.
- * Requires the service-role client (storage is private); on local dev without
- * the key this returns a clear error instead of half-working.
+ * Upload a receipt image (ANY family member — this is the kids' capture flow
+ * too), then scan it with Claude vision and try to auto-match it to a
+ * transaction. Storage requires the service-role client; scanning requires
+ * ANTHROPIC_API_KEY — each degrades independently (no key → manual entry).
  */
 export async function uploadReceipt(formData: FormData) {
-  const u = await ensureOwnerOrPartner();
+  const u = await ensureFamilyMember();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "No file received" };
   if (!file.type.startsWith("image/")) return { ok: false as const, error: "Receipts must be images" };
@@ -735,20 +746,79 @@ export async function uploadReceipt(formData: FormData) {
   });
   if (error) return { ok: false as const, error: `Upload failed: ${error.message}` };
 
-  const res = await m.createReceipt({
+  const created = await m.createReceipt({
     storagePath: path,
     filename: file.name,
     mime: file.type,
     sizeBytes: file.size,
     uploadedBy: u?.memberId ?? null,
   });
+
+  // --- scan (best-effort) ---
+  let scanned = false;
+  let scan: Awaited<ReturnType<typeof scanReceiptImage>> = null;
+  if (isScanConfigured()) {
+    const b64 = Buffer.from(bytes).toString("base64");
+    scan = await scanReceiptImage(b64, file.type);
+    scanned = !!scan;
+    await m
+      .updateReceiptScan(created.id, {
+        merchant: scan?.merchant ?? null,
+        total: scan?.total ?? null,
+        receiptDateISO: scan?.dateISO ?? null,
+        scanStatus: scan ? "scanned" : "failed",
+        lines: scan?.lines ?? [],
+      })
+      .catch(() => {});
+  }
+
+  // --- auto-match (best-effort; high → attach, several → suggest) ---
+  let matched: { txnId: number } | null = null;
+  let suggested: { txnId: number } | null = null;
+  if (scan?.total) {
+    try {
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const since = new Date();
+      since.setDate(since.getDate() - 21);
+      const candidates = await m.receiptMatchCandidates(since.toISOString().slice(0, 10));
+      const preferred = u?.memberId ? await m.managedAccountIds(u.memberId) : new Set<string>();
+      const match = findReceiptMatch(
+        { total: scan.total, dateISO: scan.dateISO, uploadDateISO: todayISO },
+        candidates,
+        { preferredAccountIds: preferred }
+      );
+      if (match?.confidence === "high") {
+        await m.matchReceipt(created.id, match.txnId);
+        matched = { txnId: match.txnId };
+      } else if (match) {
+        await m.setReceiptSuggestion(created.id, match.txnId);
+        suggested = { txnId: match.txnId };
+      }
+    } catch {
+      /* matching is best-effort */
+    }
+  }
+
   refresh();
-  return res;
+  return {
+    ok: true as const,
+    id: created.id,
+    scanned,
+    merchant: scan?.merchant ?? null,
+    total: scan?.total ?? null,
+    lineCount: scan?.lines.length ?? 0,
+    matchedTxnId: matched?.txnId ?? null,
+    suggestedTxnId: suggested?.txnId ?? null,
+  };
 }
 
-/** Short-lived signed URL for a receipt image (private bucket). */
+/** Short-lived signed URL for a receipt image (private bucket). Members may
+ *  view their own uploads + receipts on their accounts' transactions. */
 export async function receiptSignedUrl(receiptId: string) {
-  await ensureOwnerOrPartner();
+  const u = await ensureFamilyMember();
+  if (u && u.role !== "owner" && u.role !== "partner") {
+    if (!u.memberId || !(await m.memberCanAccessReceipt(receiptId, u.memberId))) throw new Error("Not authorized");
+  }
   const admin = getAdminClient();
   if (!admin) return { ok: false as const, error: "Receipt storage isn't configured on this server" };
   const path = await m.receiptStoragePath(receiptId);
@@ -758,17 +828,47 @@ export async function receiptSignedUrl(receiptId: string) {
   return { ok: true as const, url: data.signedUrl };
 }
 
-/** Match (or unmatch, with txnId=null) a receipt to a transaction. */
+/** Match (or unmatch, with txnId=null) a receipt to a transaction. Members:
+ *  only their own/visible receipts, and only onto their accounts' txns. */
 export async function matchReceipt(receiptId: string, txnId: number | null) {
-  await ensureOwnerOrPartner();
+  const u = await ensureFamilyMember();
+  if (u && u.role !== "owner" && u.role !== "partner") {
+    if (!u.memberId || !(await m.memberCanAccessReceipt(receiptId, u.memberId))) throw new Error("Not authorized");
+    if (txnId != null && !(await m.memberCanTouchTxn(txnId, u.memberId))) throw new Error("Not authorized");
+  }
   const res = await m.matchReceipt(receiptId, txnId);
   refresh();
   return res;
 }
 
-/** Delete a receipt (row + stored image). */
+/** Manually typed line items (when scanning is off or wrong). */
+export async function saveReceiptLines(
+  receiptId: string,
+  args: { merchant?: string | null; total?: number | null; lines: { name: string; qty?: number | null; price?: number | null }[] }
+) {
+  const u = await ensureFamilyMember();
+  if (u && u.role !== "owner" && u.role !== "partner") {
+    if (!u.memberId || !(await m.memberCanAccessReceipt(receiptId, u.memberId))) throw new Error("Not authorized");
+  }
+  const existing = await m.getReceipt(receiptId);
+  const res = await m.updateReceiptScan(receiptId, {
+    merchant: args.merchant !== undefined ? args.merchant : existing?.merchant ?? null,
+    total: args.total !== undefined ? args.total : existing?.total != null ? Number(existing.total) : null,
+    receiptDateISO: (existing?.receiptDate as string | null) ?? null,
+    scanStatus: "manual",
+    lines: args.lines,
+  });
+  refresh();
+  return res;
+}
+
+/** Delete a receipt (row + stored image). Owner/partner, or the uploader. */
 export async function deleteReceipt(receiptId: string) {
-  await ensureOwnerOrPartner();
+  const u = await ensureFamilyMember();
+  if (u && u.role !== "owner" && u.role !== "partner") {
+    const r = await m.getReceipt(receiptId);
+    if (!r || !u.memberId || r.uploadedBy !== u.memberId) throw new Error("Not authorized");
+  }
   const res = await m.deleteReceipt(receiptId);
   if (res.storagePath) {
     const admin = getAdminClient();

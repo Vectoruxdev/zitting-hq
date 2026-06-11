@@ -229,6 +229,48 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
           <IncomeTrend history={(window.ZHQ_DATA && window.ZHQ_DATA.incomeHistory && window.ZHQ_DATA.incomeHistory[txn.sourceKey]) || null} />
         ) : null}
 
+        {txn.receiptId ? (() => {
+          const DD = window.ZHQ_DATA || {};
+          const r = (DD.receipts || []).find((x) => x.id === txn.receiptId);
+          if (!r) return null;
+          const money = (v) => (v == null ? '' : (v < 0 ? '−$' : '$') + Math.abs(v).toFixed(2));
+          return (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <Icon name="receipt" size={15} style={{ color: 'var(--accent)' }} />
+                <span className="zt-eyebrow">Receipt{r.uploadedBy ? ` · ${r.uploadedBy}` : ''}</span>
+                <span style={{ flex: 1 }} />
+                <button onClick={async () => {
+                  const API = window.ZHQ_API || {};
+                  if (!API.receiptSignedUrl) return;
+                  const res = await API.receiptSignedUrl(r.id);
+                  if (res && res.ok) window.open(res.url, '_blank', 'noopener');
+                }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-tertiary)', font: 'inherit' }}>View photo</button>
+              </div>
+              {(r.lines || []).length ? (
+                <div style={{ border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', padding: '2px 12px', maxHeight: 260, overflowY: 'auto' }}>
+                  {r.lines.map((l, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-hairline)' }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)' }}>
+                        {l.name}{l.qty != null && l.qty !== 1 ? <span style={{ color: 'var(--text-tertiary)', fontSize: 11.5 }}> ×{l.qty}</span> : null}
+                      </span>
+                      <span className="zt-num" style={{ flex: 'none', fontSize: 12.5, color: l.price != null && l.price < 0 ? 'var(--accent)' : 'var(--text-secondary)' }}>{money(l.price)}</span>
+                    </div>
+                  ))}
+                  {r.totalLabel ? (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '9px 0' }}>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Total</span>
+                      <span className="zt-num" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{r.totalLabel}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Photo attached — no line items{r.scanStatus === 'failed' ? " (couldn't read the photo)" : ''}.</div>
+              )}
+            </div>
+          );
+        })() : null}
+
         <Button variant="secondary" size="sm" full iconLeft={<Icon name="allocations" size={15} />} onClick={() => setSplitOpen(true)} style={{ marginTop: 18 }}>
           {txn.hasSplit ? 'Edit split' : 'Split into categories'}
         </Button>

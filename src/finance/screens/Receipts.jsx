@@ -69,6 +69,7 @@ function ReceiptCard({ r }) {
   const { url, failed } = useSignedUrl(r.id);
   const [matching, setMatching] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [showLines, setShowLines] = React.useState(false);
   const api = window.ZHQ_API;
   const unmatch = async () => { await api.matchReceipt(r.id, null); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); };
   const remove = async () => { await api.deleteReceipt(r.id); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); };
@@ -97,10 +98,10 @@ function ReceiptCard({ r }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {r.filename || 'Receipt'}
+              {r.merchant || r.filename || 'Receipt'}
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>
-              {[r.uploaded, r.sizeLabel, r.uploadedBy].filter(Boolean).join(' · ')}
+              {[r.totalLabel, r.receiptDate, r.uploaded, r.uploadedBy].filter(Boolean).join(' · ')}
             </div>
           </div>
           <Tag size="sm" color={r.status === 'matched' ? 'var(--accent)' : 'var(--gray-500)'}>
@@ -115,6 +116,33 @@ function ReceiptCard({ r }) {
             </span>
             <span className="zt-num" style={{ fontWeight: 600 }}>{r.txn.amount}</span>
           </div>
+        ) : r.suggestedTxn ? (
+          /* the scanner's best guess — one tap to accept */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--green-glow)', border: '1px solid var(--green-tint)' }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Looks like {r.suggestedTxn.merchant}</div>
+              <div>{r.suggestedTxn.date} · {r.suggestedTxn.amount}</div>
+            </div>
+            <Button variant="primary" size="sm" onClick={async () => { await api.matchReceipt(r.id, r.suggestedTransactionId); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); }}>Accept</Button>
+          </div>
+        ) : null}
+        {(r.lines || []).length ? (
+          <>
+            <button onClick={() => setShowLines((v) => !v)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'left', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Icon name={showLines ? 'chevronDown' : 'chevronRight'} size={12} />
+              {r.lines.length} item{r.lines.length === 1 ? '' : 's'}
+            </button>
+            {showLines ? (
+              <div style={{ maxHeight: 170, overflowY: 'auto', borderTop: '1px solid var(--border-hairline)' }}>
+                {r.lines.map((l, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-hairline)', fontSize: 12 }}>
+                    <span style={{ flex: 1, minWidth: 0, color: 'var(--text-primary)' }}>{l.name}{l.qty != null && l.qty !== 1 ? ` ×${l.qty}` : ''}</span>
+                    <span className="zt-num" style={{ flex: 'none', color: l.price != null && l.price < 0 ? 'var(--accent)' : 'var(--text-secondary)' }}>{l.price == null ? '' : (l.price < 0 ? '−$' : '$') + Math.abs(l.price).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
         ) : null}
         <div style={{ display: 'flex', gap: 8 }}>
           {r.status === 'matched' ? (
@@ -192,7 +220,7 @@ function ZHQReceipts() {
             <EmptyState
               icon="receipt"
               title="No receipts yet"
-              body="Snap a photo of a receipt (or upload one) and match it to a transaction. Line-item extraction (OCR) is a later step."
+              body="Snap a photo of a receipt (or upload one). We read the merchant, total, and every line item, then attach it to the matching transaction automatically."
               actionLabel={busy ? 'Uploading…' : 'Add your first receipt'}
               onAction={open}
             />

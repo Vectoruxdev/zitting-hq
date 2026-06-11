@@ -212,6 +212,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Uploaded receipt images (migration supabase-receipts.sql) — defensive so a
     // pre-migration DB degrades to an empty inbox instead of a wipe.
     const receiptImageRows = await db.select().from(s.receipts).orderBy(asc(s.receipts.createdAt)).catch(() => [] as (typeof s.receipts.$inferSelect)[]);
+    const receiptLineRows = await db.select().from(s.receiptLines).orderBy(asc(s.receiptLines.sortOrder)).catch(() => [] as (typeof s.receiptLines.$inferSelect)[]);
     // Member-managed accounts + per-member allowance (migration 0005) — defensive
     // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
     const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
@@ -980,28 +981,46 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Receipt image inbox (newest first). The thumbnail URL is fetched on
     // demand via the receiptSignedUrl action (private bucket, short-lived URLs).
     const receiptNow = new Date();
-    data.receipts = [...receiptImageRows].reverse().map((r) => {
-      const txn = r.transactionId ? txnById.get(r.transactionId) : undefined;
-      const txnDt = txn ? parseDate(txn.date as string | null) : null;
-      return {
-        id: r.id,
-        filename: r.filename,
-        mime: r.mime,
-        sizeLabel: r.sizeBytes != null ? `${(r.sizeBytes / 1024 / 1024).toFixed(r.sizeBytes >= 1024 * 1024 ? 1 : 2)} MB` : null,
-        status: r.status,
-        transactionId: r.transactionId,
-        txn: txn
-          ? {
-              id: txn.id,
-              merchant: txn.merchant,
-              date: txnDt ? dayLabel(txnDt) : txn.dateLabel ?? "",
-              amount: money2(Math.abs(n(txn.amount))),
-            }
-          : null,
-        uploadedBy: r.uploadedBy ? memberById.get(r.uploadedBy)?.name ?? null : null,
-        uploaded: r.createdAt ? relTime(new Date(r.createdAt), receiptNow) : null,
-      };
-    });
+    const linesByReceipt = new Map<string, { name: string; qty: number | null; price: number | null }[]>();
+    for (const l of receiptLineRows) {
+      const arr = linesByReceipt.get(l.receiptId) || [];
+      arr.push({ name: l.name, qty: l.qty == null ? null : n(l.qty), price: l.price == null ? null : n(l.price) });
+      linesByReceipt.set(l.receiptId, arr);
+    }
+    const mapReceiptTxn = (txnId: number | null) => {
+      const txn = txnId ? txnById.get(txnId) : undefined;
+      if (!txn) return null;
+      const txnDt = parseDate(txn.date as string | null);
+      return { id: txn.id, merchant: txn.merchant, date: txnDt ? dayLabel(txnDt) : txn.dateLabel ?? "", amount: money2(Math.abs(n(txn.amount))) };
+    };
+    data.receipts = [...receiptImageRows].reverse().map((r) => ({
+      id: r.id,
+      filename: r.filename,
+      mime: r.mime,
+      sizeLabel: r.sizeBytes != null ? `${(r.sizeBytes / 1024 / 1024).toFixed(r.sizeBytes >= 1024 * 1024 ? 1 : 2)} MB` : null,
+      status: r.status,
+      transactionId: r.transactionId,
+      txn: mapReceiptTxn(r.transactionId),
+      suggestedTransactionId: r.suggestedTransactionId ?? null,
+      suggestedTxn: mapReceiptTxn(r.suggestedTransactionId ?? null),
+      merchant: r.merchant ?? null,
+      total: r.total == null ? null : n(r.total),
+      totalLabel: r.total == null ? null : money2(n(r.total)),
+      receiptDate: (() => { const d = parseDate(r.receiptDate as string | null); return d ? dayLabel(d) : null; })(),
+      scanStatus: r.scanStatus ?? "none",
+      lines: linesByReceipt.get(r.id) ?? [],
+      uploadedById: r.uploadedBy ?? null,
+      uploadedBy: r.uploadedBy ? memberById.get(r.uploadedBy)?.name ?? null : null,
+      uploaded: r.createdAt ? relTime(new Date(r.createdAt), receiptNow) : null,
+    }));
+    // txn id → receipt id (for the receipt indicator + drawer breakdown)
+    const receiptByTxn = new Map<number, string>();
+    for (const r of receiptImageRows) if (r.transactionId != null) receiptByTxn.set(r.transactionId, r.id);
+    if (receiptByTxn.size) {
+      for (const t of data.txns as { id: number; receiptId?: string | null }[]) {
+        t.receiptId = receiptByTxn.get(t.id) ?? null;
+      }
+    }
 
     // ====================================================================
     // Derived dashboard (stats / donut categories / 6-month trend)
@@ -1594,6 +1613,16 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         // unreviewed txns (Categorize tab) and the full activity list (Activity tab).
         reviewQueue: myTxns.filter((t) => !t.reviewed),
         activity: myTxns,
+        // Receipts this member may see: their own uploads + receipts attached
+        // (or suggested) to transactions on their accounts. data.receipts is
+        // scrubbed from member payloads, so the visible slice rides here.
+        receipts: (data.receipts as { id: string; uploadedById: string | null; transactionId: number | null; suggestedTransactionId: number | null }[]).filter((r) => {
+          if (r.uploadedById === mid) return true;
+          const txnId = r.transactionId ?? r.suggestedTransactionId;
+          if (txnId == null) return false;
+          const t = txnById.get(txnId);
+          return !!t?.accountId && managedSet.has(t.accountId);
+        }),
       };
     };
     // Whose home to show: the viewer's own. For an OWNER previewing via

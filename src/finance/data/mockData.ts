@@ -20,7 +20,47 @@ export const MOCK_FINANCE_DATA: any = {
   learned: [],
   notifPrefs: [],
   bulkGroups: [],
-  receipts: [],
+  receipts: [
+    // matched + scanned: full line-item breakdown attached to a transaction
+    {
+      id: 'mock-receipt-1', filename: 'harmons.jpg', mime: 'image/jpeg', sizeLabel: '1.2 MB',
+      status: 'matched', transactionId: 1,
+      txn: { id: 1, merchant: 'Harmons Grocery', date: 'Jun 4', amount: '$84.21' },
+      suggestedTransactionId: null, suggestedTxn: null,
+      merchant: 'Harmons Grocery', total: 84.21, totalLabel: '$84.21', receiptDate: 'Jun 4',
+      scanStatus: 'scanned',
+      lines: [
+        { name: 'Whole milk 2%', qty: 2, price: 7.98 },
+        { name: 'Bananas', qty: null, price: 2.43 },
+        { name: 'Chicken breast', qty: null, price: 18.62 },
+        { name: 'Cheddar cheese', qty: 1, price: 6.49 },
+        { name: 'Sourdough bread', qty: 2, price: 9.98 },
+        { name: 'Eggs, dozen', qty: 1, price: 4.29 },
+        { name: 'Apples, Honeycrisp', qty: null, price: 8.12 },
+        { name: 'Greek yogurt', qty: 4, price: 5.96 },
+        { name: 'Pasta sauce', qty: 2, price: 7.58 },
+        { name: 'Ground beef', qty: null, price: 11.24 },
+        { name: 'Member savings', qty: null, price: -3.50 },
+        { name: 'Misc grocery', qty: null, price: 5.02 },
+      ],
+      uploadedById: 'sarah', uploadedBy: 'Sarah', uploaded: '2h ago',
+    },
+    // scanned but ambiguous: suggestion waiting for a one-tap accept
+    {
+      id: 'mock-receipt-2', filename: 'target.jpg', mime: 'image/jpeg', sizeLabel: '0.9 MB',
+      status: 'inbox', transactionId: null, txn: null,
+      suggestedTransactionId: 5,
+      suggestedTxn: { id: 5, merchant: 'Target', date: 'Jun 2', amount: '$36.40' },
+      merchant: 'Target', total: 36.40, totalLabel: '$36.40', receiptDate: 'Jun 2',
+      scanStatus: 'scanned',
+      lines: [
+        { name: 'Notebook 3-pack', qty: 1, price: 12.99 },
+        { name: 'Hair ties', qty: 2, price: 7.98 },
+        { name: 'Phone case', qty: 1, price: 15.43 },
+      ],
+      uploadedById: 'sarah', uploadedBy: 'Sarah', uploaded: 'Yesterday',
+    },
+  ],
 
   stats: {
     totalCash: '$84,920',
@@ -70,7 +110,7 @@ export const MOCK_FINANCE_DATA: any = {
   ],
 
   txns: [
-    { id: 1, date: 'Jun 4', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -84.21, pending: false },
+    { id: 1, date: 'Jun 4', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -84.21, pending: false, receiptId: 'mock-receipt-1' },
     { id: 2, date: 'Jun 3', merchant: 'ADP Payroll', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 4000, income: true, pending: false },
     { id: 3, date: 'Jun 3', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', who: 'Rebecca', account: 'Amex ••3008', accountId: 'amex', amt: -18.75, pending: true },
     { id: 4, date: 'Jun 2', merchant: 'Rocky Mtn Power', cat: 'Utilities', color: 'var(--gray-500)', who: 'Household', account: 'Bills account', accountId: 'bills', amt: -142.66, pending: false },
@@ -208,6 +248,14 @@ export const MOCK_FINANCE_DATA: any = {
     prevMonthRemaining: 0,
     allowanceUnlocked: true,
     reviewQueue: [],
+    // Same txn ids as the household list — receipt suggestions reference them.
+    activity: [
+      { id: 1, date: 'Jun 4', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -84.21, reviewed: true, receiptId: 'mock-receipt-1' },
+      { id: 3, date: 'Jun 3', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -18.75, reviewed: true },
+      { id: 5, date: 'Jun 2', merchant: 'Target', cat: 'Shopping', color: 'var(--green-600)', account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -36.40, reviewed: true },
+    ],
+    // Receipts this member can see (own uploads + managed-account matches).
+    receipts: [], // filled below — references the top-level receipts array
   },
 
   notifications: [
@@ -268,3 +316,6 @@ export const MOCK_FINANCE_DATA: any = {
     { item: 'Spinach', qty: 1, unit: 3.18, total: 3.18 },
   ],
 };
+
+// Sarah uploaded both mock receipts, so her member home sees them all.
+MOCK_FINANCE_DATA.memberHome.receipts = MOCK_FINANCE_DATA.receipts;

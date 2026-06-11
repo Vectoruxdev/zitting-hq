@@ -6,7 +6,7 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, inArray, or, isNull, lt, like } from "drizzle-orm";
+import { and, eq, gte, inArray, or, isNull, lt, like } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
@@ -2372,6 +2372,124 @@ export async function deleteReceipt(receiptId: string) {
   if (!row) return { ok: true as const, storagePath: null };
   await database.delete(s.receipts).where(eq(s.receipts.id, receiptId));
   return { ok: true as const, storagePath: row.storagePath };
+}
+
+/** Persist scan results: receipt header fields + line items (replace-all). */
+export async function updateReceiptScan(
+  receiptId: string,
+  args: {
+    merchant?: string | null;
+    total?: number | null;
+    receiptDateISO?: string | null;
+    scanStatus: "none" | "scanned" | "failed" | "manual";
+    lines?: { name: string; qty?: number | null; price?: number | null }[];
+  }
+) {
+  const database = requireDb();
+  await database
+    .update(s.receipts)
+    .set({
+      merchant: args.merchant ?? null,
+      total: args.total == null ? null : String(args.total),
+      receiptDate: args.receiptDateISO ?? null,
+      scanStatus: args.scanStatus,
+    })
+    .where(eq(s.receipts.id, receiptId));
+  if (args.lines) {
+    await database.delete(s.receiptLines).where(eq(s.receiptLines.receiptId, receiptId));
+    const rows = args.lines.filter((l) => l.name && l.name.trim()).slice(0, 200);
+    if (rows.length) {
+      await database.insert(s.receiptLines).values(
+        rows.map((l, i) => ({
+          receiptId,
+          name: l.name.trim(),
+          qty: l.qty == null ? null : String(l.qty),
+          price: l.price == null ? null : String(l.price),
+          sortOrder: i,
+        }))
+      );
+    }
+  }
+  return { ok: true as const };
+}
+
+/** Record an ambiguous auto-match as a suggestion (never auto-attaches). */
+export async function setReceiptSuggestion(receiptId: string, txnId: number | null) {
+  await requireDb()
+    .update(s.receipts)
+    .set({ suggestedTransactionId: txnId })
+    .where(eq(s.receipts.id, receiptId));
+  return { ok: true as const };
+}
+
+/** A receipt row (for permission checks + post-upload processing). */
+export async function getReceipt(receiptId: string) {
+  const [row] = await requireDb().select().from(s.receipts).where(eq(s.receipts.id, receiptId));
+  return row ?? null;
+}
+
+/**
+ * May this member see/manage this receipt? Their own uploads, or receipts
+ * matched/suggested to a transaction on an account they're in charge of.
+ * Owners/partners are checked in the action layer, not here.
+ */
+export async function memberCanAccessReceipt(receiptId: string, memberId: string): Promise<boolean> {
+  const database = requireDb();
+  const [r] = await database.select().from(s.receipts).where(eq(s.receipts.id, receiptId));
+  if (!r) return false;
+  if (r.uploadedBy === memberId) return true;
+  const txnId = r.transactionId ?? r.suggestedTransactionId;
+  if (txnId == null) return false;
+  const [t] = await database
+    .select({ accountId: s.transactions.accountId })
+    .from(s.transactions)
+    .where(eq(s.transactions.id, txnId));
+  if (!t?.accountId) return false;
+  const managed = await managedAccountIds(memberId);
+  return managed.has(t.accountId);
+}
+
+/** May this member attach a receipt to this transaction? (their accounts only) */
+export async function memberCanTouchTxn(txnId: number, memberId: string): Promise<boolean> {
+  const database = requireDb();
+  const [t] = await database
+    .select({ accountId: s.transactions.accountId })
+    .from(s.transactions)
+    .where(eq(s.transactions.id, txnId));
+  if (!t?.accountId) return false;
+  const managed = await managedAccountIds(memberId);
+  return managed.has(t.accountId);
+}
+
+/**
+ * Candidate spend transactions for receipt auto-matching: recent, non-transfer,
+ * negative-amount rows without a receipt already attached. Sequential reads.
+ */
+export async function receiptMatchCandidates(sinceISO: string) {
+  const database = requireDb();
+  const txns = await database
+    .select({
+      id: s.transactions.id,
+      amount: s.transactions.amount,
+      date: s.transactions.date,
+      accountId: s.transactions.accountId,
+      isTransfer: s.transactions.isTransfer,
+    })
+    .from(s.transactions)
+    .where(gte(s.transactions.date, sinceISO));
+  const receipted = await database
+    .select({ transactionId: s.receipts.transactionId })
+    .from(s.receipts)
+    .catch(() => [] as { transactionId: number | null }[]);
+  const taken = new Set(receipted.map((r) => r.transactionId).filter((x): x is number => x != null));
+  return txns.map((t) => ({
+    id: t.id,
+    amount: Number(t.amount ?? 0),
+    dateISO: (t.date as string | null) ?? null,
+    accountId: t.accountId,
+    isTransfer: t.isTransfer,
+    hasReceipt: taken.has(t.id),
+  }));
 }
 
 /** Storage path for a receipt (for signed-URL generation). */
