@@ -19,7 +19,23 @@ export const MOCK_FINANCE_DATA: any = {
 
   learned: [],
   notifPrefs: [],
-  bulkGroups: [],
+  // Merchant-clustered triage groups for the member Review tab (live data
+  // builds these in getFinanceData; shape mirrors queries.ts bulkGroups).
+  // ids reference memberHome.activity rows below.
+  bulkGroups: [
+    {
+      key: 'cash app', merchant: 'Cash App', ids: [101, 102], count: 2, unreviewed: 2, uncategorized: 2,
+      spend: 65, spendLabel: '$65.00', currentCategoryId: null, currentCategory: null, currentColor: null, mixed: false,
+      suggestion: { categoryId: 'kids', name: 'Kids', color: 'var(--green-600)', confidence: 0.78, confidencePct: 78, reason: null, source: 'memory' },
+      accounts: ["Sarah's wallet"], dateRange: 'Jun 6 – Jun 8',
+    },
+    {
+      key: 'check', merchant: 'By Check', ids: [103, 104, 105], count: 3, unreviewed: 3, uncategorized: 3,
+      spend: 225, spendLabel: '$225.00', currentCategoryId: null, currentCategory: null, currentColor: null, mixed: false,
+      suggestion: { categoryId: 'utilities', name: 'Utilities', color: 'var(--gray-500)', confidence: 0.55, confidencePct: 55, reason: null, source: 'keyword' },
+      accounts: ["Sarah's wallet"], dateRange: 'May 20 – Jun 7',
+    },
+  ],
   receipts: [
     // matched + scanned: full line-item breakdown attached to a transaction
     {
@@ -85,6 +101,21 @@ export const MOCK_FINANCE_DATA: any = {
     { label: 'Dining',    value: 680,  display: '$680',   color: 'var(--amber-500)' },
     { label: 'Kids',      value: 520,  display: '$520',   color: 'var(--green-600)' },
     { label: 'Utilities', value: 430,  display: '$430',   color: 'var(--gray-500)' },
+  ],
+
+  // Minimal taxonomy so the category pickers work without a DB (live data
+  // replaces these via getFinanceData; shape mirrors queries.ts allCategories).
+  categoryGroups: [
+    { id: 'spending', name: 'Spending', sortOrder: 0 },
+    { id: 'home', name: 'Home', sortOrder: 1 },
+  ],
+  allCategories: [
+    { id: 'groceries', name: 'Groceries', groupId: 'spending', color: 'var(--indigo-500)', icon: null, kind: 'expense', excludeFromBudget: false, sortOrder: 0 },
+    { id: 'dining', name: 'Dining', groupId: 'spending', color: 'var(--amber-500)', icon: null, kind: 'expense', excludeFromBudget: false, sortOrder: 1 },
+    { id: 'shopping', name: 'Shopping', groupId: 'spending', color: 'var(--green-600)', icon: null, kind: 'expense', excludeFromBudget: false, sortOrder: 2 },
+    { id: 'kids', name: 'Kids', groupId: 'spending', color: 'var(--green-600)', icon: null, kind: 'expense', excludeFromBudget: false, sortOrder: 3 },
+    { id: 'entertainment', name: 'Fun', groupId: 'spending', color: 'var(--green-500)', icon: null, kind: 'expense', excludeFromBudget: false, sortOrder: 4 },
+    { id: 'utilities', name: 'Utilities', groupId: 'home', color: 'var(--gray-500)', icon: null, kind: 'expense', excludeFromBudget: false, sortOrder: 5 },
   ],
 
   budgets: [
@@ -228,7 +259,7 @@ export const MOCK_FINANCE_DATA: any = {
     monthLabel: 'June',
     prevMonthLabel: 'May',
     managedAccounts: [
-      { id: 'sarah-wallet', name: "Sarah's wallet", label: "Sarah's wallet ••1192", type: 'checking', mask: '1192', balance: 318.42, balanceLabel: '$318.42', spark: [180, 240, 205, 290, 260, 318], total: 6, reviewed: 6, remaining: 0, done: true },
+      { id: 'sarah-wallet', name: "Sarah's wallet", label: "Sarah's wallet ••1192", type: 'checking', mask: '1192', balance: 318.42, balanceLabel: '$318.42', spark: [180, 240, 205, 290, 260, 318], total: 8, reviewed: 3, remaining: 5, done: false },
     ],
     spendTrend: { labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'], values: [120, 185, 95, 240, 160, 215] },
     spent: 215,
@@ -243,16 +274,29 @@ export const MOCK_FINANCE_DATA: any = {
       { categoryId: 'entertainment', name: 'Fun', color: 'var(--green-500)', value: 35, display: '$35' },
       { categoryId: '__other__', name: 'Everything else', color: 'var(--gray-500)', value: 20, display: '$20' },
     ],
-    totalRemaining: 0,
-    allCaughtUp: true,
+    totalRemaining: 5,
+    allCaughtUp: false,
     prevMonthRemaining: 0,
     allowanceUnlocked: true,
-    reviewQueue: [],
+    // Unreviewed txns drive the Review tab (one-at-a-time mode) and resolve
+    // the bulkGroups ids above for the by-merchant drill-in.
+    reviewQueue: [
+      { id: 101, date: 'Jun 8', merchant: 'Cash App', description: 'CASH APP *JOHN SMITH 8009691940 CA', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -25.00, reviewed: false },
+      { id: 102, date: 'Jun 6', merchant: 'Cash App', description: 'CASH APP *MARI PIANO LESSONS 8009691940 CA', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -40.00, reviewed: false },
+      { id: 103, date: 'Jun 7', merchant: 'Check', description: 'CHECK #1043 — YARD SERVICE', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -120.00, reviewed: false },
+      { id: 104, date: 'May 28', merchant: 'Check', description: 'CHECK #1042', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -45.00, reviewed: false },
+      { id: 105, date: 'May 20', merchant: 'Check', description: 'CHECK #1041 — PIANO RECITAL FEE', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -60.00, reviewed: false },
+    ],
     // Same txn ids as the household list — receipt suggestions reference them.
     activity: [
+      { id: 101, date: 'Jun 8', merchant: 'Cash App', description: 'CASH APP *JOHN SMITH 8009691940 CA', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -25.00, reviewed: false },
+      { id: 103, date: 'Jun 7', merchant: 'Check', description: 'CHECK #1043 — YARD SERVICE', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -120.00, reviewed: false },
+      { id: 102, date: 'Jun 6', merchant: 'Cash App', description: 'CASH APP *MARI PIANO LESSONS 8009691940 CA', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -40.00, reviewed: false },
       { id: 1, date: 'Jun 4', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -84.21, reviewed: true, receiptId: 'mock-receipt-1' },
       { id: 3, date: 'Jun 3', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -18.75, reviewed: true },
       { id: 5, date: 'Jun 2', merchant: 'Target', cat: 'Shopping', color: 'var(--green-600)', account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -36.40, reviewed: true },
+      { id: 104, date: 'May 28', merchant: 'Check', description: 'CHECK #1042', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -45.00, reviewed: false },
+      { id: 105, date: 'May 20', merchant: 'Check', description: 'CHECK #1041 — PIANO RECITAL FEE', cat: 'Uncategorized', color: 'var(--gray-500)', categoryId: null, account: "Sarah's wallet", accountId: 'sarah-wallet', amt: -60.00, reviewed: false },
     ],
     // Receipts this member can see (own uploads + managed-account matches).
     receipts: [], // filled below — references the top-level receipts array
