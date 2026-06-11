@@ -140,7 +140,13 @@ export async function getMealsData(weekStartISO: string) {
 export function addDaysISO(iso: string, days: number): string {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localISO(d);
+}
+
+/** Format a Date as YYYY-MM-DD in LOCAL time (toISOString is UTC and shifts
+ *  the date for evening/morning hours depending on the timezone). */
+export function localISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export async function saveRecipe(args: {
