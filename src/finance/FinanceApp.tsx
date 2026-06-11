@@ -110,7 +110,9 @@ export default function FinanceApp({
   // Active tab within a hub screen (Transactions/Transfers/Income/Settings).
   // Owned here (not in the hub) so alias navigations land on a specific tab.
   const [hubTab, setHubTab] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  // True while a post-mutation router.refresh() is in flight. Drives the
+  // topbar LoadingBar only — the current data stays on screen meanwhile.
+  const [refreshing, startRefresh] = React.useTransition();
   const [booting, setBooting] = React.useState(true);
   const [bootFade, setBootFade] = React.useState(false);
   // Bumped whenever fresh server `data` arrives (after a mutation +
@@ -118,7 +120,7 @@ export default function FinanceApp({
   const [dataVersion, setDataVersion] = React.useState(0);
 
   if (typeof window !== "undefined") {
-    w.ZHQ_REFRESH = () => router.refresh();
+    w.ZHQ_REFRESH = () => startRefresh(() => router.refresh());
     w.ZHQ_LOGOUT = () => signOut();
   }
 
@@ -150,39 +152,33 @@ export default function FinanceApp({
     setHubTab(t);
   }, []);
 
+  // Section switches are pure client state over data already in ZHQ_DATA, so
+  // they render immediately — no artificial skeleton delay (the old fixed
+  // 650ms setTimeout made every switch feel slow for no reason).
   const navigate = React.useCallback((r: string) => {
     const alias = ALIASES[r];
     const next = alias ? { route: alias.route, tab: alias.tab } : { route: r, tab: null };
     if (posRef.current.route === next.route && posRef.current.tab === next.tab) return;
     posRef.current = next;
-    setLoading(true);
     setRoute(next.route);
     setHubTab(next.tab);
   }, []);
 
-  // boot splash sequence
+  // boot splash sequence — long enough to cover the window-global bootstrap
+  // and font swap on first paint, short enough not to feel like a gate.
   React.useEffect(() => {
-    const t1 = setTimeout(() => setBootFade(true), 800);
-    const t2 = setTimeout(() => setBooting(false), 1200);
+    const t1 = setTimeout(() => setBootFade(true), 250);
+    const t2 = setTimeout(() => setBooting(false), 550);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
     };
   }, []);
 
-  // clear the per-route skeleton shortly after each screen change. Keyed on
-  // hubTab too: an alias navigation to the CURRENT route (e.g. 'import' while
-  // on Transactions) changes only the tab, and loading must still clear.
-  React.useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 650);
-    return () => clearTimeout(t);
-  }, [route, hubTab]);
-
   const ShellC = w.ZHQShell;
   const Spendable = w.ZHQSpendable;
   const Onboarding = w.ZHQOnboarding;
   const BootSplash = w.ZHQBootSplash;
-  const ScreenSkeleton = w.ZHQScreenSkeleton;
   // Sourced as `any` (the JS components have no prop types) so JSX usage below
   // isn't constrained by types inferred from their default parameter values.
   const Icon = DS.Icon as any;
@@ -253,16 +249,12 @@ export default function FinanceApp({
   return (
     <>
       {splash}
-      <ShellC active={route} onNavigate={navigate} title={r.title} loading={loading} onLogout={() => signOut()}>
-        {loading && ScreenSkeleton ? (
-          <ScreenSkeleton />
-        ) : (
-          <div key={`${route}:${dataVersion}`} className="zt-enter">
-            <ErrorBoundary key={route} label={route} onReset={() => setDataVersion((v) => v + 1)}>
-              {r.render(navigate)}
-            </ErrorBoundary>
-          </div>
-        )}
+      <ShellC active={route} onNavigate={navigate} title={r.title} loading={refreshing} onLogout={() => signOut()}>
+        <div key={`${route}:${dataVersion}`} className="zt-enter">
+          <ErrorBoundary key={route} label={route} onReset={() => setDataVersion((v) => v + 1)}>
+            {r.render(navigate)}
+          </ErrorBoundary>
+        </div>
       </ShellC>
     </>
   );
