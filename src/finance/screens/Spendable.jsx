@@ -92,7 +92,7 @@ function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer }) {
 }
 
 function ZHQSpendable() {
-  const { Icon, Avatar, ProgressBar, Button, Badge, Modal } = window.ZittingHQDesignSystem_c9e528;
+  const { Icon, Avatar, ProgressBar, Button, Badge, Modal, AreaChart, Sparkline } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA || {};
   const user = window.ZHQ_USER || {};
   const API = window.ZHQ_API || {};
@@ -222,7 +222,35 @@ function ZHQSpendable() {
                     <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 10 }}>No monthly allowance set. Ask the account owner to set one.</div>
                   </>
                 )}
+                {/* vs last month — a gentle save-more nudge either way */}
+                {H.spendTrend && H.spendTrend.values && H.spendTrend.values.length >= 2 ? (() => {
+                  const v = H.spendTrend.values;
+                  const prev = v[v.length - 2];
+                  const cur = v[v.length - 1];
+                  if (prev <= 0 && cur <= 0) return null;
+                  const less = cur <= prev;
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 12.5, fontWeight: 600, color: less ? 'var(--accent)' : 'var(--warning)' }}>
+                      <Icon name={less ? 'arrowDown' : 'trendingUp'} size={14} />
+                      {less
+                        ? `Spending less than ${H.prevMonthLabel} — nice.`
+                        : `Spending more than ${H.prevMonthLabel} (${H.spentPrevMonthLabel || ''})`.trim()}
+                    </div>
+                  );
+                })() : null}
               </div>
+
+              {/* review nudge — categorizing keeps everything below accurate */}
+              {H.totalRemaining > 0 && (allowance <= 0 || unlocked) ? (
+                <button onClick={() => setTab('categorize')} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+                  <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="list" size={18} /></span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>{H.totalRemaining} to review</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Takes about a minute — keeps your numbers honest.</span>
+                  </span>
+                  <Icon name="chevronRight" size={17} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                </button>
+              ) : null}
 
               {/* performance allowance */}
               {perf && !perf.recipientOnly ? (
@@ -265,6 +293,40 @@ function ZHQSpendable() {
                 </div>
               ) : null}
 
+              {/* spending over time — see your money move month to month */}
+              {H.spendTrend && H.spendTrend.values && H.spendTrend.values.some((v) => v > 0) ? (
+                <>
+                  {sectionTitle('Your spending over time')}
+                  <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: '16px 12px 8px' }}>
+                    <AreaChart data={H.spendTrend.values} labels={H.spendTrend.labels} width={320} height={130} style={{ width: '100%', height: 'auto', display: 'block' }} />
+                  </div>
+                </>
+              ) : null}
+
+              {/* where it went this month */}
+              {H.categoriesMonth && H.categoriesMonth.length ? (
+                <>
+                  {sectionTitle(`Where it went in ${H.monthLabel}`)}
+                  <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {(() => {
+                      const max = Math.max(...H.categoriesMonth.map((c) => c.value), 1);
+                      return H.categoriesMonth.map((c) => (
+                        <div key={c.categoryId}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <span style={{ width: 9, height: 9, borderRadius: 999, background: c.color, flex: 'none' }} />
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                            <span className="zt-num" style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 'none' }}>{c.display}</span>
+                          </div>
+                          <div style={{ height: 6, borderRadius: 999, background: 'var(--surface-sunken)', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.max(4, Math.round((c.value / max) * 100))}%`, height: '100%', borderRadius: 999, background: c.color }} />
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </>
+              ) : null}
+
               {/* personal budgets */}
               {budgets.length ? (
                 <>
@@ -295,7 +357,10 @@ function ZHQSpendable() {
                           <div style={{ fontSize: 15.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
                           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, textTransform: 'capitalize' }}>{a.type}{a.mask ? ` ••${a.mask}` : ''}</div>
                         </div>
-                        <span className="zt-num" style={{ fontSize: 19, fontWeight: 700, color: a.balance < 0 ? 'var(--negative)' : 'var(--text-primary)', whiteSpace: 'nowrap' }}>{a.balance < 0 ? '−' : ''}{a.balanceLabel.replace('-', '')}</span>
+                        <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 'none' }}>
+                          <span className="zt-num" style={{ fontSize: 19, fontWeight: 700, color: a.balance < 0 ? 'var(--negative)' : 'var(--text-primary)', whiteSpace: 'nowrap' }}>{a.balance < 0 ? '−' : ''}{a.balanceLabel.replace('-', '')}</span>
+                          {a.spark && a.spark.length >= 2 ? <Sparkline data={a.spark} width={76} height={20} /> : null}
+                        </span>
                       </div>
                       <ProgressBar value={a.reviewed} max={Math.max(a.total, 1)} height={7} />
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }}>
@@ -311,27 +376,42 @@ function ZHQSpendable() {
                 <div style={{ padding: '16px 0', fontSize: 14, color: 'var(--text-tertiary)' }}>You're not in charge of any accounts yet. Ask the account owner to add you.</div>
               )}
 
-              {/* savings goals */}
+              {/* savings goals — progress when they exist, encouragement when not */}
+              {sectionTitle('Savings goals')}
               {goals.length ? (
-                <>
-                  {sectionTitle('Savings goals')}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {goals.map((g) => (
-                      <div key={g.id} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
-                            <span style={{ fontSize: 17, flex: 'none' }}>{g.icon || '🎯'}</span>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</span>
-                          </span>
-                          <span className="zt-num" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', flex: 'none' }}>{g.pct != null ? g.pct : 0}%</span>
-                        </div>
-                        <ProgressBar value={g.saved} max={Math.max(g.target, 1)} height={8} />
-                        <div className="zt-num" style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>${Math.round(g.saved).toLocaleString('en-US')} of ${Math.round(g.target).toLocaleString('en-US')}{g.date ? ` · ${g.date}` : ''}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {goals.map((g) => (
+                    <div key={g.id} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 16, border: g.status === 'complete' ? '1px solid var(--green-tint)' : '1px solid transparent' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
+                          <span style={{ fontSize: 17, flex: 'none' }}>{g.icon || '🎯'}</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</span>
+                        </span>
+                        <span className="zt-num" style={{ fontSize: 14, fontWeight: 700, color: g.status === 'complete' ? 'var(--accent)' : 'var(--text-primary)', whiteSpace: 'nowrap', flex: 'none' }}>{g.pct != null ? g.pct : 0}%</span>
                       </div>
-                    ))}
+                      <ProgressBar value={g.saved} max={Math.max(g.target, 1)} height={8} />
+                      <div className="zt-num" style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>${Math.round(g.saved).toLocaleString('en-US')} of ${Math.round(g.target).toLocaleString('en-US')}{g.date ? ` · ${g.date}` : ''}</div>
+                      {g.status !== 'complete' && g.requiredPerMonth != null && g.requiredPerMonth > 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+                          Save <b className="zt-num" style={{ color: 'var(--accent)' }}>${Math.round(g.requiredPerMonth).toLocaleString('en-US')}/mo</b> to hit it{g.date ? ` by ${g.date}` : ''}.
+                        </div>
+                      ) : g.status === 'complete' ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--accent)', fontWeight: 600, marginTop: 6 }}><Icon name="check" size={14} /> Goal reached!</div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 18, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="target" size={18} /></span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>Start saving for something</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.5 }}>
+                      A bike, a trip, a mission fund — pick a target and watch it fill up. Ask the account owner to set up a goal with you.
+                    </div>
                   </div>
-                </>
-              ) : null}
+                </div>
+              )}
 
               {window.ZHQPushPrompt ? <div style={{ marginTop: 22 }}><window.ZHQPushPrompt compact /></div> : null}
             </>

@@ -26,6 +26,7 @@ import { projectGoal, canViewGoal } from "./savings";
 import { scrubForMemberView } from "./memberScrub";
 import { budgetSpent } from "./budgetMath";
 import { flowOf, foldMonthStats, type FlowTxn } from "./monthStats";
+import { monthlySpendSeries, balanceSeries, topSpendCategories } from "./memberSeries";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -1398,6 +1399,19 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         now
       );
       const managedSet = new Set(managedIds);
+      // Trend inputs: the member's managed-account transactions, ISO-dated.
+      const managedTxns = txnRows
+        .filter((t) => t.accountId != null && managedSet.has(t.accountId))
+        .map((t) => ({
+          dateISO: t.date as string | null,
+          amount: n(t.amount),
+          income: t.income,
+          isTransfer: t.isTransfer,
+          catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
+          registeredPayer: activeIncomeKeys.has(extractMerchant(t.merchant)),
+          categoryId: t.categoryId,
+          accountId: t.accountId,
+        }));
       const managedAccounts = managedIds.map((id) => {
         const a = acctById.get(id);
         const p = prog.perAccount.get(id) || { total: 0, reviewed: 0, remaining: 0, done: false };
@@ -1410,12 +1424,41 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           mask: a?.mask ?? null,
           balance: bal,
           balanceLabel: money2(bal),
+          // 6 month-end balances (oldest first) — "how my money moved".
+          spark: a
+            ? balanceSeries(
+                n(a.balance),
+                managedTxns.filter((t) => t.accountId === id),
+                now
+              )
+            : [],
           total: p.total,
           reviewed: p.reviewed,
           remaining: p.remaining,
           done: p.done,
         };
       });
+      // Spending over time (managed accounts, same flow semantics as the
+      // household dashboard) + this-month category breakdown.
+      const spendTrend = monthlySpendSeries(managedTxns, now, 6, flowOpts);
+      const monthManaged = managedTxns.filter((t) => {
+        const dt = parseDate(t.dateISO);
+        return !!dt && monthKey(dt) === curMonthKey;
+      });
+      const catBreakdown = topSpendCategories(monthManaged, flowOpts, 4).map((x) => {
+        const cat = x.categoryId === "__other__" ? null : catById.get(x.categoryId);
+        return {
+          categoryId: x.categoryId,
+          name:
+            x.categoryId === "__other__" ? "Everything else"
+            : cat?.name ?? (x.categoryId === "uncategorized" ? "Uncategorized" : x.categoryId),
+          color: cat?.color ?? "var(--gray-500)",
+          value: x.value,
+          display: money0(x.value),
+        };
+      });
+      const trendVals = spendTrend.values;
+      const spentPrevMonth = trendVals.length >= 2 ? trendVals[trendVals.length - 2] : 0;
       const allowance = allowanceById.get(mid) ?? 0;
       // What the member has spent this month (transactions attributed to them) —
       // this is the figure personal-allowance budgets track, so it stays
@@ -1499,6 +1542,11 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         monthLabel: now.toLocaleString("en-US", { month: "long" }),
         prevMonthLabel: prevDate.toLocaleString("en-US", { month: "long" }),
         managedAccounts,
+        // Trends for "see your money over time" on the member home.
+        spendTrend,
+        spentPrevMonth,
+        spentPrevMonthLabel: money0(spentPrevMonth),
+        categoriesMonth: catBreakdown,
         budgets: myBudgets,
         totalRemaining: prog.totalRemaining,
         allCaughtUp: prog.allCaughtUp,
