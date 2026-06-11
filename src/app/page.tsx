@@ -23,8 +23,8 @@ export default function Home() {
               Family HQ
             </h1>
             <p style={{ marginTop: 10, maxWidth: 520, color: "var(--text-secondary)" }}>
-              One place for how the family runs. Finance is up first — more
-              modules are on the way.
+              One place for how the family runs — money, meals, groceries,
+              and the family schedule.
             </p>
           </div>
 
