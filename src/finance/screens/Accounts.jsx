@@ -550,7 +550,7 @@ function ZHQAccounts({ onNavigate }) {
       <>
         <div style={{ display: 'grid', placeItems: 'center', padding: '60px 20px' }}>
           <div style={{ textAlign: 'center', maxWidth: 380 }}>
-            <span style={{ display: 'inline-flex', width: 52, height: 52, borderRadius: 999, placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-tertiary)', marginBottom: 14 }}><Icon name="wallet" size={24} /></span>
+            <span style={{ display: 'inline-flex', width: 52, height: 52, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--surface-raised)', color: 'var(--text-tertiary)', marginBottom: 14 }}><Icon name="wallet" size={24} /></span>
             <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 600 }}>Connect your first account</h2>
             <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', fontSize: 14 }}>Connect a bank to import transactions automatically — or add one manually and import a CSV.</p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>

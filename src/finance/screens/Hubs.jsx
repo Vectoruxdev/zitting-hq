@@ -14,6 +14,7 @@ function HubTabs({ options, value, onChange }) {
   // overflowX so six Settings tabs survive a 375px viewport.
   return (
     <Tabs
+      className="zhq-hscroll"
       options={options}
       value={value}
       onChange={onChange}

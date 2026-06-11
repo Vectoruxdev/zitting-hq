@@ -49,7 +49,7 @@ function ZHQOverview({ onNavigate }) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', padding: '70px 20px' }}>
         <div style={{ textAlign: 'center', maxWidth: 420 }}>
-          <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 999, placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--accent)', marginBottom: 16 }}>
+          <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--surface-raised)', color: 'var(--accent)', marginBottom: 16 }}>
             <Icon name="dashboard" size={26} />
           </span>
           <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>Welcome to Family HQ</h2>
@@ -100,7 +100,8 @@ function ZHQOverview({ onNavigate }) {
       </div>
 
       {/* Stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }}>
+      {/* minmax 150 (not 170): two tiles per row on a 375px phone instead of a tall single-column stack */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'clamp(10px, 2vw, 14px)' }}>
         {tiles.map((t, i) => (
           <Card key={i} interactive={!!t.nav} onClick={t.nav ? () => onNavigate(t.nav) : undefined} style={t.accent ? { boxShadow: 'var(--shadow-md)', border: '1px solid var(--green-tint)' } : undefined}>
             <StatTile label={t.label} value={t.value} sub={t.sub} accent={t.accent} icon={t.icon} />

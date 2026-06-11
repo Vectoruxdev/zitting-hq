@@ -88,12 +88,18 @@ body {
 /* Bottom tab bar + "More" sheet (hybrid mobile nav). Hidden on desktop. */
 .zhq-bottomnav { display: none; }
 .zhq-mobile-only { display: none; }
+.zhq-mobile-block { display: none; }
+
+/* Horizontal scrollers (hub tab rows, chip rows) — scroll without a visible bar. */
+.zhq-hscroll { scrollbar-width: none; -ms-overflow-style: none; }
+.zhq-hscroll::-webkit-scrollbar { display: none; }
 
 @media (max-width: 760px) {
   :root { --bottomnav-h: 58px; }
   .zhq-sidebar { display: none !important; }
   .zhq-desktop-only { display: none !important; }
   .zhq-mobile-only { display: inline-flex; }
+  .zhq-mobile-block { display: block; }
   .zhq-bottomnav { display: flex; }
   .zhq-main {
     padding: 16px !important;

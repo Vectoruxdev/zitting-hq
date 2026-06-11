@@ -152,7 +152,7 @@ function ShoppingList({ open, done, busy, run }: { open: ShoppingItem[]; done: S
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Qty" style={{ ...input, flex: 1, maxWidth: 110 }} aria-label="Quantity" />
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 2 }}>
+            <div className="zhq-hscroll" style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 2 }}>
               {CATEGORIES.map((c) => (
                 <button key={c.id} type="button" onClick={() => setCategory(c.id)}
                   style={{
@@ -302,7 +302,7 @@ function Pantry({ pantry, busy, run }: { pantry: PantryItem[]; busy: number | st
             </button>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 2 }}>
+            <div className="zhq-hscroll" style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 2 }}>
               {CATEGORIES.map((c) => (
                 <button key={c.id} type="button" onClick={() => setCategory(c.id)}
                   style={{

@@ -420,7 +420,7 @@ function ZHQSpendable() {
             <>
               {/* account filter chips */}
               {accounts.length > 1 ? (
-                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 6 }}>
+                <div className="zhq-hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 6 }}>
                   {[{ id: 'all', name: 'All' }, ...accounts].map((a) => (
                     <button key={a.id} onClick={() => setAcctFilter(a.id)} style={{ flex: 'none', padding: '9px 15px', borderRadius: 999, border: '1px solid var(--border-hairline)', background: acctFilter === a.id ? 'var(--accent)' : 'var(--surface-card)', color: acctFilter === a.id ? 'var(--text-on-accent)' : 'var(--text-secondary)', font: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>{a.name}</button>
                   ))}
@@ -453,7 +453,7 @@ function ZHQSpendable() {
 
               {queue.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '50px 10px' }}>
-                  <span style={{ display: 'inline-flex', width: 60, height: 60, borderRadius: 999, placeItems: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 16 }}><Icon name="check" size={28} /></span>
+                  <span style={{ display: 'inline-flex', width: 60, height: 60, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 16 }}><Icon name="check" size={28} /></span>
                   <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>All caught up</div>
                   <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 6 }}>You've reviewed everything for {H.monthLabel}.</div>
                 </div>

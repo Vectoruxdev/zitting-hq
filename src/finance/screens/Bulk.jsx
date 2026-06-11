@@ -115,7 +115,7 @@ function ZHQBulk() {
         <EmptyState icon="sparkles" title="Nothing to tidy" body="Import or sync some transactions and they'll show up here, grouped by merchant for fast categorizing." />
       ) : !visible.length ? (
         <div style={{ textAlign: 'center', padding: '40px 10px' }}>
-          <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 999, placeItems: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 12 }}><Icon name="check" size={26} /></span>
+          <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 12 }}><Icon name="check" size={26} /></span>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{filter === 'needs' ? 'All caught up' : 'No matches'}</div>
           <div style={{ fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 6 }}>{filter === 'needs' ? 'Every merchant is reviewed. Switch to “All merchants” to re-categorize anything.' : `Nothing matches “${q}”.`}</div>
         </div>

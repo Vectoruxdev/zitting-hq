@@ -284,7 +284,7 @@ function ZHQTransactions({ onNavigate }) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', padding: '60px 20px' }}>
         <div style={{ textAlign: 'center', maxWidth: 380 }}>
-          <span style={{ display: 'inline-flex', width: 52, height: 52, borderRadius: 999, placeItems: 'center', background: 'var(--surface-raised)', color: 'var(--text-tertiary)', marginBottom: 14 }}>
+          <span style={{ display: 'inline-flex', width: 52, height: 52, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--surface-raised)', color: 'var(--text-tertiary)', marginBottom: 14 }}>
             <Icon name="list" size={24} />
           </span>
           <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 600 }}>No transactions yet</h2>
@@ -324,7 +324,36 @@ function ZHQTransactions({ onNavigate }) {
         </div>
       ) : null}
 
-      <Card padding={6}>
+      {/* Mobile: stacked rows — merchant + amount visible at a glance (the
+          table's amount column lives off-screen at phone widths). Tap a row
+          for the detail drawer; tap the chip to recategorize. */}
+      <div className="zhq-mobile-block">
+        <Card padding={6}>
+          {rows.map((r, i) => (
+            <div key={r.id} role="button" tabIndex={0} onClick={() => setSel(r)}
+              onKeyDown={(e) => { if (e.key === 'Enter') setSel(r); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 10px', cursor: 'pointer', borderTop: i ? '1px solid var(--border-hairline)' : 'none' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.merchant}</span>
+                  {r.flagged ? <Icon name="flag" size={12} style={{ color: 'var(--warning)', flex: 'none' }} /> : null}
+                  {r.pending ? <span style={{ fontSize: 10.5, color: 'var(--text-tertiary)', flex: 'none' }}>pending</span> : null}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
+                  <span onClick={(e) => { e.stopPropagation(); setPicker({ kind: 'category', ids: [r.id] }); }}>
+                    <Tag color={r.color} editable size="sm">{r.cat}</Tag>
+                  </span>
+                  {!r.reviewed ? <span style={{ width: 6, height: 6, borderRadius: 999, flex: 'none', background: (r.confidence || 0) >= 0.7 ? 'var(--accent)' : 'var(--warning)' }} /> : null}
+                  <span className="zt-num" style={{ fontSize: 11, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.date} · {r.account}</span>
+                </div>
+              </div>
+              <span style={{ flex: 'none' }}><AmountCell value={r.amt} income={r.income} /></span>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <Card padding={6} className="zhq-desktop-only">
         <DataTable
           onRowClick={setSel}
           columns={[

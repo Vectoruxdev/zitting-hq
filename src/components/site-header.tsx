@@ -26,7 +26,7 @@ export function SiteHeader() {
         </span>
       </Link>
       {/* module nav scrolls horizontally on phones instead of wrapping/clipping */}
-      <nav style={{ display: "flex", alignItems: "center", gap: 2, overflowX: "auto", whiteSpace: "nowrap", minWidth: 0, flex: 1, scrollbarWidth: "none" }}>
+      <nav className="zhq-hscroll" style={{ display: "flex", alignItems: "center", gap: 2, overflowX: "auto", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
         {MODULES.map((m) => {
           const active = m.status === "active";
           return (
