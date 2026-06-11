@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient, SITE_URL } from "@/lib/supabase/admin";
@@ -313,7 +314,8 @@ export async function updateTransaction(id: number, patch: m.TxnPatch, opts?: { 
   // actually being set; null when we can't resolve a member (local dev / owner
   // not in the roster).
   const res = await m.updateTransaction(id, patch, { ...opts, learn, categorizedBy: u?.memberId ?? null });
-  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
+  // "Caught up" notify is post-response work — keep it off the tap's latency.
+  if (u?.role === "member") after(() => m.notifyOwnersIfMemberCaughtUp(u.memberId));
   refresh();
   return res;
 }
@@ -321,14 +323,14 @@ export async function bulkUpdateTransactions(ids: number[], patch: m.TxnPatch) {
   const u = await ensureCanEditTxns(ids);
   // Bulk setting a category is a manual choice → learn from it, and tag who did it.
   const res = await m.bulkUpdateTransactions(ids, patch, { learn: patch.categoryId != null, categorizedBy: u?.memberId ?? null });
-  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
+  if (u?.role === "member") after(() => m.notifyOwnersIfMemberCaughtUp(u.memberId));
   refresh();
   return res;
 }
 export async function confirmTransactions(ids: number[]) {
   const u = await ensureCanEditTxns(ids);
   const res = await m.confirmTransactions(ids);
-  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
+  if (u?.role === "member") after(() => m.notifyOwnersIfMemberCaughtUp(u.memberId));
   refresh();
   return res;
 }
@@ -342,8 +344,14 @@ export async function markTransfer(id: number, isTransfer: boolean) {
 export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[]) {
   const allIds = groups.flatMap((g) => g.ids);
   const u = await ensureCanEditTxns(allIds);
-  const res = await m.applyBulkCategories(groups, { categorizedBy: u?.memberId ?? null });
-  if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
+  // Defer the learning loop (merchant_memory writes) past the response — the
+  // categorization itself is fully applied; suggestion confidences just pick
+  // up the new memory on the next data load.
+  const { learn, ...res } = await m.applyBulkCategories(groups, { categorizedBy: u?.memberId ?? null, deferLearn: true });
+  after(async () => {
+    if (learn) await m.applyLearning(learn);
+    if (u?.role === "member") await m.notifyOwnersIfMemberCaughtUp(u.memberId);
+  });
   refresh();
   return res;
 }

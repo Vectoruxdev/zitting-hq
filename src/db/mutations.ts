@@ -19,6 +19,7 @@ import { generateInstances, reconcileInstances } from "./allocate";
 import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./schedule";
 import { forecastIncome, computeCoverage, shortfallAlert, type IncomeSourceInput } from "./forecast";
 import { UNCATEGORIZED_ID } from "./seedCategories";
+import { tallyLearning, mergeTallies, emptyTally, type LearningTally } from "./learnBatch";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function dateLabel(iso: string | null): string | null {
@@ -753,23 +754,50 @@ export async function confirmTransactions(ids: number[]) {
  * category + reviewed state of every affected row FIRST (returned for undo),
  * then categorizes each group through the normal learning loop (so bulk
  * categorizing also trains the engine). One round trip for the whole batch.
+ *
+ * With `deferLearn`, the rows are updated learn-free and the learning is
+ * returned as a tally instead — the caller runs applyLearning() after the
+ * response (next/server `after`), keeping the slow memory writes out of the
+ * action's latency. Default behavior is unchanged (MCP route, scripts).
  */
-export async function applyBulkCategories(groups: { ids: number[]; categoryId: string }[], opts?: { categorizedBy?: string | null }) {
+export async function applyBulkCategories(
+  groups: { ids: number[]; categoryId: string }[],
+  opts?: { categorizedBy?: string | null; deferLearn?: boolean }
+) {
   const database = requireDb();
   const allIds = [...new Set(groups.flatMap((g) => g.ids))];
-  if (!allIds.length) return { ok: true as const, updated: 0, undo: [] as { id: number; categoryId: string | null; reviewed: boolean }[] };
+  if (!allIds.length) return { ok: true as const, updated: 0, undo: [] as { id: number; categoryId: string | null; reviewed: boolean }[], learn: undefined as LearningTally | undefined };
   const before = await database
-    .select({ id: s.transactions.id, categoryId: s.transactions.categoryId, reviewed: s.transactions.reviewed })
+    .select({ id: s.transactions.id, categoryId: s.transactions.categoryId, reviewed: s.transactions.reviewed, merchant: s.transactions.merchant, memberId: s.transactions.memberId })
     .from(s.transactions)
     .where(inArray(s.transactions.id, allIds));
   const undo = before.map((r) => ({ id: r.id, categoryId: r.categoryId, reviewed: r.reviewed }));
+  const beforeById = new Map(before.map((r) => [r.id, r]));
+  const learn = opts?.deferLearn ? emptyTally() : undefined;
   let updated = 0;
   for (const g of groups) {
     if (!g.ids.length || !g.categoryId) continue;
-    await bulkUpdateTransactions(g.ids, { categoryId: g.categoryId }, { learn: true, categorizedBy: opts?.categorizedBy ?? null });
+    if (learn) {
+      await bulkUpdateTransactions(g.ids, { categoryId: g.categoryId }, { learn: false, categorizedBy: opts?.categorizedBy ?? null });
+      const rows = g.ids
+        .map((id) => beforeById.get(id))
+        .filter((r): r is NonNullable<typeof r> => !!r)
+        .map((r) => ({ merchant: r.merchant, oldCategoryId: r.categoryId, memberId: r.memberId }));
+      mergeTallies(learn, tallyLearning(rows, g.categoryId));
+    } else {
+      await bulkUpdateTransactions(g.ids, { categoryId: g.categoryId }, { learn: true, categorizedBy: opts?.categorizedBy ?? null });
+    }
     updated += g.ids.length;
   }
-  return { ok: true as const, updated, undo };
+  return { ok: true as const, updated, undo, learn };
+}
+
+/** Run a deferred learning tally (see applyBulkCategories deferLearn).
+ *  Summed deltas through learnMerchant/penalizeMerchant produce the same
+ *  memory counts as the sequential per-row loop. */
+export async function applyLearning(tally: LearningTally) {
+  for (const p of tally.penalties) await penalizeMerchant(p.merchantKey, p.categoryId, p.delta);
+  for (const l of tally.learns) await learnMerchant(l.merchantKey, l.categoryId, l.member, l.delta);
 }
 
 /** Restore exact prior category + reviewed state (the Undo for a bulk apply).
