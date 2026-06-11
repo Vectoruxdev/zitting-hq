@@ -23,6 +23,7 @@ import { mergePrefs } from "./notifyPrefs";
 import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
 import { scoreCategory, type MemoryMap, type RuleLike } from "./categorize";
 import { projectGoal, canViewGoal } from "./savings";
+import { scrubForMemberView } from "./memberScrub";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -1472,6 +1473,11 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       homeMemberId = preview?.id ?? null;
     }
     data.memberHome = homeMemberId ? buildMemberHome(homeMemberId) : null;
+
+    // Final privacy pass: a member's browser receives the whole object, so
+    // household-wide sections (stats, budgets, transfers, income registry,
+    // roster, …) are blanked server-side. Spendable's inputs are kept.
+    if (isMemberView) scrubForMemberView(data);
 
     return data;
   } catch (err) {
