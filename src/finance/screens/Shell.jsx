@@ -15,10 +15,10 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
       background: 'var(--bg-app)', borderRight: '1px solid var(--border-hairline)',
       padding: '18px 12px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px 18px' }}>
+      <a href="/" title="Back to the family dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px 18px', textDecoration: 'none' }}>
         <img src="/finance/mark.svg" width="30" height="30" alt="" style={{ borderRadius: 9 }} />
         <span className="zt-wordmark" style={{ fontSize: 20, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Zitting <span style={{ color: 'var(--accent)' }}>HQ</span></span>
-      </div>
+      </a>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto' }}>
         {D.nav.map((item) => {
@@ -33,6 +33,9 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
       </nav>
 
       <div style={{ borderTop: '1px solid var(--border-hairline)', paddingTop: 12, marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <button className="zhq-nav-item" data-active="false" onClick={() => { window.location.href = '/'; }}>
+          <Icon name="grid" size={18} className="zhq-nav-icon" /> Family HQ
+        </button>
         <button className="zhq-nav-item" data-active="false" onClick={() => onNavigate && onNavigate('member')}>
           <Icon name="eye" size={18} className="zhq-nav-icon" /> View as member
         </button>
@@ -133,6 +136,9 @@ function ZHQBottomNav({ active, onNavigate, onLogout }) {
               ))}
             </div>
             <div style={{ height: 1, background: 'var(--border-hairline)', margin: '10px 4px' }} />
+            <button type="button" className="zhq-nav-item" onClick={() => { window.location.href = '/'; }}>
+              <Icon name="grid" size={18} className="zhq-nav-icon" /> Family HQ
+            </button>
             <button type="button" className="zhq-nav-item" onClick={() => go('settings')}>
               <Icon name="settings" size={18} className="zhq-nav-icon" /> Settings
             </button>

@@ -745,6 +745,7 @@ function ZHQSpendable() {
               </div>
             </div>
             {window.ZHQPushPrompt ? <window.ZHQPushPrompt compact /> : null}
+            <Button variant="secondary" size="md" style={{ width: '100%' }} iconLeft={<Icon name="grid" size={16} />} onClick={() => { window.location.href = '/'; }}>Family HQ</Button>
             <Button variant="secondary" size="md" style={{ width: '100%' }} iconLeft={<Icon name="logout" size={16} />} onClick={() => { if (window.ZHQ_LOGOUT) window.ZHQ_LOGOUT(); }}>Log out</Button>
           </div>
         </Modal>

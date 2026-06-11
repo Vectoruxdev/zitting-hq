@@ -27,6 +27,18 @@ export function SiteHeader() {
       </Link>
       {/* module nav scrolls horizontally on phones instead of wrapping/clipping */}
       <nav className="zhq-hscroll" style={{ display: "flex", alignItems: "center", gap: 2, overflowX: "auto", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
+        <Link
+          href="/"
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            padding: "7px 12px",
+            borderRadius: "var(--radius-sm, 10px)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          Home
+        </Link>
         {MODULES.map((m) => {
           const active = m.status === "active";
           return (

@@ -181,3 +181,31 @@ body {
      cards; raw values still legible. */
   .zt-num { letter-spacing: -0.01em; }
 }
+
+/* ---- Family dashboard (/) ---- */
+.hq-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 980px) {
+  .hq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .hq-grid { grid-template-columns: 1fr; }
+  /* the finance hero spans columns on desktop; collapse cleanly on phones */
+  .hq-grid > * { grid-column: auto !important; }
+}
+a.hq-card {
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+a.hq-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--green-tint, rgba(63, 208, 127, 0.35));
+  box-shadow: 0 14px 36px -18px rgba(0, 0, 0, 0.55);
+}
+.hq-card .hq-card-open { opacity: 0; transition: opacity 160ms ease; }
+.hq-card:hover .hq-card-open { opacity: 1; }
+@media (hover: none) {
+  .hq-card .hq-card-open { opacity: 1; }
+}

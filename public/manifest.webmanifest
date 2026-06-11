@@ -2,7 +2,7 @@
   "name": "Family HQ",
   "short_name": "Family HQ",
   "description": "The Zitting household command center.",
-  "start_url": "/finance",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0E0E10",
