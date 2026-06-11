@@ -603,11 +603,27 @@ function ZHQAccountGrid({ accounts, onOpen, selectMode, selected, onToggleSelect
   const ordered = order.map((id) => byId.get(id)).filter(Boolean);
 
   const refs = React.useRef(new Map()); // id -> wrapper el
-  const lastRects = React.useRef(new Map());
-  const drag = React.useRef(null); // { id, startX, startY, adjX, adjY, moved, origin }
+  const lastRects = React.useRef(new Map()); // id -> SETTLED rect (transforms stripped)
+  const drag = React.useRef(null); // { id, startX, startY, adjX, adjY, moved, origin, lastSwapAt }
   const [draggingId, setDraggingId] = React.useState(null);
+  // Event listeners attach once at drag start, so they must read the live
+  // order through a ref — closing over `order` would replay every move
+  // against the order as it was when the drag began (cards thrash).
+  const orderRef = React.useRef(order);
+  orderRef.current = order;
 
-  // FLIP: animate every non-dragged card from its previous rect to the new one.
+  // A card's rect with any in-flight FLIP transform subtracted out — its
+  // settled cell. Hit-testing and FLIP math must use settled cells, never
+  // mid-animation positions, or each swap re-triggers off the moving cards.
+  function settledRect(el) {
+    const r = el.getBoundingClientRect();
+    const tf = getComputedStyle(el).transform;
+    if (!tf || tf === 'none') return r;
+    const m = new DOMMatrixReadOnly(tf);
+    return { left: r.left - m.m41, top: r.top - m.m42, right: r.right - m.m41, bottom: r.bottom - m.m42 };
+  }
+
+  // FLIP: animate every non-dragged card from its previous cell to the new one.
   React.useLayoutEffect(() => {
     const cur = new Map();
     for (const [id, el] of refs.current) {
@@ -624,7 +640,7 @@ function ZHQAccountGrid({ accounts, onOpen, selectMode, selected, onToggleSelect
         cur.set(id, r);
         continue;
       }
-      const r = el.getBoundingClientRect();
+      const r = settledRect(el);
       cur.set(id, r);
       const prev = lastRects.current.get(id);
       if (prev) {
@@ -669,19 +685,25 @@ function ZHQAccountGrid({ accounts, onOpen, selectMode, selected, onToggleSelect
     if (Math.abs(d.dx) + Math.abs(d.dy) > 4) d.moved = true;
     positionDragged(refs.current.get(d.id));
 
-    // Which cell is the pointer over? Move the dragged id to that slot.
-    const fromIdx = order.indexOf(d.id);
+    // Settle window: at most one swap per 120ms, so a swap's FLIP can land
+    // before the next hit-test — without this, fast pointer moves chain
+    // swaps quicker than the eye (or the layout) can follow.
+    if (d.lastSwapAt && performance.now() - d.lastSwapAt < 120) return;
+
+    // Which SETTLED cell is the pointer over? Move the dragged id to that slot.
+    const liveOrder = orderRef.current;
+    const fromIdx = liveOrder.indexOf(d.id);
     let toIdx = fromIdx;
-    for (let i = 0; i < order.length; i++) {
-      const id = order[i];
+    for (let i = 0; i < liveOrder.length; i++) {
+      const id = liveOrder[i];
       if (id === d.id) continue;
-      const el = refs.current.get(id);
-      if (!el) continue;
-      const r = el.getBoundingClientRect();
+      const r = lastRects.current.get(id);
+      if (!r) continue;
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { toIdx = i; break; }
     }
     if (toIdx !== fromIdx) {
-      const next = [...order];
+      d.lastSwapAt = performance.now();
+      const next = [...liveOrder];
       next.splice(fromIdx, 1);
       next.splice(toIdx, 0, d.id);
       setOrder(next);
@@ -699,11 +721,12 @@ function ZHQAccountGrid({ accounts, onOpen, selectMode, selected, onToggleSelect
       el.animate([{ transform: settle, boxShadow: DRAG_GLOW }, { transform: 'none', boxShadow: '0 0 0 rgba(0,0,0,0)' }], { duration: 240, easing: DRAG_EASE });
     }
     if (blockScroll.current) { document.removeEventListener('touchmove', blockScroll.current); blockScroll.current = null; }
-    const changed = d.moved && order.join('|') !== idsKey;
+    const finalOrder = orderRef.current; // not the order captured at drag start
+    const changed = d.moved && finalOrder.join('|') !== idsKey;
     drag.current = null;
     setDraggingId(null);
     if (changed && API.reorderAccounts) {
-      try { await API.reorderAccounts(order); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } catch { /* keep local order */ }
+      try { await API.reorderAccounts(finalOrder); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } catch { /* keep local order */ }
     }
   }
 
