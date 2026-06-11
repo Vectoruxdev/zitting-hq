@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { forecastIncome, computeCoverage, type IncomeSourceInput } from "./forecast";
+import { forecastIncome, computeCoverage, shortfallAlert, type IncomeSourceInput } from "./forecast";
 
 // Build N points ending on `lastISO`, spaced `gap` days, each `amount`.
 function series(lastISO: string, gap: number, amount: number, n: number): { dateISO: string; amount: number }[] {
@@ -115,5 +115,45 @@ describe("computeCoverage", () => {
     });
     expect(r.gap).toBe(400); // only the bills shortfall, not netted against main's surplus
     expect(r.bySource.find((s) => s.accountId === "bills")!.short).toBe(400);
+  });
+});
+
+describe("shortfallAlert", () => {
+  const cov = (over = {}) =>
+    computeCoverage({
+      transfers: [{ amount: 1200, fromAccountId: "bills", dueISO: "2026-06-12" }],
+      cashBySource: { bills: 400 },
+      income: [],
+      todayISO: "2026-06-10",
+      horizonDays: 2,
+      ...over,
+    });
+
+  it("warns when transfers are projected short even after expected income", () => {
+    const a = shortfallAlert(cov(), { sourceNames: { bills: "Bills account" } });
+    expect(a).not.toBeNull();
+    expect(a!.title).toContain("$800.00");
+    expect(a!.body).toContain("Bills account");
+    expect(a!.body).toContain("$1,200.00");
+  });
+
+  it("stays silent when cash already covers everything", () => {
+    expect(shortfallAlert(cov({ cashBySource: { bills: 1500 } }))).toBeNull();
+  });
+
+  it("stays silent when a paycheck lands before the due date (covered_by_paycheck)", () => {
+    const c = cov({ income: [{ dateISO: "2026-06-11", amount: 900, accountId: "bills" }] });
+    expect(c.verdict).toBe("covered_by_paycheck");
+    expect(shortfallAlert(c)).toBeNull();
+  });
+
+  it("stays silent when nothing is due", () => {
+    const c = computeCoverage({ transfers: [], cashBySource: {}, income: [], todayISO: "2026-06-10", horizonDays: 2 });
+    expect(shortfallAlert(c)).toBeNull();
+  });
+
+  it("omits the account clause when names are unknown", () => {
+    const a = shortfallAlert(cov());
+    expect(a!.body).not.toContain(" in ");
   });
 });

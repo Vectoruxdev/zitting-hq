@@ -195,3 +195,27 @@ export function computeCoverage(args: {
     verdict,
   };
 }
+
+/**
+ * Advance-warning copy for a projected shortfall (pure). Returns null unless
+ * the verdict is 'short' — when expected income covers the gap before it's
+ * due ('covered_by_paycheck'), no warning is needed: timing works out.
+ * `sourceNames` labels the short accounts (already resolved by the caller).
+ */
+export function shortfallAlert(
+  cov: CoverageResult,
+  opts: { sourceNames?: Record<string, string> } = {}
+): { title: string; body: string } | null {
+  if (cov.verdict !== "short" || cov.upcomingTotal <= 0) return null;
+  const usd = (v: number) =>
+    "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const shorts = cov.bySource.filter((s) => s.short > 0);
+  const names = shorts
+    .map((s) => opts.sourceNames?.[s.accountId] ?? null)
+    .filter((x): x is string => !!x);
+  const where = names.length ? ` in ${names.join(", ")}` : "";
+  return {
+    title: `Transfers may come up short — ${usd(cov.shortAfterForecast)} needed`,
+    body: `Upcoming transfers need ${usd(cov.upcomingTotal)} but cash${where} is projected ${usd(cov.shortAfterForecast)} short even after expected income. Top up before they're due.`,
+  };
+}

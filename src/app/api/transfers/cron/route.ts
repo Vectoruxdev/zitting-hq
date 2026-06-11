@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as s from "@/db/schema";
-import { runScheduledTransfers, runMonthlyAllowances, reconcilePendingTransfers, createNotification } from "@/db/mutations";
+import { runScheduledTransfers, runMonthlyAllowances, reconcilePendingTransfers, createNotification, notifyTransferShortfall } from "@/db/mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -73,12 +73,17 @@ export async function GET(req: Request) {
       }
     }
 
+    // Advance warning: transfers due in the next 2 days whose source is
+    // projected short even after expected income (idempotent per day).
+    const shortfall = await notifyTransferShortfall(today).catch(() => ({ ok: false as const, notified: false }));
+
     return NextResponse.json({
       ok: true,
       generated: generated.created,
       allowances: allowances.created,
       reconciled: reconciled.matched,
       notified,
+      shortfallWarned: shortfall.notified,
     });
   } catch (e) {
     console.error("[transfers cron] failed", e);

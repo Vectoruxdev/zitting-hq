@@ -250,7 +250,13 @@ function ZHQCoverageCard({ R, onAdd, onAdjust, onDelete, busy }) {
               <button onClick={() => onDelete(f)} disabled={busy} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', minWidth: 28 }}><Icon name="x" size={14} /></button>
             )}
           </div>
-        )) : <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>No upcoming income detected yet — add an expected paycheck.</div>}
+        )) : (
+          <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+            {(R.registrySources ?? 0) === 0
+              ? 'No income sources are marked yet, so there’s nothing to forecast. Mark your paychecks as income sources on the Income tab (or add an expected paycheck here).'
+              : 'No upcoming income detected yet — add an expected paycheck.'}
+          </div>
+        )}
       </div>
     </Card>
   );

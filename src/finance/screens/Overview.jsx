@@ -207,6 +207,18 @@ function ZHQOverview({ onNavigate }) {
           {upcoming.length ? (
             <Card>
               <SectionHeader title="Upcoming transfers" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('transfers')}>Open</Button>} />
+              {/* Coverage verdict — same readiness the Transfers cockpit shows */}
+              {D.transferReadiness && D.transferReadiness.upcomingTotal > 0 ? (() => {
+                const R = D.transferReadiness;
+                const tone = R.verdict === 'covered' ? 'positive' : R.verdict === 'short' ? 'negative' : 'warning';
+                const icon = R.verdict === 'covered' ? 'check' : R.verdict === 'short' ? 'alert' : 'clock';
+                return (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 0 12px' }}>
+                    <Icon name={icon} size={15} style={{ color: `var(--${tone})`, flex: 'none', marginTop: 1 }} />
+                    <span style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--text-secondary)' }}>{R.message}</span>
+                  </div>
+                );
+              })() : null}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {upcoming.slice(0, 4).map((t, i) => <ChecklistRow key={i} {...t} />)}
               </div>

@@ -17,6 +17,7 @@ import { dedupeKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCate
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
 import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./schedule";
+import { forecastIncome, computeCoverage, shortfallAlert, type IncomeSourceInput } from "./forecast";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -2365,4 +2366,119 @@ export async function receiptStoragePath(receiptId: string): Promise<string | nu
     .from(s.receipts)
     .where(eq(s.receipts.id, receiptId));
   return row?.storagePath ?? null;
+}
+
+// ==== advance shortfall warning (transfers cron) =============================
+
+/**
+ * Warn 1–2 days AHEAD when transfers coming due are projected short even after
+ * expected income — the proactive counterpart to the display-only coverage
+ * cockpit (queries.ts transferReadiness; same forecast + coverage engine).
+ * One notification per day at most (dedupeKey includes the date); silent when
+ * income timing covers the gap ('covered_by_paycheck') or nothing is short.
+ */
+export async function notifyTransferShortfall(todayISO: string) {
+  const database = requireDb();
+  const addDays = (iso: string, d: number) => {
+    const dt = new Date(iso + "T00:00:00");
+    dt.setDate(dt.getDate() + d);
+    return dt.toISOString().slice(0, 10);
+  };
+  const horizonEnd = addDays(todayISO, 2);
+
+  // Pending transfers due today..+2 days (undated ones are already nagged by
+  // the daily "transfers to make" summary). Sequential reads (pooler-safe).
+  const pending = await database
+    .select({
+      id: s.transferInstances.id,
+      amount: s.transferInstances.amount,
+      fromAccountId: s.transferInstances.fromAccountId,
+      plannedDate: s.transferInstances.plannedDate,
+    })
+    .from(s.transferInstances)
+    .where(eq(s.transferInstances.status, "pending"))
+    .catch(() => [] as { id: number; amount: string | null; fromAccountId: string | null; plannedDate: unknown }[]);
+  const dueSoon = pending.filter((p) => {
+    const d = p.plannedDate ? String(p.plannedDate).slice(0, 10) : null;
+    return !!d && d >= todayISO && d <= horizonEnd;
+  });
+  if (!dueSoon.length) return { ok: true as const, notified: false };
+
+  // Cash per source account = opening balance + txn net (available balance
+  // preferred when the bank reports one) — mirrors queries.ts liveBalance.
+  const acctRows = await database
+    .select({ id: s.accounts.id, name: s.accounts.name, mask: s.accounts.mask, balance: s.accounts.balance })
+    .from(s.accounts);
+  const availRows = await database
+    .select({ id: s.accounts.id, available: s.accounts.availableBalance })
+    .from(s.accounts)
+    .catch(() => [] as { id: string; available: string | null }[]);
+  const availById = new Map(availRows.map((r) => [r.id, r.available]));
+  const txnRows = await database
+    .select({ accountId: s.transactions.accountId, amount: s.transactions.amount, merchant: s.transactions.merchant, date: s.transactions.date, income: s.transactions.income, isTransfer: s.transactions.isTransfer })
+    .from(s.transactions);
+  const netByAcct = new Map<string, number>();
+  for (const t of txnRows) {
+    if (!t.accountId) continue;
+    netByAcct.set(t.accountId, (netByAcct.get(t.accountId) || 0) + Number(t.amount ?? 0));
+  }
+  const cashBySource: Record<string, number> = {};
+  const nameById: Record<string, string> = {};
+  for (const a of acctRows) {
+    const avail = availById.get(a.id);
+    cashBySource[a.id] = avail != null ? Number(avail) : Number(a.balance ?? 0) + (netByAcct.get(a.id) || 0);
+    nameById[a.id] = a.mask ? `${a.name} ••${a.mask}` : a.name;
+  }
+
+  // Expected income within the window: registry-driven auto-forecast + pending
+  // manual rows (same sources the cockpit uses).
+  const registry = await activeIncomeSources();
+  const regByKey = new Map(registry.map((r) => [r.matchKey, r]));
+  const srcMap = new Map<string, IncomeSourceInput>();
+  for (const t of txnRows) {
+    if (!t.income || t.isTransfer) continue;
+    const iso = t.date as string | null;
+    if (!iso) continue;
+    const key = extractMerchant(t.merchant);
+    const reg = regByKey.get(key);
+    if (!reg) continue;
+    const e = srcMap.get(key) || { key, name: reg.name, accountId: reg.accountId ?? t.accountId, points: [] };
+    e.points.push({ dateISO: iso, amount: Number(t.amount ?? 0) });
+    e.accountId = t.accountId ?? e.accountId;
+    srcMap.set(key, e);
+  }
+  const auto = forecastIncome([...srcMap.values()], todayISO, 3);
+  const manualRows = await database
+    .select()
+    .from(s.expectedIncome)
+    .catch(() => [] as (typeof s.expectedIncome.$inferSelect)[]);
+  const overridden = new Set(manualRows.filter((r) => r.sourceKey && r.status === "pending").map((r) => r.sourceKey));
+  const income = [
+    ...auto.filter((f) => !overridden.has(f.key)).map((f) => ({ dateISO: f.dateISO, amount: f.amount, accountId: f.accountId })),
+    ...manualRows
+      .filter((r) => r.status === "pending")
+      .map((r) => ({ dateISO: (r.expectedDate as string) ?? todayISO, amount: Number(r.amount ?? 0), accountId: r.accountId })),
+  ];
+
+  const cov = computeCoverage({
+    transfers: dueSoon.map((p) => ({ amount: Number(p.amount ?? 0), fromAccountId: p.fromAccountId, dueISO: String(p.plannedDate).slice(0, 10) })),
+    cashBySource,
+    income,
+    todayISO,
+    horizonDays: 2,
+  });
+  const alert = shortfallAlert(cov, { sourceNames: nameById });
+  if (!alert) return { ok: true as const, notified: false };
+
+  const res = await createNotification({
+    type: "transfer-short",
+    tone: "negative",
+    icon: "alert",
+    audience: "owners",
+    title: alert.title,
+    body: alert.body,
+    linkTo: "transfers",
+    dedupeKey: `transfers:short:${todayISO}`,
+  });
+  return { ok: true as const, notified: !("skipped" in res && res.skipped) };
 }

@@ -793,6 +793,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       data.transferReadiness = {
         horizonDays: HORIZON,
         windowLabel: "next 30 days",
+        // The registry is opt-in: with zero marked payers the forecast is
+        // empty by design — the UI explains that instead of showing bare zeros.
+        registrySources: incomeRegistry.size,
         upcomingTotal: cov.upcomingTotal,
         upcomingTotalLabel: money2(cov.upcomingTotal),
         cashOnHand: cov.cashOnHand,
