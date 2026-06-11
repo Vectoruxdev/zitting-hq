@@ -2309,3 +2309,60 @@ export async function setMemberDigestOptIn(memberId: string, on: boolean) {
   await requireDb().update(s.familyMembers).set({ digestOptIn: on }).where(eq(s.familyMembers.id, memberId));
   return { ok: true as const };
 }
+
+// ==== receipts (uploaded images, matched to transactions) ====================
+
+/** Record an uploaded receipt image (the file is already in storage). */
+export async function createReceipt(args: {
+  storagePath: string;
+  filename?: string | null;
+  mime?: string | null;
+  sizeBytes?: number | null;
+  uploadedBy?: string | null;
+}) {
+  const database = requireDb();
+  const [row] = await database
+    .insert(s.receipts)
+    .values({
+      id: crypto.randomUUID(),
+      storagePath: args.storagePath,
+      filename: args.filename ?? null,
+      mime: args.mime ?? null,
+      sizeBytes: args.sizeBytes ?? null,
+      uploadedBy: args.uploadedBy ?? null,
+    })
+    .returning({ id: s.receipts.id });
+  return { ok: true as const, id: row.id };
+}
+
+/** Match a receipt to a transaction (txnId=null clears the match). */
+export async function matchReceipt(receiptId: string, txnId: number | null) {
+  const database = requireDb();
+  await database
+    .update(s.receipts)
+    .set({ transactionId: txnId, status: txnId == null ? "inbox" : "matched" })
+    .where(eq(s.receipts.id, receiptId));
+  return { ok: true as const };
+}
+
+/** Delete a receipt row; returns its storage path so the caller can remove the object. */
+export async function deleteReceipt(receiptId: string) {
+  const database = requireDb();
+  const [row] = await database
+    .select({ storagePath: s.receipts.storagePath })
+    .from(s.receipts)
+    .where(eq(s.receipts.id, receiptId));
+  if (!row) return { ok: true as const, storagePath: null };
+  await database.delete(s.receipts).where(eq(s.receipts.id, receiptId));
+  return { ok: true as const, storagePath: row.storagePath };
+}
+
+/** Storage path for a receipt (for signed-URL generation). */
+export async function receiptStoragePath(receiptId: string): Promise<string | null> {
+  const database = requireDb();
+  const [row] = await database
+    .select({ storagePath: s.receipts.storagePath })
+    .from(s.receipts)
+    .where(eq(s.receipts.id, receiptId));
+  return row?.storagePath ?? null;
+}

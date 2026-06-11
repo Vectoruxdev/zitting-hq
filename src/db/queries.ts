@@ -93,6 +93,7 @@ function emptyData(): FinanceData {
   d.notifPrefs = [];
   d.bulkGroups = [];
   d.receiptItems = [];
+  d.receipts = [];
   d.categories = [];
   d.allCategories = [];
   d.categoryGroups = [];
@@ -207,6 +208,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder)).catch(() => []);
     const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)).catch(() => []);
     const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)).catch(() => []);
+    // Uploaded receipt images (migration supabase-receipts.sql) — defensive so a
+    // pre-migration DB degrades to an empty inbox instead of a wipe.
+    const receiptImageRows = await db.select().from(s.receipts).orderBy(asc(s.receipts.createdAt)).catch(() => [] as (typeof s.receipts.$inferSelect)[]);
     // Member-managed accounts + per-member allowance (migration 0005) — defensive
     // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
     const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
@@ -968,6 +972,31 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       unit: n(r.unit),
       total: n(r.total),
     }));
+    // Receipt image inbox (newest first). The thumbnail URL is fetched on
+    // demand via the receiptSignedUrl action (private bucket, short-lived URLs).
+    const receiptNow = new Date();
+    data.receipts = [...receiptImageRows].reverse().map((r) => {
+      const txn = r.transactionId ? txnById.get(r.transactionId) : undefined;
+      const txnDt = txn ? parseDate(txn.date as string | null) : null;
+      return {
+        id: r.id,
+        filename: r.filename,
+        mime: r.mime,
+        sizeLabel: r.sizeBytes != null ? `${(r.sizeBytes / 1024 / 1024).toFixed(r.sizeBytes >= 1024 * 1024 ? 1 : 2)} MB` : null,
+        status: r.status,
+        transactionId: r.transactionId,
+        txn: txn
+          ? {
+              id: txn.id,
+              merchant: txn.merchant,
+              date: txnDt ? dayLabel(txnDt) : txn.dateLabel ?? "",
+              amount: money2(Math.abs(n(txn.amount))),
+            }
+          : null,
+        uploadedBy: r.uploadedBy ? memberById.get(r.uploadedBy)?.name ?? null : null,
+        uploaded: r.createdAt ? relTime(new Date(r.createdAt), receiptNow) : null,
+      };
+    });
 
     // ====================================================================
     // Derived dashboard (stats / donut categories / 6-month trend)

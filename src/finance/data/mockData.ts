@@ -20,6 +20,7 @@ export const MOCK_FINANCE_DATA: any = {
   learned: [],
   notifPrefs: [],
   bulkGroups: [],
+  receipts: [],
 
   stats: {
     totalCash: '$84,920',

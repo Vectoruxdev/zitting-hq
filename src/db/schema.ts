@@ -530,6 +530,25 @@ export const receiptItems = pgTable("receipt_items", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+// Uploaded receipt images (private 'receipts' storage bucket; the app serves
+// short-lived signed URLs). Matchable to a transaction. supabase-receipts.sql.
+export const receipts = pgTable(
+  "receipts",
+  {
+    id: text("id").primaryKey(), // uuid (DB default gen_random_uuid())
+    storagePath: text("storage_path").notNull(),
+    filename: text("filename"),
+    mime: text("mime"),
+    sizeBytes: integer("size_bytes"),
+    status: text("status").notNull().default("inbox"), // inbox | matched
+    transactionId: integer("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+    uploadedBy: text("uploaded_by").references(() => familyMembers.id),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_receipts_status").on(t.status), index("idx_receipts_txn").on(t.transactionId)]
+);
+
 // ---- Plaid (automatic bank sync) -----------------------------------------
 // A connected bank login (one Plaid Item = one institution login). The
 // access_token is sensitive — it lives here server-side only, never sent to

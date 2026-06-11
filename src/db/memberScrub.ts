@@ -48,6 +48,7 @@ const SCRUB: Record<string, () => unknown> = {
   excludedAccounts: () => [],
   notifRules: () => [],
   receiptItems: () => [],
+  receipts: () => [],
 };
 
 export const MEMBER_SCRUBBED_KEYS = Object.keys(SCRUB);

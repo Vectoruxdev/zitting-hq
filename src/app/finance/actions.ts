@@ -678,3 +678,83 @@ export async function sendDigestTest() {
   if (!to) return { ok: false as const, error: "No owner email on file" };
   return sendDigestPreview(to);
 }
+
+// ---- receipts (uploaded images) ----
+
+/** Owner/partner guard for household-level receipt management. */
+async function ensureOwnerOrPartner() {
+  if (!isAuthConfigured) return; // local dev / no auth → allow
+  const u = await getCurrentUser();
+  if (!u || (u.role !== "owner" && u.role !== "partner")) throw new Error("Not authorized");
+  return u;
+}
+
+const RECEIPTS_BUCKET = "receipts";
+const RECEIPT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Upload a receipt image into the private 'receipts' bucket + record it.
+ * Requires the service-role client (storage is private); on local dev without
+ * the key this returns a clear error instead of half-working.
+ */
+export async function uploadReceipt(formData: FormData) {
+  const u = await ensureOwnerOrPartner();
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "No file received" };
+  if (!file.type.startsWith("image/")) return { ok: false as const, error: "Receipts must be images" };
+  if (file.size > RECEIPT_MAX_BYTES) return { ok: false as const, error: "Image is over the 10MB limit" };
+
+  const admin = getAdminClient();
+  if (!admin) return { ok: false as const, error: "Receipt storage isn't configured on this server" };
+
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const bytes = await file.arrayBuffer();
+  const { error } = await admin.storage.from(RECEIPTS_BUCKET).upload(path, bytes, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) return { ok: false as const, error: `Upload failed: ${error.message}` };
+
+  const res = await m.createReceipt({
+    storagePath: path,
+    filename: file.name,
+    mime: file.type,
+    sizeBytes: file.size,
+    uploadedBy: u?.memberId ?? null,
+  });
+  refresh();
+  return res;
+}
+
+/** Short-lived signed URL for a receipt image (private bucket). */
+export async function receiptSignedUrl(receiptId: string) {
+  await ensureOwnerOrPartner();
+  const admin = getAdminClient();
+  if (!admin) return { ok: false as const, error: "Receipt storage isn't configured on this server" };
+  const path = await m.receiptStoragePath(receiptId);
+  if (!path) return { ok: false as const, error: "Receipt not found" };
+  const { data, error } = await admin.storage.from(RECEIPTS_BUCKET).createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) return { ok: false as const, error: error?.message ?? "Could not sign URL" };
+  return { ok: true as const, url: data.signedUrl };
+}
+
+/** Match (or unmatch, with txnId=null) a receipt to a transaction. */
+export async function matchReceipt(receiptId: string, txnId: number | null) {
+  await ensureOwnerOrPartner();
+  const res = await m.matchReceipt(receiptId, txnId);
+  refresh();
+  return res;
+}
+
+/** Delete a receipt (row + stored image). */
+export async function deleteReceipt(receiptId: string) {
+  await ensureOwnerOrPartner();
+  const res = await m.deleteReceipt(receiptId);
+  if (res.storagePath) {
+    const admin = getAdminClient();
+    if (admin) await admin.storage.from(RECEIPTS_BUCKET).remove([res.storagePath]);
+  }
+  refresh();
+  return { ok: true as const };
+}
