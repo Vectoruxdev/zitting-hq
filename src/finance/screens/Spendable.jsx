@@ -96,6 +96,27 @@ function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onRec
   );
 }
 
+// One transaction inside an expanded merchant group — shows the raw bank text
+// (so you can tell what a check or Cash App payment actually was) with a
+// tappable category chip to set just that one differently from the group.
+function GroupTxnRow({ t, busy, onEditCat }) {
+  const { Tag } = window.ZittingHQDesignSystem_c9e528;
+  return (
+    <div style={{ padding: '10px 0', opacity: busy ? 0.5 : 1 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || t.merchant}</div>
+        <span className="zt-num" style={{ flex: 'none', fontSize: 13.5, fontWeight: 700, color: t.amt >= 0 ? 'var(--accent)' : 'var(--text-primary)', whiteSpace: 'nowrap' }}>{t.amt >= 0 ? '+' : '−'}${Math.abs(t.amt).toFixed(2)}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 3 }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.date} · {t.account}</span>
+        <button onClick={onEditCat} disabled={busy} style={{ flex: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', minHeight: 28 }}>
+          <Tag color={t.color} size="sm">{t.cat} ✎</Tag>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* Receipt breakdown — what was bought, line by line, plus the photo. */
 function ReceiptBreakdown({ receipt, onClose }) {
   const { Modal, Icon, Button } = window.ZittingHQDesignSystem_c9e528;
@@ -243,6 +264,8 @@ function ZHQSpendable() {
     finally { setBusy(null); }
   }
   const bulkGroups = (D.bulkGroups || []).filter((g) => g.unreviewed > 0 || g.uncategorized > 0);
+  // Which merchant group is expanded to show its underlying transactions.
+  const [openGroup, setOpenGroup] = React.useState(null);
   const acceptAllGroups = () => {
     const t = bulkGroups.filter((g) => g.suggestion && g.suggestion.confidence >= 0.7);
     applyGroups(t.map((g) => ({ ids: g.ids, categoryId: g.suggestion.categoryId })), `${t.length} suggestions`);
@@ -661,13 +684,39 @@ function ZHQSpendable() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {bulkGroups.map((g) => (
                           <div key={g.key} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 14, opacity: busy === 'bulk' ? 0.5 : 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                            {/* tap the header to see the transactions inside the group */}
+                            <button onClick={() => setOpenGroup(openGroup === g.key ? null : g.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.merchant}</div>
                                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{g.count} txn{g.count === 1 ? '' : 's'} · {g.spendLabel}{g.dateRange ? ` · ${g.dateRange}` : ''}</div>
                               </div>
                               <Badge tone="neutral" size="sm">{g.count}</Badge>
-                            </div>
+                              <Icon name="chevronDown" size={16} style={{ color: 'var(--text-tertiary)', flex: 'none', transform: openGroup === g.key ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }} />
+                            </button>
+                            {openGroup === g.key ? (() => {
+                              // Resolve the group's txn ids against the activity feed (newest
+                              // first) — shows raw bank text so "Check" / "Cash App" rows are
+                              // tellable apart, each categorizable on its own.
+                              const idSet = new Set(g.ids);
+                              const rows = activity.filter((t) => idSet.has(t.id));
+                              const shown = rows.slice(0, 30);
+                              const unresolved = g.ids.length - rows.length;
+                              return (
+                                <div style={{ borderTop: '1px solid var(--border-hairline)', marginBottom: 12 }}>
+                                  {shown.map((t) => (
+                                    <div key={t.id} style={{ borderBottom: '1px solid var(--border-hairline)' }}>
+                                      <GroupTxnRow t={t} busy={busy === t.id} onEditCat={() => setPicker(t.id)} />
+                                    </div>
+                                  ))}
+                                  {rows.length > shown.length ? (
+                                    <div style={{ padding: '8px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>+{rows.length - shown.length} more</div>
+                                  ) : null}
+                                  {unresolved > 0 ? (
+                                    <div style={{ padding: '8px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>+{unresolved} on other accounts</div>
+                                  ) : null}
+                                </div>
+                              );
+                            })() : null}
                             {g.suggestion ? (
                               <button onClick={() => acceptGroup(g)} disabled={busy === 'bulk'} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: `1px solid ${g.suggestion.confidence >= 0.7 ? 'var(--green-tint)' : 'var(--border-hairline)'}`, background: 'var(--surface-sunken)', cursor: 'pointer', font: 'inherit', marginBottom: 8 }}>
                                 <span style={{ width: 10, height: 10, borderRadius: 999, background: g.suggestion.color, flex: 'none' }} />
