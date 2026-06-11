@@ -30,8 +30,22 @@ export const MODULES: HqModule[] = [
   {
     slug: "calendar",
     name: "Calendar",
-    description: "Shared family schedule and upcoming events.",
+    description: "The family schedule in one place — pulls in your Google Calendars.",
     icon: "📅",
+    status: "planned",
+  },
+  {
+    slug: "meals",
+    name: "Meals",
+    description: "Plan the week's dinners; the shopping list builds itself.",
+    icon: "🍽️",
+    status: "planned",
+  },
+  {
+    slug: "groceries",
+    name: "Groceries",
+    description: "Shared shopping list + what's in the pantry and running low.",
+    icon: "🛒",
     status: "planned",
   },
   {
@@ -39,13 +53,6 @@ export const MODULES: HqModule[] = [
     name: "Tasks",
     description: "Chores, to-dos, and who owns what.",
     icon: "✅",
-    status: "planned",
-  },
-  {
-    slug: "meals",
-    name: "Meals",
-    description: "Meal planning and the running grocery list.",
-    icon: "🍽️",
     status: "planned",
   },
 ];
