@@ -128,3 +128,40 @@ describe("reconcileInstances (auto-complete)", () => {
     expect(res).toEqual([]);
   });
 });
+
+describe("Jae's-paycheck rule composition (net-deposit basis)", () => {
+  // The designed on-income allocation for Jae's payroll, composed entirely of
+  // existing waterfall methods: tithe % of the net deposit → Charity Money
+  // Market, $100 to each mom's checking, remainder → Budget. The rule set is
+  // created by the owner in-app (incomeMatch = Jae's payer key).
+  const rules = [
+    { id: "tithe", method: "%", value: 10, fromAccountId: "main", toAccountId: "charity-mm", memberId: null, sortOrder: 0 },
+    { id: "mom-1", method: "Fixed", value: 100, fromAccountId: "main", toAccountId: "mom1-checking", memberId: null, sortOrder: 1 },
+    { id: "mom-2", method: "Fixed", value: 100, fromAccountId: "main", toAccountId: "mom2-checking", memberId: null, sortOrder: 2 },
+    { id: "budget", method: "Remainder", value: null, fromAccountId: "main", toAccountId: "budget", memberId: null, sortOrder: 3 },
+  ];
+
+  it("splits a paycheck: tithe, two $100s, remainder sweeps the rest", () => {
+    const { instances, remaining } = generateInstances(4000, rules);
+    expect(instances.map((i) => [i.toAccountId, i.amount])).toEqual([
+      ["charity-mm", 400],
+      ["mom1-checking", 100],
+      ["mom2-checking", 100],
+      ["budget", 3400],
+    ]);
+    expect(remaining).toBe(0);
+  });
+
+  it("never overdraws a small check (clamped waterfall)", () => {
+    const { instances, remaining } = generateInstances(250, rules);
+    const total = instances.reduce((s, i) => s + i.amount, 0);
+    expect(total).toBeLessThanOrEqual(250);
+    expect(remaining).toBe(0);
+    expect(instances.map((i) => [i.toAccountId, i.amount])).toEqual([
+      ["charity-mm", 25],
+      ["mom1-checking", 100],
+      ["mom2-checking", 100],
+      ["budget", 25],
+    ]);
+  });
+});

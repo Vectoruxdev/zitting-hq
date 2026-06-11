@@ -2482,3 +2482,54 @@ export async function notifyTransferShortfall(todayISO: string) {
   });
   return { ok: true as const, notified: !("skipped" in res && res.skipped) };
 }
+
+/**
+ * Convert a one-off pending transfer into a recurring SCHEDULED rule (monthly
+ * by default) anchored on its planned date. The existing pending instance
+ * keeps covering the current cycle, so the rule's first cron run is the NEXT
+ * occurrence strictly after today/anchor — never a same-day duplicate. The
+ * instance is linked to the new rule for provenance. User-triggered from the
+ * Transfers checklist ("Repeat monthly"); the app never creates rules on its own.
+ */
+export async function convertInstanceToRule(instanceId: number, cadence: Cadence = "monthly") {
+  const database = requireDb();
+  const [inst] = await database
+    .select()
+    .from(s.transferInstances)
+    .where(eq(s.transferInstances.id, instanceId));
+  if (!inst) return { ok: false as const, error: "Transfer not found" };
+  if (inst.status !== "pending") return { ok: false as const, error: "Only pending transfers can repeat" };
+  if (!inst.toAccountId) return { ok: false as const, error: "Transfer has no destination account" };
+  if (inst.ruleId) return { ok: false as const, error: "This transfer already comes from a rule" };
+
+  const today = todayISO();
+  const anchor = inst.plannedDate ? String(inst.plannedDate).slice(0, 10) : today;
+  // First run = next occurrence AFTER both today and the anchor (the pending
+  // instance itself covers the current cycle).
+  const after = anchor > today ? anchor : today;
+  const nextRunDate = nextOccurrence(cadence, anchor, after);
+
+  const id = crypto.randomUUID();
+  const dest = (await accountLabel(inst.toAccountId)) ?? "Transfer";
+  const existing = await database.select({ so: s.allocationRules.sortOrder }).from(s.allocationRules);
+  const sortOrder = existing.reduce((mx, r) => Math.max(mx, r.so), -1) + 1;
+  await database.insert(s.allocationRules).values({
+    id,
+    name: inst.note || `Monthly · ${dest}`,
+    method: "Fixed",
+    value: inst.amount,
+    dest,
+    fromAccountId: inst.fromAccountId ?? null,
+    toAccountId: inst.toAccountId,
+    memberId: inst.memberId ?? null,
+    trigger: "scheduled",
+    enabled: true,
+    cadence,
+    anchorDate: anchor,
+    nextRunDate,
+    icon: "repeat",
+    sortOrder,
+  });
+  await database.update(s.transferInstances).set({ ruleId: id }).where(eq(s.transferInstances.id, instanceId));
+  return { ok: true as const, id, nextRunDate };
+}

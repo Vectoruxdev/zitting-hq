@@ -273,6 +273,7 @@ function ZHQTransfers() {
   const [tab, setTab] = React.useState('upcoming');
   const [showAdd, setShowAdd] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [confirmRepeat, setConfirmRepeat] = React.useState(null); // instance id pending "repeat monthly" confirm
   const [expModal, setExpModal] = React.useState(null); // null | { prefill }
   const readiness = D.transferReadiness || null;
 
@@ -307,6 +308,11 @@ function ZHQTransfers() {
     if (typeof t.id !== 'number' || !API.deleteTransferInstance) return;
     setBusy(true);
     try { await API.deleteTransferInstance(t.id); refresh(); } finally { setBusy(false); }
+  }
+  async function repeatMonthly(t) {
+    if (typeof t.id !== 'number' || !API.makeTransferRecurring) return;
+    setBusy(true);
+    try { await API.makeTransferRecurring(t.id); setConfirmRepeat(null); refresh(); } finally { setBusy(false); }
   }
   async function deleteExpected(f) {
     if (!f.id || !API.deleteExpectedIncome) return;
@@ -365,9 +371,23 @@ function ZHQTransfers() {
               <Button variant="accent" size="sm" iconLeft={<Icon name="check" size={15} />} onClick={markAll} disabled={busy}>Mark all sent</Button>
             </div>
             {upcoming.map((t) => (
-              <ChecklistRow key={t.id} to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon}
-                state={t.state === 'auto' ? 'auto' : 'todo'}
-                onToggle={() => mark(t, true)} />
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <ChecklistRow to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon}
+                    state={t.state === 'auto' ? 'auto' : 'todo'}
+                    onToggle={() => mark(t, true)} />
+                </div>
+                {typeof t.id === 'number' && !t.ruleId && API.makeTransferRecurring ? (
+                  confirmRepeat === t.id ? (
+                    <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Button variant="primary" size="sm" disabled={busy} onClick={() => repeatMonthly(t)}>Repeat monthly</Button>
+                      <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmRepeat(null)}>Cancel</Button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmRepeat(t.id)} disabled={busy} title="Make this a recurring monthly transfer" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 }}><Icon name="repeat" size={16} /></button>
+                  )
+                ) : null}
+              </div>
             ))}
           </div>
         ) : (

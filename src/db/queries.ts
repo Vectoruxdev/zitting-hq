@@ -649,6 +649,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         note: r.note ?? null,
         member: mem,
         status: r.status,
+        ruleId: r.ruleId ?? null, // null = one-off (eligible for "Repeat monthly")
         fromAccountId: r.fromAccountId,
         toAccountId: r.toAccountId,
         memberId: r.memberId,

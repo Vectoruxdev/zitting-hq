@@ -55,10 +55,35 @@ function ZHQAllocRuleModal({ open, onClose, editing }) {
   const [method, setMethod] = React.useState('%');
   const [value, setValue] = React.useState('');
   const [trigger, setTrigger] = React.useState('on_income');
+  const [incomeMatch, setIncomeMatch] = React.useState('');
   const [cadence, setCadence] = React.useState('monthly');
   const [anchorDate, setAnchorDate] = React.useState('');
   const [enabled, setEnabled] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
+
+  // Payer options for "Which income?" — registered income sources first (the
+  // curated registry), then detected-but-unmarked streams. '' = any income.
+  const incomeOpts = React.useMemo(() => {
+    const reg = (D.income && D.income.sources) || [];
+    const cand = (D.income && D.income.candidates) || [];
+    const seen = new Set();
+    const opts = [{ value: '', label: 'Any income' }];
+    for (const sSrc of reg) {
+      if (seen.has(sSrc.matchKey)) continue;
+      seen.add(sSrc.matchKey);
+      opts.push({ value: sSrc.matchKey, label: sSrc.memberName ? `${sSrc.name} · ${sSrc.memberName}` : sSrc.name });
+    }
+    for (const c of cand) {
+      if (seen.has(c.matchKey)) continue;
+      seen.add(c.matchKey);
+      opts.push({ value: c.matchKey, label: `${c.name} (detected)` });
+    }
+    // An existing rule may reference a payer no longer detected/registered.
+    if (editing && editing.incomeMatch && !seen.has(editing.incomeMatch)) {
+      opts.push({ value: editing.incomeMatch, label: editing.incomeMatch });
+    }
+    return opts;
+  }, [D.income, editing]);
 
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -71,6 +96,7 @@ function ZHQAllocRuleModal({ open, onClose, editing }) {
     setMethod(editing?.method || '%');
     setValue(editing && editing.value != null ? String(editing.value) : '');
     setTrigger(editing?.trigger || 'on_income');
+    setIncomeMatch(editing?.incomeMatch || '');
     setCadence(editing?.cadence || 'monthly');
     setAnchorDate(editing?.anchorDate || todayISO());
     setEnabled(editing?.enabled ?? true);
@@ -97,6 +123,7 @@ function ZHQAllocRuleModal({ open, onClose, editing }) {
       memberId: memberId || null,
       trigger,
       enabled,
+      incomeMatch: trigger === 'on_income' ? (incomeMatch || null) : null,
       cadence: scheduled ? cadence : null,
       anchorDate: scheduled ? (cadence === 'semimonthly' ? todayISO() : (anchorDate || todayISO())) : null,
     };
@@ -130,6 +157,15 @@ function ZHQAllocRuleModal({ open, onClose, editing }) {
             { value: 'scheduled', label: 'On a schedule' },
             { value: 'manual', label: 'Manual only' },
           ]} />
+
+        {trigger === 'on_income' ? (
+          <div>
+            <Select label="Which income?" value={incomeMatch} onChange={setIncomeMatch} options={incomeOpts} />
+            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+              Limit this rule to one paycheck (e.g. only Jae's payroll) or leave it on any income. Amounts are based on the net deposit.
+            </p>
+          </div>
+        ) : null}
 
         {scheduled ? (
           <>
@@ -182,6 +218,13 @@ function ZHQAllocations() {
   const API = window.ZHQ_API || {};
   const D = window.ZHQ_DATA;
   const rules = D.rules || [];
+  // Resolve a payer merchant-key to its registered/detected display name.
+  const incomeName = (key) => {
+    const reg = ((D.income && D.income.sources) || []).find((x) => x.matchKey === key);
+    if (reg) return reg.name;
+    const cand = ((D.income && D.income.candidates) || []).find((x) => x.matchKey === key);
+    return cand ? cand.name : key;
+  };
   const [amount, setAmount] = React.useState(4000);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(null);
@@ -267,6 +310,7 @@ function ZHQAllocations() {
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
                   {r.from || 'From account'} <Icon name="arrowRight" size={12} /> {r.dest || 'To account'}
                   {r.trigger === 'scheduled' && r.nextRunLabel ? <span style={{ color: 'var(--accent)' }}>· {r.nextRunLabel}</span> : null}
+                  {r.trigger !== 'scheduled' && r.incomeMatch ? <span>· on {incomeName(r.incomeMatch)}</span> : null}
                 </div>
               </div>
 

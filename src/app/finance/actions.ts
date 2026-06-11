@@ -488,6 +488,13 @@ export async function deleteAllocationRule(id: string) {
   refresh();
   return res;
 }
+/** Owner: convert a one-off pending transfer into a recurring monthly rule. */
+export async function makeTransferRecurring(instanceId: number) {
+  await ensureOwner();
+  const res = await m.convertInstanceToRule(instanceId);
+  refresh();
+  return res;
+}
 
 // ---- transfers (instances) ----
 export async function createManualTransfer(args: Parameters<typeof m.createManualTransfer>[0]) {
