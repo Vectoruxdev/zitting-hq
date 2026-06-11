@@ -232,38 +232,86 @@ function ZHQSpendable() {
   const [acctFilter, setAcctFilter] = React.useState('all'); // Activity account filter
   const [bulkUndo, setBulkUndo] = React.useState(() => (typeof window !== 'undefined' ? window.__ZHQ_BULK_UNDO || null : null));
 
+  // Optimistic overlay: txnId -> what was just applied locally ({ categoryId,
+  // transfer }). Written synchronously on tap so cards/rows react instantly
+  // while the server action runs in the background; entries are dropped once
+  // fresh server data confirms them (prune effect below) or rolled back if the
+  // action fails. Mirrored on window (like __ZHQ_BULK_UNDO) so an
+  // ErrorBoundary reset can't resurrect already-handled groups.
+  const [optimistic, setOptimisticState] = React.useState(() => (typeof window !== 'undefined' ? window.__ZHQ_OPTIMISTIC || {} : {}));
+  const setOpt = (updater) => setOptimisticState((prev) => { const next = updater(prev); if (typeof window !== 'undefined') window.__ZHQ_OPTIMISTIC = next; return next; });
+  const addOptimistic = (entries) => setOpt((prev) => ({ ...prev, ...entries }));
+  const dropOptimistic = (ids) => setOpt((prev) => { const next = { ...prev }; for (const id of ids) delete next[id]; return next; });
+  const [inflight, setInflight] = React.useState(0); // bulk applies still awaiting the server
+  const catById = new Map((D.allCategories || []).map((c) => [c.id, c]));
+  // A txn row with any just-applied overlay folded in (instant chip updates).
+  const withOverlay = (t) => {
+    const o = optimistic[t.id];
+    if (!o) return t;
+    const oc = o.categoryId ? catById.get(o.categoryId) : null;
+    return { ...t, reviewed: true, cat: oc ? oc.name : t.cat, color: oc ? oc.color : t.color };
+  };
+
   // No router.refresh() after these actions: they revalidatePath("/finance")
   // server-side, so the action response itself already carries the fresh page
   // payload. A client refresh here would recompute everything a second time.
-  async function run(id, fn) {
+  async function run(id, fn, rollbackIds) {
     setBusy(id);
     try { await fn(); }
+    catch { if (rollbackIds) dropOptimistic(rollbackIds); }
     finally { setBusy(null); }
   }
-  const pickCategory = (id, categoryId) => run(id, () => API.updateTransaction(id, { categoryId }, { learn: true }));
-  const confirmOne = (id) => run(id, () => API.confirmTransactions([id]));
-  const markTransfer = (id) => run(id, () => API.markTransfer(id, true));
+  const pickCategory = (id, categoryId) => { addOptimistic({ [id]: { categoryId } }); return run(id, () => API.updateTransaction(id, { categoryId }, { learn: true }), [id]); };
+  const confirmOne = (id) => { addOptimistic({ [id]: { categoryId: null } }); return run(id, () => API.confirmTransactions([id]), [id]); };
+  const markTransfer = (id) => { addOptimistic({ [id]: { categoryId: null, transfer: true } }); return run(id, () => API.markTransfer(id, true), [id]); };
 
   // --- bulk (by-merchant) categorize, scoped to the member's accounts ---
   const setBulkSnap = (snap) => { if (typeof window !== 'undefined') window.__ZHQ_BULK_UNDO = snap; setBulkUndo(snap); };
+  const mergeBulkSnap = (fn) => setBulkUndo((prev) => { const next = fn(prev); if (typeof window !== 'undefined') window.__ZHQ_BULK_UNDO = next; return next; });
   async function applyGroups(groups, label) {
     if (!groups.length || !API.applyBulkCategories) return;
-    setBusy('bulk');
+    // Optimistic: hide the groups + show the undo banner immediately; the
+    // server catches up in the background and taps stay responsive (the
+    // router queues concurrent actions in order).
+    const entries = {};
+    for (const g of groups) for (const id of g.ids) entries[id] = { categoryId: g.categoryId };
+    const ids = Object.keys(entries).map(Number);
+    addOptimistic(entries);
+    mergeBulkSnap((prev) => prev && !prev.failed
+      ? { pairs: prev.pairs || [], count: prev.count + ids.length, label: null }
+      : { pairs: [], count: ids.length, label });
+    setInflight((n) => n + 1);
     try {
       const res = await API.applyBulkCategories(groups.map((g) => ({ ids: g.ids, categoryId: g.categoryId })));
-      const count = groups.reduce((s, g) => s + g.ids.length, 0);
-      setBulkSnap(res && res.undo ? { pairs: res.undo, count, label } : null);
-    } finally { setBusy(null); }
+      if (res && res.undo) {
+        mergeBulkSnap((prev) => {
+          if (!prev || prev.failed) return prev; // dismissed mid-flight — stay dismissed
+          // First snapshot wins per id: with overlapping taps, the earliest
+          // prior state is the correct restore point.
+          const seen = new Set((prev.pairs || []).map((p) => p.id));
+          return { ...prev, pairs: [...(prev.pairs || []), ...res.undo.filter((p) => !seen.has(p.id))] };
+        });
+      }
+    } catch {
+      dropOptimistic(ids); // roll back just this tap — the cards come back
+      mergeBulkSnap((prev) => {
+        const count = (prev && !prev.failed ? prev.count : 0) - ids.length;
+        return count > 0 ? { ...prev, count } : { failed: true };
+      });
+    } finally { setInflight((n) => n - 1); }
   }
   const acceptGroup = (g) => applyGroups([{ ids: g.ids, categoryId: g.suggestion.categoryId }], `${g.merchant} → ${g.suggestion.name}`);
   const setGroup = (g, categoryId) => applyGroups([{ ids: g.ids, categoryId }], g.merchant);
   async function undoBulk() {
-    if (!bulkUndo || !API.restoreTransactionCategories) return;
+    if (!bulkUndo || !bulkUndo.pairs || !bulkUndo.pairs.length || !API.restoreTransactionCategories) return;
     setBusy('bulk');
-    try { await API.restoreTransactionCategories(bulkUndo.pairs); setBulkSnap(null); }
-    finally { setBusy(null); }
+    try {
+      await API.restoreTransactionCategories(bulkUndo.pairs);
+      setBulkSnap(null);
+      setOpt(() => ({})); // the restore invalidates everything applied locally
+    } finally { setBusy(null); }
   }
-  const bulkGroups = (D.bulkGroups || []).filter((g) => g.unreviewed > 0 || g.uncategorized > 0);
+  const bulkGroups = (D.bulkGroups || []).filter((g) => (g.unreviewed > 0 || g.uncategorized > 0) && g.ids.some((id) => !optimistic[id]));
   // Which merchant group is expanded to show its underlying transactions.
   const [openGroup, setOpenGroup] = React.useState(null);
   const acceptAllGroups = () => {
@@ -272,7 +320,8 @@ function ZHQSpendable() {
   };
 
   const accounts = (H && H.managedAccounts) || [];
-  const queue = (H && H.reviewQueue) || [];
+  const rawQueue = (H && H.reviewQueue) || [];
+  const queue = rawQueue.filter((t) => !optimistic[t.id]);
   const myReceipts = (H && H.receipts) || [];
   const [snapBusy, setSnapBusy] = React.useState(false);
   const [snapResult, setSnapResult] = React.useState(null); // upload outcome banner
@@ -300,6 +349,26 @@ function ZHQSpendable() {
     } finally { setSnapBusy(false); }
   }
   const activity = (H && H.activity) || [];
+  // Drop overlay entries once fresh server data confirms them (or the txn is
+  // gone, e.g. reclassified as a transfer and excluded from the member feed).
+  React.useEffect(() => {
+    setOpt((prev) => {
+      const keys = Object.keys(prev);
+      if (!keys.length) return prev;
+      const byId = new Map(activity.map((t) => [t.id, t]));
+      let changed = false;
+      const next = { ...prev };
+      for (const k of keys) {
+        const t = byId.get(Number(k));
+        const o = prev[k];
+        const confirmed = !t
+          || (o.transfer ? !!t.isTransfer : o.categoryId ? t.categoryId === o.categoryId : t.reviewed);
+        if (confirmed) { delete next[k]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [D]);
   const budgets = (H && H.budgets) || [];
   const goals = (D.goals || []).filter((g) => !g.archived);
   const allowance = H ? H.allowance : 0;
@@ -311,7 +380,8 @@ function ZHQSpendable() {
   const tabs = [
     { key: 'home', icon: 'wallet', label: 'Home' },
     { key: 'activity', icon: 'receipt', label: 'Activity' },
-    { key: 'categorize', icon: 'list', label: 'Review', badge: H ? H.totalRemaining : 0 },
+    // Badge tracks the optimistic overlay so it ticks down with every tap.
+    { key: 'categorize', icon: 'list', label: 'Review', badge: Math.max(0, (H ? H.totalRemaining : 0) - (rawQueue.length - queue.length)) },
   ];
 
   const sectionTitle = (txt) => (
@@ -633,7 +703,7 @@ function ZHQSpendable() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {filteredActivity.map((t) => (
-                    <MemberTxnRow key={t.id} t={t} review={false} busy={busy === t.id}
+                    <MemberTxnRow key={t.id} t={withOverlay(t)} review={false} busy={busy === t.id}
                       onEditCat={() => setPicker(t.id)}
                       onConfirm={() => confirmOne(t.id)}
                       onTransfer={() => markTransfer(t.id)}
@@ -646,12 +716,21 @@ function ZHQSpendable() {
             /* =========================== REVIEW =========================== */
             <>
               {bulkUndo ? (
+                bulkUndo.failed ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'var(--surface-card)', border: '1px solid var(--border-hairline)' }}>
+                    <Icon name="alert" size={16} style={{ color: 'var(--warning)', flex: 'none' }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)' }}>Couldn&rsquo;t save — try again</span>
+                    <button onClick={() => setBulkSnap(null)} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={14} /></button>
+                  </div>
+                ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'var(--green-glow)', border: '1px solid var(--green-tint)' }}>
                   <Icon name="check" size={16} style={{ color: 'var(--accent)', flex: 'none' }} />
                   <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)' }}>Categorized {bulkUndo.count}{bulkUndo.label ? ` · ${bulkUndo.label}` : ''}</span>
-                  <Button variant="ghost" size="sm" disabled={busy === 'bulk'} onClick={undoBulk}>Undo</Button>
+                  {/* Undo arms once the in-flight saves return their restore snapshot */}
+                  <Button variant="ghost" size="sm" disabled={busy === 'bulk' || inflight > 0 || !(bulkUndo.pairs && bulkUndo.pairs.length)} onClick={undoBulk}>Undo</Button>
                   <button onClick={() => setBulkSnap(null)} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={14} /></button>
                 </div>
+                )
               ) : null}
 
               {queue.length === 0 ? (
@@ -705,7 +784,7 @@ function ZHQSpendable() {
                                 <div style={{ borderTop: '1px solid var(--border-hairline)', marginBottom: 12 }}>
                                   {shown.map((t) => (
                                     <div key={t.id} style={{ borderBottom: '1px solid var(--border-hairline)' }}>
-                                      <GroupTxnRow t={t} busy={busy === t.id} onEditCat={() => setPicker(t.id)} />
+                                      <GroupTxnRow t={withOverlay(t)} busy={busy === t.id} onEditCat={() => setPicker(t.id)} />
                                     </div>
                                   ))}
                                   {rows.length > shown.length ? (
