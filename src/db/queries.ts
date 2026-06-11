@@ -80,7 +80,7 @@ function emptyData(): FinanceData {
   d.budgets = [];
   d.rules = [];
   d.incomeStreams = [];
-  d.income = { sources: [], candidates: [], totalMonthly: 0, totalMonthlyLabel: "$0" };
+  d.income = { sources: [], candidates: [], allPayers: [], totalMonthly: 0, totalMonthlyLabel: "$0" };
   d.bills = [];
   d.goals = [];
   d.savingsStats = { totalSaved: 0, totalSavedDisplay: "$0", monthlyContrib: 0, monthlyContribDisplay: "$0", activeCount: 0, onTrackCount: 0 };
@@ -1056,8 +1056,47 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const candidates = (data.incomeStreams as { id: string; name: string; sub: string | null; monthly: number; cadence: string; next: string | null }[])
         .filter((d) => !regKeys.has(d.id))
         .map((d) => ({ matchKey: d.id, name: d.name, sub: d.sub, monthly: d.monthly, monthlyLabel: money0(d.monthly), cadence: d.cadence, next: d.next, accountId: acctByKey.get(d.id) ?? null }));
+      // EVERY payer that has ever deposited money (grouped by merchant key),
+      // not just cadence-detected ones — so a real paycheck (e.g. ADP) the
+      // detector missed is still findable in the "Add income" picker.
+      // Excludes transfers; sorted by total received.
+      type Payer = { matchKey: string; name: string; count: number; total: number; lastISO: string; firstISO: string; accountId: string | null };
+      const payersByKey = new Map<string, Payer>();
+      for (const t of txnRows) {
+        if (t.isTransfer || n(t.amount) <= 0) continue;
+        const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
+        if (cat?.kind === "transfer") continue;
+        const iso = (t.date as string | null) ?? "";
+        const key = extractMerchant(t.merchant);
+        const e = payersByKey.get(key) || { matchKey: key, name: t.merchant, count: 0, total: 0, lastISO: "", firstISO: "9999", accountId: null };
+        e.count++;
+        e.total += n(t.amount);
+        if (iso >= e.lastISO) { e.lastISO = iso; e.name = t.merchant; e.accountId = t.accountId ?? e.accountId; }
+        if (iso && iso < e.firstISO) e.firstISO = iso;
+        payersByKey.set(key, e);
+      }
+      const detectedCadence = new Map((data.incomeStreams as { id: string; cadence?: string }[]).map((d) => [d.id, d.cadence ?? null]));
+      const payerDay = (iso: string) => { const d = parseDate(iso); return d ? dayLabel(d) : null; };
+      const allPayers = [...payersByKey.values()]
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 400)
+        .map((p) => ({
+          matchKey: p.matchKey,
+          name: p.name,
+          count: p.count,
+          total: Math.round(p.total * 100) / 100,
+          totalLabel: money0(p.total),
+          avg: Math.round((p.total / Math.max(1, p.count)) * 100) / 100,
+          avgLabel: money0(p.total / Math.max(1, p.count)),
+          last: payerDay(p.lastISO),
+          lastISO: p.lastISO || null,
+          cadence: detectedCadence.get(p.matchKey) ?? null,
+          accountId: p.accountId,
+          accountLabel: p.accountId ? accountLabel(acctById.get(p.accountId)) : null,
+          registered: regKeys.has(p.matchKey),
+        }));
       const totalMonthly = sources.reduce((sum, x) => sum + x.monthly, 0);
-      data.income = { sources, candidates, totalMonthly, totalMonthlyLabel: money0(totalMonthly) };
+      data.income = { sources, candidates, allPayers, totalMonthly, totalMonthlyLabel: money0(totalMonthly) };
     }
 
     // The "current" month for stats/donut: this calendar month if it has any

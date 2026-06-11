@@ -129,6 +129,22 @@ export const MOCK_FINANCE_DATA: any = {
     { id: 'rental', name: 'Basement rental', sub: 'Tenant · Mark P.', monthly: 1100, cadence: 'Monthly', last: 'May 3', next: 'Jun 3', status: 'late', spark: [1100, 1100, 1100, 1100, 1100, 0] },
   ],
 
+  // Curated income registry (built live by getFinanceData; demo defaults here).
+  income: {
+    sources: [],
+    candidates: [
+      { matchKey: 'adp', name: 'ADP Payroll', sub: 'Jared · Zitting Dental', monthly: 8400, monthlyLabel: '$8,400', cadence: 'Twice monthly', next: 'Jun 15', accountId: null },
+    ],
+    allPayers: [
+      { matchKey: 'adp', name: 'ADP Payroll', count: 14, total: 52000, totalLabel: '$52,000', avg: 3714.29, avgLabel: '$3,714', last: 'Jun 3', lastISO: '2026-06-03', cadence: 'Twice monthly', accountId: null, accountLabel: 'Main Checking', registered: false },
+      { matchKey: 'from the farm', name: 'From the Farm', count: 6, total: 6500, totalLabel: '$6,500', avg: 1083.33, avgLabel: '$1,083', last: 'Jun 1', lastISO: '2026-06-01', cadence: 'Monthly', accountId: null, accountLabel: 'Main Checking', registered: false },
+      { matchKey: 'venmo', name: 'Venmo', count: 9, total: 740, totalLabel: '$740', avg: 82.22, avgLabel: '$82', last: 'May 30', lastISO: '2026-05-30', cadence: null, accountId: null, accountLabel: 'Main Checking', registered: false },
+      { matchKey: 'amazon refund', name: 'Amazon Refund', count: 3, total: 96, totalLabel: '$96', avg: 32, avgLabel: '$32', last: 'May 12', lastISO: '2026-05-12', cadence: null, accountId: null, accountLabel: 'Amex \u2022\u20223008', registered: false },
+    ],
+    totalMonthly: 0,
+    totalMonthlyLabel: '$0',
+  },
+
   bills: [
     { id: 1, name: 'Rocky Mountain Power', cat: 'Utilities', color: 'var(--gray-500)', amount: 142.66, freq: 'Monthly', next: 'Jun 18', account: 'Bills ••8847', badge: 'changed', delta: '+$22' },
     { id: 2, name: 'Xfinity Internet', cat: 'Utilities', color: 'var(--gray-500)', amount: 89.99, freq: 'Monthly', next: 'Jun 12', account: 'Bills ••8847', badge: 'due soon' },

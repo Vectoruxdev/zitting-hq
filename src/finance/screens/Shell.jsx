@@ -74,10 +74,11 @@ function ZHQTopbar({ title, onNavigate }) {
     }}>
       <h1 style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
       <div style={{ flex: 1 }} />
-      <div className="zhq-desktop-only" style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px 0 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 200 }}>
+      <button className="zhq-desktop-only" onClick={() => onNavigate && onNavigate('transactions')}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px 0 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 200, font: 'inherit', cursor: 'pointer' }}>
         <Icon name="search" size={16} />
         <span style={{ fontSize: 13 }}>Search transactions…</span>
-      </div>
+      </button>
       <SegmentedControl className="zhq-desktop-only" options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />
       <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />
       <IconButton icon="sparkles" label="Ask AI" variant="solid" onClick={() => onNavigate && onNavigate('ask')} />

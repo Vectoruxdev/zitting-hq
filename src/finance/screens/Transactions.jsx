@@ -248,14 +248,23 @@ function ZHQTransactions({ onNavigate }) {
 
   const [sel, setSel] = React.useState(null);
   const [scope, setScope] = React.useState('All');
+  const [q, setQ] = React.useState(''); // live search
   const [selected, setSelected] = React.useState(() => new Set());
   const [picker, setPicker] = React.useState(null); // { kind:'category'|'person', ids:[] }
   const [busy, setBusy] = React.useState(false);
 
   const all = D.txns || [];
-  const rows = scope === 'Review' ? all.filter((t) => !t.reviewed)
+  const scoped = scope === 'Review' ? all.filter((t) => !t.reviewed)
     : scope === 'Flagged' ? all.filter((t) => t.flagged)
     : scope === 'Income' ? all.filter((t) => t.income) : all;
+  // Search across everything a person might remember about a charge:
+  // merchant, raw bank text, category, person, account, amount, date.
+  const needle = q.trim().toLowerCase();
+  const rows = !needle ? scoped : scoped.filter((t) =>
+    `${t.merchant} ${t.description || ''} ${t.cat} ${t.who} ${t.account} ${t.date} ${Math.abs(t.amt).toFixed(2)}`
+      .toLowerCase()
+      .includes(needle)
+  );
   const reviewCount = all.filter((t) => !t.reviewed).length;
   const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
 
@@ -298,8 +307,15 @@ function ZHQTransactions({ onNavigate }) {
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div className="zhq-desktop-only" style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 220 }}>
-          <Icon name="search" size={16} /><span style={{ fontSize: 13 }}>Search merchant, amount…</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 40, padding: '0 8px 0 14px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', flex: '1 1 200px', minWidth: 160, maxWidth: 360 }}>
+          <Icon name="search" size={16} style={{ flex: 'none' }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search merchant, amount…" aria-label="Search transactions"
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', font: 'inherit', fontSize: 13.5, color: 'var(--text-primary)' }} />
+          {q ? (
+            <button onClick={() => setQ('')} aria-label="Clear search" style={{ flex: 'none', width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
+              <Icon name="x" size={13} />
+            </button>
+          ) : null}
         </div>
         {reviewCount > 0 ? (
           <button onClick={() => setScope('Review')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', background: scope === 'Review' ? 'var(--surface-raised)' : 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-pill)', color: 'var(--warning)', font: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -322,6 +338,14 @@ function ZHQTransactions({ onNavigate }) {
           <Button variant="secondary" size="sm" onClick={() => markTransfer(ids)} disabled={busy}>Mark transfer</Button>
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
         </div>
+      ) : null}
+
+      {needle && rows.length === 0 ? (
+        <Card padding={20}>
+          <div style={{ fontSize: 13.5, color: 'var(--text-tertiary)' }}>
+            No transactions match &quot;{q.trim()}&quot;{scope !== 'All' ? ` in ${scope}` : ''}. Try fewer words or clear the search.
+          </div>
+        </Card>
       ) : null}
 
       {/* Mobile: stacked rows — merchant + amount visible at a glance (the

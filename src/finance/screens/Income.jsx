@@ -48,6 +48,85 @@ function IncomeSourceModal({ open, onClose, prefill }) {
   );
 }
 
+/* "Add income" picker — every payer that has ever deposited money, searchable
+   and filterable, so the real paychecks (ADP, etc.) are always findable even
+   when the cadence detector missed them. Marking is one tap → the existing
+   mark-as-income modal, prefilled. */
+function AddIncomePicker({ onClose, onPick }) {
+  const { Modal, TextInput, Badge } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA || {};
+  const payers = ((D.income || {}).allPayers || []).filter((p) => !p.registered);
+  const [q, setQ] = React.useState('');
+  const [filter, setFilter] = React.useState('likely'); // likely | recurring | large | all
+  const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+  const FILTERS = [
+    { k: 'likely', label: 'Likely income' }, // repeat payers with real money
+    { k: 'recurring', label: 'Recurring' },
+    { k: 'large', label: 'Large' },
+    { k: 'all', label: `All payers · ${payers.length}` },
+  ];
+  const needle = q.trim().toLowerCase();
+  const rows = payers
+    .filter((p) => !needle || `${p.name} ${p.matchKey}`.toLowerCase().includes(needle))
+    .filter((p) => {
+      if (filter === 'recurring') return !!p.cadence;
+      if (filter === 'large') return p.avg >= 500;
+      if (filter === 'likely') return p.count >= 2 && p.avg >= 100;
+      return true;
+    })
+    .slice(0, 60);
+
+  return (
+    <Modal open onClose={onClose} title="Add income" width={520}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <TextInput placeholder="Search payers… (ADP, Venmo, employer name)" value={q} onChange={setQ} autoFocus />
+        <div className="zhq-hscroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+          {FILTERS.map((f) => (
+            <button key={f.k} onClick={() => setFilter(f.k)} style={{
+              flex: 'none', padding: '8px 13px', borderRadius: 999, border: '1px solid var(--border-hairline)',
+              background: filter === f.k ? 'var(--green-glow)' : 'var(--surface-sunken)',
+              color: filter === f.k ? 'var(--accent)' : 'var(--text-tertiary)',
+              font: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', minHeight: 38, whiteSpace: 'nowrap',
+            }}>{f.label}</button>
+          ))}
+        </div>
+        <div style={{ maxHeight: '52vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {rows.length === 0 ? (
+            <div style={{ padding: '22px 6px', fontSize: 13.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+              {payers.length === 0
+                ? 'No deposits found yet — sync or import transactions first.'
+                : 'Nothing matches. Try "All payers" or a different search.'}
+            </div>
+          ) : rows.map((p) => (
+            <button key={p.matchKey} onClick={() => onPick(p)} style={{
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+              padding: '12px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-hairline)',
+              cursor: 'pointer', font: 'inherit', minHeight: 56,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.name}</span>
+                  {p.cadence ? <Badge tone="accent" size="sm">{p.cadence}</Badge> : null}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                  {p.count} deposit{p.count === 1 ? '' : 's'} · avg {p.avgLabel || money(p.avg)}{p.last ? ` · last ${p.last}` : ''}{p.accountLabel ? ` · ${p.accountLabel}` : ''}
+                </div>
+              </div>
+              <span className="zt-num" style={{ flex: 'none', fontSize: 14, fontWeight: 600, color: 'var(--accent)' }}>{p.totalLabel || money(p.total)}</span>
+              <span style={{ flex: 'none', fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>Mark →</span>
+            </button>
+          ))}
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          Pick a payer and every deposit it has ever sent — and will send — counts as income.
+          Set incomes stay set; you'll only come back here when something changes (like a new job).
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
 function ZHQIncome() {
   const { Card, SectionHeader, Button, Icon, Badge, AreaChart, Sparkline, StatTile, Avatar, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
@@ -58,8 +137,13 @@ function ZHQIncome() {
   const candidates = inc.candidates || [];
   const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
   const [modal, setModal] = React.useState(null); // null | { prefill }
+  const [picking, setPicking] = React.useState(false); // "Add income" payer picker
   const [busy, setBusy] = React.useState(false);
   const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+  const pickPayer = (p) => {
+    setPicking(false);
+    setModal({ prefill: { matchKey: p.matchKey, name: p.name, accountId: p.accountId } });
+  };
   async function remove(srcId) {
     if (!window.confirm('Remove this income source? Its deposits will stop counting toward forecasts and allowances.')) return;
     setBusy(true);
@@ -79,7 +163,10 @@ function ZHQIncome() {
     return (
       <>
         <EmptyState icon="trendingUp" title="No income marked yet"
-          body="Import or sync some deposits, then mark which payers are real income (e.g. each paycheck). Only marked sources drive your transfer forecast and allowances." />
+          body="Mark which payers are real income (e.g. each paycheck). Only marked sources drive your transfer forecast and allowances."
+          actionLabel={isOwner ? 'Add income' : undefined}
+          onAction={isOwner ? () => setPicking(true) : undefined} />
+        {picking ? <AddIncomePicker onClose={() => setPicking(false)} onPick={pickPayer} /> : null}
         <IncomeSourceModal open={!!modal} onClose={() => setModal(null)} prefill={modal?.prefill} />
       </>
     );
@@ -93,8 +180,11 @@ function ZHQIncome() {
             <div className="zt-eyebrow" style={{ marginBottom: 8 }}>Marked monthly income</div>
             <div className="zt-num" style={{ fontSize: 44, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>{inc.totalMonthlyLabel || money(inc.totalMonthly || 0)}</div>
           </div>
-          <div style={{ display: 'flex', gap: 36 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
             <StatTile label="Sources" value={String(sources.length)} size="sm" />
+            {isOwner ? (
+              <Button variant="primary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setPicking(true)}>Add income</Button>
+            ) : null}
           </div>
         </div>
         {D.trend ? <AreaChart data={D.trend.income} labels={D.trend.labels} height={200} /> : null}
@@ -163,6 +253,7 @@ function ZHQIncome() {
         </div>
       ) : null}
 
+      {picking ? <AddIncomePicker onClose={() => setPicking(false)} onPick={pickPayer} /> : null}
       <IncomeSourceModal open={!!modal} onClose={() => setModal(null)} prefill={modal?.prefill} />
     </div>
   );
