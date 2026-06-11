@@ -80,8 +80,10 @@ function ZHQGoalCard({ g, onAddMoney, onManage }) {
   const remaining = g.remaining != null ? g.remaining : Math.max(0, g.target - g.saved);
   const icon = g.icon || typePreset(g.goalType).icon;
   const color = g.color || 'var(--accent)';
+  // minWidth: 0 — as a grid item the card must shrink below its content's
+  // min width, or one long label blows the column out at 375px.
   return (
-    <Card padding={22} style={g.archived ? { opacity: 0.62 } : undefined}>
+    <Card padding={22} style={{ minWidth: 0, ...(g.archived ? { opacity: 0.62 } : null) }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
         <div style={{ position: 'relative', flex: 'none' }}>
           <DonutChart size={92} thickness={9} gap={0}
@@ -106,7 +108,7 @@ function ZHQGoalCard({ g, onAddMoney, onManage }) {
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-hairline)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-hairline)', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {g.autoContrib > 0 ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text-secondary)' }}>
@@ -430,8 +432,8 @@ function ZHQSavings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
-        <div style={{ display: 'flex', gap: 40 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '16px 40px', flexWrap: 'wrap' }}>
           <StatTile label="Saved across goals" value={stats.totalSavedDisplay || money(active.reduce((s, g) => s + g.saved, 0))} accent />
           <StatTile label="Monthly contributions" value={stats.monthlyContribDisplay || money(active.reduce((s, g) => s + (g.autoContrib || 0), 0))} sub="planned each month" />
           <StatTile label="On track" value={`${stats.onTrackCount ?? active.filter((g) => g.status === 'on-track' || g.status === 'ahead' || g.status === 'complete').length} / ${active.length}`} />

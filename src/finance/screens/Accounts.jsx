@@ -567,13 +567,13 @@ function ZHQAccounts({ onNavigate }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
-        <div style={{ display: 'flex', gap: 40 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '16px 40px', flexWrap: 'wrap' }}>
           <StatTile label="Cash across accounts" value={ZHQMoney(cash, false)} />
           <StatTile label="Credit balance" value={ZHQMoney(debt, false)} />
           <StatTile label="Net worth" value={ZHQMoney(cash + debt, false)} accent />
         </div>
-        <div style={{ display: 'flex', gap: 10, flex: 'none' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
           <Button variant="ghost" iconLeft={<Icon name="arrowDown" size={16} />} onClick={() => onNavigate && onNavigate('import')}>Import CSV</Button>
           <Button variant="secondary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setShowAdd(true)}>Add manually</Button>
           <Button variant="primary" iconLeft={<Icon name="bank" size={16} />} onClick={() => window.ZHQ_PLAID && window.ZHQ_PLAID.connect()}>Connect bank</Button>
