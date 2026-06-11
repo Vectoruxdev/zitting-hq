@@ -80,6 +80,7 @@ function ZHQTopbar({ title, onNavigate }) {
       </div>
       <SegmentedControl className="zhq-desktop-only" options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />
       <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />
+      <IconButton icon="sparkles" label="Ask AI" variant="solid" onClick={() => onNavigate && onNavigate('ask')} />
       <div style={{ position: 'relative' }}>
         <IconButton icon="bell" label="Notifications" variant="solid" onClick={() => onNavigate && onNavigate('notifications')} />
         {unread > 0 ? (
@@ -92,7 +93,7 @@ function ZHQTopbar({ title, onNavigate }) {
 
 // Primary destinations for the mobile bottom tab bar (everything else lives in
 // the "More" sheet). Ordered for the daily flow.
-const BOTTOM_NAV_IDS = ['overview', 'transactions', 'accounts', 'import'];
+const BOTTOM_NAV_IDS = ['overview', 'transactions', 'accounts', 'transfers'];
 
 function ZHQBottomNav({ active, onNavigate, onLogout }) {
   const { Icon } = window.ZittingHQDesignSystem_c9e528;

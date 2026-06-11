@@ -27,6 +27,7 @@ import * as ZHQApi from "@/app/finance/actions";
 // (Data now comes from the server via the `data` prop, not a static appdata.js.)
 import "./assets/icons.js";
 import "./screens/Shell.jsx";
+import "./screens/Hubs.jsx";
 import "./screens/Skeletons.jsx";
 import "./screens/Overview.jsx";
 import "./screens/Accounts.jsx";
@@ -52,6 +53,19 @@ import "./plaidLink.js";
 import "./push.js";
 
 const w = (typeof window !== "undefined" ? window : {}) as any;
+
+// Old route ids → hub route + tab. Routes are pure client state (no URLs);
+// "deep links" are the onNavigate('…') call sites across screens, and all of
+// them must keep resolving after the nav consolidation.
+const ALIASES: Record<string, { route: string; tab: string }> = {
+  bulk: { route: "transactions", tab: "tidy" },
+  import: { route: "transactions", tab: "import" },
+  allocations: { route: "transfers", tab: "rules" },
+  bills: { route: "income", tab: "bills" },
+  categories: { route: "settings", tab: "categories" },
+  learned: { route: "settings", tab: "learned" },
+  receipts: { route: "settings", tab: "receipts" },
+};
 
 // Expose the design-system namespace exactly as the screens expect it.
 if (typeof window !== "undefined") {
@@ -93,6 +107,9 @@ export default function FinanceApp({
   const router = useRouter();
   const isMember = role === "member";
   const [route, setRoute] = React.useState(isMember ? "member" : "overview");
+  // Active tab within a hub screen (Transactions/Transfers/Income/Settings).
+  // Owned here (not in the hub) so alias navigations land on a specific tab.
+  const [hubTab, setHubTab] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [booting, setBooting] = React.useState(true);
   const [bootFade, setBootFade] = React.useState(false);
@@ -120,9 +137,27 @@ export default function FinanceApp({
     }
   }, [data]);
 
+  // Current position, mirrored in a ref so navigate() can no-op when asked to
+  // go where we already are (otherwise loading would stick: the clearing
+  // effect below only refires when route/hubTab actually change).
+  const posRef = React.useRef<{ route: string; tab: string | null }>({
+    route: isMember ? "member" : "overview",
+    tab: null,
+  });
+
+  const setTab = React.useCallback((t: string) => {
+    posRef.current = { ...posRef.current, tab: t };
+    setHubTab(t);
+  }, []);
+
   const navigate = React.useCallback((r: string) => {
+    const alias = ALIASES[r];
+    const next = alias ? { route: alias.route, tab: alias.tab } : { route: r, tab: null };
+    if (posRef.current.route === next.route && posRef.current.tab === next.tab) return;
+    posRef.current = next;
     setLoading(true);
-    setRoute(r);
+    setRoute(next.route);
+    setHubTab(next.tab);
   }, []);
 
   // boot splash sequence
@@ -135,11 +170,13 @@ export default function FinanceApp({
     };
   }, []);
 
-  // clear the per-route skeleton shortly after each screen change
+  // clear the per-route skeleton shortly after each screen change. Keyed on
+  // hubTab too: an alias navigation to the CURRENT route (e.g. 'import' while
+  // on Transactions) changes only the tab, and loading must still clear.
   React.useEffect(() => {
     const t = setTimeout(() => setLoading(false), 650);
     return () => clearTimeout(t);
-  }, [route]);
+  }, [route, hubTab]);
 
   const ShellC = w.ZHQShell;
   const Spendable = w.ZHQSpendable;
@@ -151,25 +188,20 @@ export default function FinanceApp({
   const Icon = DS.Icon as any;
   const Button = DS.Button as any;
 
-  // route id -> { title, render }
+  // route id -> { title, render }. Old route ids (bulk, import, allocations,
+  // bills, categories, learned, receipts) resolve via ALIASES in navigate().
+  const hubProps = { tab: hubTab, onTabChange: setTab };
   const ROUTES: Record<string, { title: string; render: (nav: (r: string) => void) => React.ReactNode }> = {
     overview: { title: "Overview", render: (nav) => React.createElement(w.ZHQOverview, { onNavigate: nav }) },
     accounts: { title: "Accounts", render: (nav) => React.createElement(w.ZHQAccounts, { onNavigate: nav }) },
-    transactions: { title: "Transactions", render: (nav) => React.createElement(w.ZHQTransactions, { onNavigate: nav }) },
-    bulk: { title: "Tidy up", render: () => React.createElement(w.ZHQBulk) },
-    import: { title: "Import transactions", render: (nav) => React.createElement(w.ZHQImport, { onNavigate: nav }) },
-    categories: { title: "Categories", render: () => React.createElement(w.ZHQCategories) },
-    learned: { title: "What it's learned", render: () => React.createElement(w.ZHQLearned) },
+    transactions: { title: "Transactions", render: (nav) => React.createElement(w.ZHQTransactionsHub, { onNavigate: nav, ...hubProps }) },
     budgets: { title: "Budgets", render: () => React.createElement(w.ZHQBudgets) },
-    income: { title: "Income", render: () => React.createElement(w.ZHQIncome) },
-    bills: { title: "Bills & recurring", render: () => React.createElement(w.ZHQBills) },
-    transfers: { title: "Transfers", render: (nav) => React.createElement(w.ZHQTransfers, { onNavigate: nav }) },
-    allocations: { title: "Allocations", render: (nav) => React.createElement(w.ZHQAllocations, { onNavigate: nav }) },
+    transfers: { title: "Transfers", render: (nav) => React.createElement(w.ZHQTransfersHub, { onNavigate: nav, ...hubProps }) },
     savings: { title: "Savings", render: () => React.createElement(w.ZHQSavings) },
-    receipts: { title: "Receipts", render: () => React.createElement(w.ZHQReceipts) },
+    income: { title: "Income & Bills", render: (nav) => React.createElement(w.ZHQIncomeBillsHub, { onNavigate: nav, ...hubProps }) },
     notifications: { title: "Notifications", render: (nav) => React.createElement(w.ZHQNotifications, { onNavigate: nav }) },
     ask: { title: "Ask AI", render: () => React.createElement(w.ZHQAsk) },
-    settings: { title: "Access & permissions", render: () => React.createElement(w.ZHQAccess) },
+    settings: { title: "Settings", render: (nav) => React.createElement(w.ZHQSettingsHub, { onNavigate: nav, ...hubProps }) },
   };
 
   const splash = booting && BootSplash ? <BootSplash fading={bootFade} /> : null;

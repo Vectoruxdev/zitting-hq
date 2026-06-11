@@ -3,22 +3,18 @@
 // the seed source. DB rows override the entity sections via getFinanceData().
 // (Extracted verbatim from the design prototype's appdata.js.)
 export const MOCK_FINANCE_DATA: any = {
+  // Consolidated top-level nav (7). Tidy up + Import live as tabs inside
+  // Transactions; Allocations is the Rules tab inside Transfers; Bills is a
+  // tab inside Income & Bills; Categories/Learned/Receipts moved into the
+  // Settings hub; Ask AI is the sparkles button in the topbar.
   nav: [
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
     { id: 'accounts', label: 'Accounts', icon: 'wallet' },
     { id: 'transactions', label: 'Transactions', icon: 'list' },
-    { id: 'bulk', label: 'Tidy up', icon: 'sparkles' },
-    { id: 'import', label: 'Import', icon: 'arrowDown' },
-    { id: 'categories', label: 'Categories', icon: 'pie' },
-    { id: 'learned', label: 'Learned', icon: 'sparkles' },
     { id: 'budgets', label: 'Budgets', icon: 'pie' },
-    { id: 'income', label: 'Income', icon: 'trendingUp' },
-    { id: 'bills', label: 'Bills', icon: 'repeat' },
     { id: 'transfers', label: 'Transfers', icon: 'transfers' },
-    { id: 'allocations', label: 'Allocations', icon: 'allocations' },
     { id: 'savings', label: 'Savings', icon: 'target' },
-    { id: 'receipts', label: 'Receipts', icon: 'receipt' },
-    { id: 'ask', label: 'Ask AI', icon: 'sparkles' },
+    { id: 'income', label: 'Income & Bills', icon: 'trendingUp' },
   ],
 
   learned: [],
