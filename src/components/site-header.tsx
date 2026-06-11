@@ -10,22 +10,23 @@ export function SiteHeader() {
         height: "var(--topbar-h, 60px)",
         display: "flex",
         alignItems: "center",
-        gap: 24,
-        padding: "0 26px",
+        gap: "clamp(10px, 2.5vw, 24px)",
+        padding: "0 clamp(14px, 3vw, 26px)",
         borderBottom: "1px solid var(--border-hairline)",
       }}
     >
       <Link
         href="/"
-        style={{ display: "flex", alignItems: "center", gap: 10 }}
+        style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", whiteSpace: "nowrap" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/finance/mark.svg" width={28} height={28} alt="" style={{ borderRadius: 8 }} />
-        <span className="zt-wordmark" style={{ fontSize: 20, color: "var(--text-primary)" }}>
+        <span className="zt-wordmark zhq-desktop-only" style={{ fontSize: 20, color: "var(--text-primary)", whiteSpace: "nowrap" }}>
           Zitting <span style={{ color: "var(--accent)" }}>HQ</span>
         </span>
       </Link>
-      <nav style={{ display: "flex", alignItems: "center", gap: 2 }}>
+      {/* module nav scrolls horizontally on phones instead of wrapping/clipping */}
+      <nav style={{ display: "flex", alignItems: "center", gap: 2, overflowX: "auto", whiteSpace: "nowrap", minWidth: 0, flex: 1, scrollbarWidth: "none" }}>
         {MODULES.map((m) => {
           const active = m.status === "active";
           return (
@@ -48,7 +49,6 @@ export function SiteHeader() {
           );
         })}
       </nav>
-      <div style={{ flex: 1 }} />
       {isAuthConfigured && (
         <form action={signOut}>
           <button
@@ -56,6 +56,7 @@ export function SiteHeader() {
             style={{
               fontSize: 13,
               fontWeight: 500,
+              whiteSpace: "nowrap",
               padding: "7px 12px",
               borderRadius: "var(--radius-sm, 10px)",
               border: "1px solid var(--border-hairline)",

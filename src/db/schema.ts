@@ -633,3 +633,98 @@ export const digestLog = pgTable(
   },
   (t) => [index("idx_digestlog_period").on(t.recipientEmail, t.periodKey, t.kind)]
 );
+
+// ============================================================================
+// Household hub modules (beyond finance): Groceries, Meals, Calendar.
+// Shared family spaces — every role may read/write (unlike finance privacy).
+// Migrations: supabase-groceries.sql / supabase-meals.sql / supabase-calendar.sql
+// ============================================================================
+
+/** Shared shopping list. `source` tracks where a row came from (manual entry,
+ *  a planned meal's ingredients, or a low-pantry nudge). Checked rows stay
+ *  until "Clear bought" archives them (archivedAt). */
+export const shoppingItems = pgTable(
+  "shopping_items",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    note: text("note"), // qty / brand, e.g. "2 gal"
+    category: text("category").notNull().default("other"), // produce | dairy | meat | pantry | frozen | household | other
+    addedBy: text("added_by").references(() => familyMembers.id),
+    checked: boolean("checked").notNull().default(false),
+    source: text("source").notNull().default("manual"), // manual | meal | pantry
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_shopping_active").on(t.archivedAt, t.checked)]
+);
+
+/** What's in the pantry and how much is left. Staples that hit `out` are the
+ *  "we're going to miss this" list. */
+export const pantryItems = pgTable(
+  "pantry_items",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    category: text("category").notNull().default("other"),
+    level: text("level").notNull().default("ok"), // ok | low | out
+    staple: boolean("staple").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_pantry_level").on(t.level)]
+);
+
+/** Recipe box. Ingredients are a simple jsonb list so "send to shopping list"
+ *  can expand them. */
+export const recipes = pgTable("recipes", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  emoji: text("emoji"),
+  ingredients: jsonb("ingredients").$type<{ name: string; qty?: string }[]>().notNull().default([]),
+  notes: text("notes"),
+  lastMadeOn: date("last_made_on"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+/** The week grid: one row per date+slot, pointing at a recipe or free text. */
+export const mealPlan = pgTable(
+  "meal_plan",
+  {
+    id: serial("id").primaryKey(),
+    date: date("date").notNull(),
+    slot: text("slot").notNull().default("dinner"), // breakfast | lunch | dinner
+    recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }),
+    title: text("title"), // free text when no recipe ("Leftovers", "Pizza night")
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [uniqueIndex("uq_meal_slot").on(t.date, t.slot)]
+);
+
+/** Read-only Google Calendar feeds (secret iCal URLs pasted in-app) merged
+ *  with lightweight in-app family events. No OAuth, never writes back. */
+export const calendarFeeds = pgTable("calendar_feeds", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  color: text("color"),
+  url: text("url").notNull(), // private "secret address in iCal format"
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const familyEvents = pgTable(
+  "family_events",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    date: date("date").notNull(), // start date
+    endDate: date("end_date"), // inclusive; null = single day
+    time: text("time"), // "18:30" — null = all-day
+    color: text("color"),
+    note: text("note"),
+    createdBy: text("created_by").references(() => familyMembers.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_family_events_date").on(t.date)]
+);

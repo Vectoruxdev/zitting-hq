@@ -46,7 +46,7 @@ export const MODULES: HqModule[] = [
     name: "Groceries",
     description: "Shared shopping list + what's in the pantry and running low.",
     icon: "🛒",
-    status: "planned",
+    status: "active",
   },
   {
     slug: "tasks",
