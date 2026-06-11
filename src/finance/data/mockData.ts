@@ -70,12 +70,12 @@ export const MOCK_FINANCE_DATA: any = {
   ],
 
   txns: [
-    { id: 1, date: 'Jun 4', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', who: 'Sarah', account: 'Amex ••3008', amt: -84.21, pending: false },
-    { id: 2, date: 'Jun 3', merchant: 'ADP Payroll', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', amt: 4000, income: true, pending: false },
-    { id: 3, date: 'Jun 3', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', who: 'Rebecca', account: 'Amex ••3008', amt: -18.75, pending: true },
-    { id: 4, date: 'Jun 2', merchant: 'Rocky Mtn Power', cat: 'Utilities', color: 'var(--gray-500)', who: 'Household', account: 'Bills account', amt: -142.66, pending: false },
-    { id: 5, date: 'Jun 2', merchant: 'Target', cat: 'Shopping', color: 'var(--green-600)', who: 'Sarah', account: 'Amex ••3008', amt: -36.40, pending: false, flagged: true },
-    { id: 6, date: 'Jun 1', merchant: 'From the Farm', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', amt: 1250, income: true, pending: false },
+    { id: 1, date: 'Jun 4', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -84.21, pending: false },
+    { id: 2, date: 'Jun 3', merchant: 'ADP Payroll', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 4000, income: true, pending: false },
+    { id: 3, date: 'Jun 3', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', who: 'Rebecca', account: 'Amex ••3008', accountId: 'amex', amt: -18.75, pending: true },
+    { id: 4, date: 'Jun 2', merchant: 'Rocky Mtn Power', cat: 'Utilities', color: 'var(--gray-500)', who: 'Household', account: 'Bills account', accountId: 'bills', amt: -142.66, pending: false },
+    { id: 5, date: 'Jun 2', merchant: 'Target', cat: 'Shopping', color: 'var(--green-600)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -36.40, pending: false, flagged: true },
+    { id: 6, date: 'Jun 1', merchant: 'From the Farm', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 1250, income: true, pending: false },
   ],
 
   rules: [
