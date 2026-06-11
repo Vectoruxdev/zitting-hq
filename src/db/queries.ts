@@ -1015,6 +1015,11 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       total: r.total == null ? null : n(r.total),
       totalLabel: r.total == null ? null : money2(n(r.total)),
       receiptDate: (() => { const d = parseDate(r.receiptDate as string | null); return d ? dayLabel(d) : null; })(),
+      // Sortable YYYY-MM-DD for history ordering + "this year" item search.
+      // Prefer the printed purchase date; fall back to the upload date.
+      dateISO:
+        (r.receiptDate as string | null) ||
+        (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : null),
       scanStatus: r.scanStatus ?? "none",
       lines: linesByReceipt.get(r.id) ?? [],
       uploadedById: r.uploadedBy ?? null,

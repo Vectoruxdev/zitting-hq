@@ -43,7 +43,7 @@ export const MOCK_FINANCE_DATA: any = {
       status: 'matched', transactionId: 1,
       txn: { id: 1, merchant: 'Harmons Grocery', date: 'Jun 4', amount: '$84.21' },
       suggestedTransactionId: null, suggestedTxn: null,
-      merchant: 'Harmons Grocery', total: 84.21, totalLabel: '$84.21', receiptDate: 'Jun 4',
+      merchant: 'Harmons Grocery', total: 84.21, totalLabel: '$84.21', receiptDate: 'Jun 4', dateISO: '2026-06-04',
       scanStatus: 'scanned',
       lines: [
         { name: 'Whole milk 2%', qty: 2, price: 7.98 },
@@ -52,7 +52,7 @@ export const MOCK_FINANCE_DATA: any = {
         { name: 'Cheddar cheese', qty: 1, price: 6.49 },
         { name: 'Sourdough bread', qty: 2, price: 9.98 },
         { name: 'Eggs, dozen', qty: 1, price: 4.29 },
-        { name: 'Apples, Honeycrisp', qty: null, price: 8.12 },
+        { name: 'Apples, Honeycrisp', qty: 6, price: 8.12 },
         { name: 'Greek yogurt', qty: 4, price: 5.96 },
         { name: 'Pasta sauce', qty: 2, price: 7.58 },
         { name: 'Ground beef', qty: null, price: 11.24 },
@@ -67,7 +67,7 @@ export const MOCK_FINANCE_DATA: any = {
       status: 'inbox', transactionId: null, txn: null,
       suggestedTransactionId: 5,
       suggestedTxn: { id: 5, merchant: 'Target', date: 'Jun 2', amount: '$36.40' },
-      merchant: 'Target', total: 36.40, totalLabel: '$36.40', receiptDate: 'Jun 2',
+      merchant: 'Target', total: 36.40, totalLabel: '$36.40', receiptDate: 'Jun 2', dateISO: '2026-06-02',
       scanStatus: 'scanned',
       lines: [
         { name: 'Notebook 3-pack', qty: 1, price: 12.99 },
@@ -75,6 +75,36 @@ export const MOCK_FINANCE_DATA: any = {
         { name: 'Phone case', qty: 1, price: 15.43 },
       ],
       uploadedById: 'sarah', uploadedBy: 'Sarah', uploaded: 'Yesterday',
+    },
+    // older scanned receipts across the year — power the item search history
+    {
+      id: 'mock-receipt-3', filename: 'costco.jpg', mime: 'image/jpeg', sizeLabel: '1.4 MB',
+      status: 'inbox', transactionId: null, txn: null, suggestedTransactionId: null, suggestedTxn: null,
+      merchant: 'Costco', total: 142.88, totalLabel: '$142.88', receiptDate: 'Apr 20', dateISO: '2026-04-20',
+      scanStatus: 'scanned',
+      lines: [
+        { name: 'Organic apples, 4lb', qty: 4, price: 9.49 },
+        { name: 'Whole milk', qty: 2, price: 6.78 },
+        { name: 'Rotisserie chicken', qty: 1, price: 4.99 },
+        { name: 'Eggs, 24 ct', qty: 1, price: 7.29 },
+        { name: 'Paper towels', qty: 1, price: 21.99 },
+        { name: 'Bananas', qty: null, price: 1.99 },
+      ],
+      uploadedById: 'sarah', uploadedBy: 'Sarah', uploaded: 'Apr 20',
+    },
+    {
+      id: 'mock-receipt-4', filename: 'smiths.jpg', mime: 'image/jpeg', sizeLabel: '1.0 MB',
+      status: 'inbox', transactionId: null, txn: null, suggestedTransactionId: null, suggestedTxn: null,
+      merchant: "Smith's", total: 53.17, totalLabel: '$53.17', receiptDate: 'Feb 14', dateISO: '2026-02-14',
+      scanStatus: 'scanned',
+      lines: [
+        { name: 'Apples, Gala', qty: 5, price: 6.45 },
+        { name: 'Bananas', qty: null, price: 2.10 },
+        { name: 'Whole milk 2%', qty: 1, price: 3.99 },
+        { name: 'Strawberries', qty: 2, price: 7.98 },
+        { name: 'Bread, wheat', qty: 1, price: 3.49 },
+      ],
+      uploadedById: 'sarah', uploadedBy: 'Sarah', uploaded: 'Feb 14',
     },
   ],
 

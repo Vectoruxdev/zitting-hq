@@ -1,6 +1,7 @@
 import React from 'react';
 import { pickCelebration, CELEBRATION_EMOJI } from '../celebrations';
 import { downscaleReceiptPhoto } from './shared/imageDownscale';
+import { searchLineItems, topItems } from './shared/receiptSearch';
 /* Spendable — the member mobile experience: their spending money, the accounts
    they manage (with balances), savings, a browsable activity feed, and a
    finger-friendly categorize flow. Driven by D.memberHome (server-computed).
@@ -261,6 +262,144 @@ function ReceiptMatchSheet({ receipt, activity, onClose }) {
   );
 }
 
+/* Receipts hub — scan a new receipt + the full searchable history. Every
+   scanned line item is searchable, so a member can ask "how many apples this
+   year" and see the count, the spend, and each purchase. Own receipts only. */
+function ReceiptsHub({ receipts, scanBusy, onScan, onOpenReceipt, onClose }) {
+  const { Modal, Icon, Button } = window.ZittingHQDesignSystem_c9e528;
+  const [q, setQ] = React.useState('');
+  const [period, setPeriod] = React.useState('year'); // 'year' | '12mo' | 'all'
+  const money = (v) => (v < 0 ? '−$' : '$') + Math.abs(v).toFixed(2);
+
+  // Period cutoff (purchase date, falling back to upload date on the row).
+  const cutoffISO = React.useMemo(() => {
+    const now = new Date();
+    if (period === 'all') return '0000-00-00';
+    if (period === '12mo') { const d = new Date(now); d.setFullYear(d.getFullYear(), d.getMonth() - 12, d.getDate()); return d.toISOString().slice(0, 10); }
+    return `${now.getFullYear()}-01-01`;
+  }, [period]);
+  const scoped = React.useMemo(
+    () => (receipts || []).filter((r) => (r.dateISO || '9999-99-99') >= cutoffISO),
+    [receipts, cutoffISO]
+  );
+
+  const term = q.trim();
+  const search = React.useMemo(() => (term ? searchLineItems(scoped, term) : null), [term, scoped]);
+  const tops = React.useMemo(() => (term ? [] : topItems(scoped, 8)), [term, scoped]);
+
+  const scopedSpend = scoped.reduce((s, r) => s + (r.total || 0), 0);
+  const periodLabel = period === 'year' ? 'this year' : period === '12mo' ? 'in the last 12 months' : 'all time';
+
+  const ItemTile = ({ label, qty, onClick }) => (
+    <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderRadius: 999, border: '1px solid var(--border-hairline)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', fontSize: 13, color: 'var(--text-primary)' }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{label}</span>
+      <span className="zt-num" style={{ flex: 'none', fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>×{Math.round(qty)}</span>
+    </button>
+  );
+
+  return (
+    <Modal open onClose={onClose} title="Receipts" width={400}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Button variant="primary" size="md" style={{ width: '100%' }} disabled={scanBusy} iconLeft={<Icon name="camera" size={16} />} onClick={onScan}>
+          {scanBusy ? 'Reading your receipt…' : 'Scan a new receipt'}
+        </Button>
+
+        {/* period filter */}
+        <div style={{ display: 'flex', gap: 6, padding: 4, background: 'var(--surface-sunken)', borderRadius: 999 }}>
+          {[{ k: 'year', l: 'This year' }, { k: '12mo', l: '12 months' }, { k: 'all', l: 'All time' }].map((p) => (
+            <button key={p.k} onClick={() => setPeriod(p.k)} style={{ flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 600, background: period === p.k ? 'var(--surface-card)' : 'transparent', color: period === p.k ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{p.l}</button>
+          ))}
+        </div>
+
+        {/* search */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 999, background: 'var(--surface-card)', border: '1px solid var(--border-hairline)' }}>
+          <Icon name="search" size={16} style={{ color: 'var(--text-tertiary)', flex: 'none' }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items — apples, milk…" style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: 14 }} />
+          {q ? <button onClick={() => setQ('')} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex' }}><Icon name="x" size={15} /></button> : null}
+        </div>
+
+        {!receipts.length ? (
+          <div style={{ textAlign: 'center', padding: '28px 12px', color: 'var(--text-tertiary)', fontSize: 13.5, lineHeight: 1.6 }}>
+            <span style={{ display: 'inline-flex', width: 52, height: 52, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 12 }}><Icon name="receipt" size={24} /></span>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>No receipts yet</div>
+            Scan one and we'll read every line item so you can search them later.
+          </div>
+        ) : term ? (
+          /* ---- search results ---- */
+          <>
+            <div style={{ background: 'var(--surface-card)', border: '1px solid var(--green-tint)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+              <div className="zt-num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                {Math.round(search.qty)} <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-secondary)' }}>{term}</span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 5 }}>
+                {money(search.spend)} across {search.receipts} receipt{search.receipts === 1 ? '' : 's'} · {periodLabel}
+              </div>
+            </div>
+            {search.occ.length ? (
+              <div style={{ maxHeight: '40vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                {search.occ.map((o, i) => (
+                  <button key={i} onClick={() => onOpenReceipt(o.receipt)} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 2px', borderBottom: '1px solid var(--border-hairline)', background: 'none', border: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', width: '100%' }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13.5, color: 'var(--text-primary)' }}>{o.name}{o.qty != null && o.qty !== 1 ? <span style={{ color: 'var(--text-tertiary)' }}> ×{o.qty}</span> : null}</span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{o.merchant}{o.date ? ` · ${o.date}` : ''}</span>
+                    </span>
+                    {o.price != null ? <span className="zt-num" style={{ flex: 'none', fontSize: 13, color: 'var(--text-secondary)' }}>{money(o.price)}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '18px 4px', fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center' }}>No “{term}” found {periodLabel}.</div>
+            )}
+          </>
+        ) : (
+          /* ---- default: stats + most-bought + history ---- */
+          <>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1, background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+                <div className="zt-num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{scoped.length}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>receipt{scoped.length === 1 ? '' : 's'} {periodLabel}</div>
+              </div>
+              <div style={{ flex: 1, background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+                <div className="zt-num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{money(scopedSpend)}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>scanned total</div>
+              </div>
+            </div>
+
+            {tops.length ? (
+              <div>
+                <div className="zt-eyebrow" style={{ marginBottom: 10 }}>Most bought</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {tops.map((it, i) => <ItemTile key={i} label={it.label} qty={it.qty} onClick={() => setQ(it.label)} />)}
+                </div>
+              </div>
+            ) : null}
+
+            <div>
+              <div className="zt-eyebrow" style={{ marginBottom: 10 }}>History</div>
+              <div style={{ maxHeight: '36vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {scoped.map((r) => {
+                  const items = (r.lines || []).length;
+                  return (
+                    <button key={r.id} onClick={() => onOpenReceipt(r)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '11px 12px', borderRadius: 'var(--radius-md)', border: `1px solid ${r.txn ? 'var(--border-hairline)' : 'var(--green-tint)'}`, background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+                      <span style={{ flex: 'none', width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: r.txn ? 'var(--surface-sunken)' : 'var(--green-glow)', color: r.txn ? 'var(--text-secondary)' : 'var(--accent)' }}><Icon name="receipt" size={16} /></span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant || (r.txn && r.txn.merchant) || 'Receipt'}</span>
+                        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{[r.receiptDate || r.uploaded, items ? `${items} item${items === 1 ? '' : 's'}` : null, r.txn ? null : 'tap to match'].filter(Boolean).join(' · ')}</span>
+                      </span>
+                      {r.totalLabel ? <span className="zt-num" style={{ flex: 'none', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{r.totalLabel}</span> : null}
+                    </button>
+                  );
+                })}
+                {!scoped.length ? <div style={{ padding: '14px 4px', fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center' }}>No receipts {periodLabel}.</div> : null}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function ZHQSpendable() {
   const { Icon, Avatar, ProgressBar, Button, Badge, Modal, AreaChart, Sparkline } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA || {};
@@ -384,7 +523,10 @@ function ZHQSpendable() {
   const [snapResult, setSnapResult] = React.useState(null); // upload outcome banner
   const [matchSheet, setMatchSheet] = React.useState(null); // receipt being matched
   const [breakdown, setBreakdown] = React.useState(null); // receipt being viewed
+  const [receiptsHub, setReceiptsHub] = React.useState(false); // the receipts hub modal
   const snapInput = React.useRef(null);
+  // Open a receipt from the hub/list: matched → breakdown, unmatched → match flow.
+  const openReceipt = (r) => (r && r.txn ? setBreakdown(r) : setMatchSheet(r));
   async function onSnap(e) {
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
@@ -567,25 +709,27 @@ function ZHQSpendable() {
                 </button>
               ) : null}
 
-              {/* snap a receipt — opens the camera on mobile, gets scanned + matched */}
-              <button onClick={() => snapInput.current && snapInput.current.click()} disabled={snapBusy} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--green-tint)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left', opacity: snapBusy ? 0.6 : 1 }}>
+              {/* receipts — opens the hub (scan a new one, search items, history) */}
+              <button onClick={() => setReceiptsHub(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--green-tint)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                 <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="camera" size={18} /></span>
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>{snapBusy ? 'Reading your receipt…' : 'Snap a receipt'}</span>
-                  <span style={{ display: 'block', fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{snapBusy ? 'Hang tight — this takes a couple seconds.' : "We'll read it and attach it to the right purchase."}</span>
+                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>Receipts</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    {myReceipts.length ? `Scan a new one or search ${myReceipts.length} saved receipt${myReceipts.length === 1 ? '' : 's'}.` : 'Scan a receipt — we read every line item so you can search them.'}
+                  </span>
                 </span>
                 <Icon name="chevronRight" size={17} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
               </button>
 
-              {/* receipts — tap a matched one for the item-by-item breakdown */}
+              {/* recent receipts preview — tap one to view, or open the hub for all */}
               {myReceipts.length ? (
                 <>
-                  {sectionTitle('Your receipts')}
+                  {sectionTitle('Recent receipts')}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {myReceipts.slice(0, 6).map((r) => {
+                    {myReceipts.slice(0, 3).map((r) => {
                       const matched = !!r.txn;
                       return (
-                        <button key={r.id} onClick={() => (matched ? setBreakdown(r) : setMatchSheet(r))} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 14px', borderRadius: 'var(--radius-md)', border: `1px solid ${matched ? 'var(--border-hairline)' : 'var(--green-tint)'}`, background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+                        <button key={r.id} onClick={() => openReceipt(r)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 14px', borderRadius: 'var(--radius-md)', border: `1px solid ${matched ? 'var(--border-hairline)' : 'var(--green-tint)'}`, background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                           <span style={{ flex: 'none', width: 36, height: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: matched ? 'var(--surface-sunken)' : 'var(--green-glow)', color: matched ? 'var(--text-secondary)' : 'var(--accent)' }}><Icon name="receipt" size={17} /></span>
                           <span style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant || (r.txn && r.txn.merchant) || 'Receipt'}</span>
@@ -600,6 +744,9 @@ function ZHQSpendable() {
                         </button>
                       );
                     })}
+                    {myReceipts.length > 3 ? (
+                      <button onClick={() => setReceiptsHub(true)} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: '4px 2px', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>Search all receipts →</button>
+                    ) : null}
                   </div>
                 </>
               ) : null}
@@ -922,9 +1069,9 @@ function ZHQSpendable() {
           </div>
         ) : null}
 
-        {/* camera FAB — receipt capture from anywhere in the member app */}
+        {/* camera FAB — opens the receipts hub (scan + search + history) */}
         {H ? (
-          <button onClick={() => snapInput.current && snapInput.current.click()} disabled={snapBusy} title="Snap a receipt"
+          <button onClick={() => setReceiptsHub(true)} disabled={snapBusy} title="Receipts"
             style={{ position: 'absolute', right: 16, bottom: 'calc(92px + env(safe-area-inset-bottom))', zIndex: 40, width: 56, height: 56, borderRadius: 999, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent)', color: 'var(--text-on-accent, #06281a)', boxShadow: '0 10px 28px -8px rgba(63,208,127,0.65)', opacity: snapBusy ? 0.6 : 1 }}>
             <Icon name="camera" size={24} />
           </button>
@@ -945,6 +1092,15 @@ function ZHQSpendable() {
         <div className="zhq-phone-home" style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 134, height: 5, background: 'var(--paper-200)', opacity: 0.4, borderRadius: 999 }} />
       </div>
 
+      {receiptsHub ? (
+        <ReceiptsHub
+          receipts={myReceipts}
+          scanBusy={snapBusy}
+          onScan={() => snapInput.current && snapInput.current.click()}
+          onOpenReceipt={(r) => { setReceiptsHub(false); openReceipt(r); }}
+          onClose={() => setReceiptsHub(false)}
+        />
+      ) : null}
       {matchSheet ? (
         <ReceiptMatchSheet receipt={matchSheet} activity={activity} onClose={() => setMatchSheet(null)} />
       ) : null}
