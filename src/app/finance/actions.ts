@@ -245,6 +245,18 @@ export async function setAccountVisibility(id: string, mode: "shown" | "grouped"
   refresh();
   return res;
 }
+export async function setAccountsVisibility(ids: string[], mode: "shown" | "grouped" | "hidden") {
+  await ensureOwner();
+  const res = await m.setAccountsVisibility(ids, mode);
+  refresh();
+  return res;
+}
+export async function reorderAccounts(idsInOrder: string[]) {
+  await ensureOwner();
+  const res = await m.reorderAccounts(idsInOrder);
+  refresh();
+  return res;
+}
 
 // ---- import ----
 export async function commitImport(args: Parameters<typeof m.commitImport>[0]) {

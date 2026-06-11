@@ -516,6 +516,212 @@ function ZHQOtherAccountsCard({ accounts, onOpen }) {
   );
 }
 
+/* ---- drag-to-reorder (within a type group) -------------------------------
+   Pointer-driven, no dependencies. The lifted card follows the pointer with a
+   soft accent glow; the other cards FLIP-animate out of the way (WAAPI). Order
+   persists via reorderAccounts. Touch: press-and-hold ~300ms to lift. */
+
+const DRAG_EASE = 'cubic-bezier(.22,.9,.26,1)';
+const DRAG_GLOW = '0 18px 44px rgba(0,0,0,0.55), 0 0 0 1px var(--green-tint), 0 0 34px -6px rgba(63,208,127,0.35)';
+
+function ZHQAccountGrid({ accounts, onOpen, selectMode, selected, onToggleSelect }) {
+  const API = window.ZHQ_API || {};
+  const ids = accounts.map((a) => a.id);
+  const [order, setOrder] = React.useState(ids);
+  // Re-seed local order whenever the server data changes shape.
+  const idsKey = ids.join('|');
+  React.useEffect(() => { setOrder(ids); }, [idsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const ordered = order.map((id) => byId.get(id)).filter(Boolean);
+
+  const refs = React.useRef(new Map()); // id -> wrapper el
+  const lastRects = React.useRef(new Map());
+  const drag = React.useRef(null); // { id, startX, startY, adjX, adjY, moved, origin }
+  const [draggingId, setDraggingId] = React.useState(null);
+
+  // FLIP: animate every non-dragged card from its previous rect to the new one.
+  React.useLayoutEffect(() => {
+    const cur = new Map();
+    for (const [id, el] of refs.current) {
+      if (!el || !el.isConnected) continue;
+      const hadTransform = el.style.transform;
+      if (drag.current && id === drag.current.id) {
+        // Re-anchor the lifted card to its NEW cell so it stays under the pointer.
+        el.style.transform = 'none';
+        const r = el.getBoundingClientRect();
+        drag.current.adjX = drag.current.origin.left - r.left;
+        drag.current.adjY = drag.current.origin.top - r.top;
+        el.style.transform = hadTransform; // restored below on next move
+        positionDragged(el);
+        cur.set(id, r);
+        continue;
+      }
+      const r = el.getBoundingClientRect();
+      cur.set(id, r);
+      const prev = lastRects.current.get(id);
+      if (prev) {
+        const dx = prev.left - r.left;
+        const dy = prev.top - r.top;
+        if (dx || dy) {
+          el.animate(
+            [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }],
+            { duration: 260, easing: DRAG_EASE }
+          );
+        }
+      }
+    }
+    lastRects.current = cur;
+  });
+
+  function positionDragged(el) {
+    const d = drag.current;
+    if (!d || !el) return;
+    el.style.transform = `translate(${d.dx + d.adjX}px, ${d.dy + d.adjY}px) scale(1.025)`;
+  }
+
+  const blockScroll = React.useRef(null);
+
+  function beginDrag(id, e) {
+    const el = refs.current.get(id);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    drag.current = { id, startX: e.clientX, startY: e.clientY, dx: 0, dy: 0, adjX: 0, adjY: 0, moved: false, origin: r };
+    setDraggingId(id); // React applies the lifted look (glow, z-index, cursor)
+    positionDragged(el);
+    // While dragging on touch, keep the page from scrolling underneath.
+    blockScroll.current = (ev) => ev.preventDefault();
+    document.addEventListener('touchmove', blockScroll.current, { passive: false });
+  }
+
+  function moveDrag(e) {
+    const d = drag.current;
+    if (!d) return;
+    d.dx = e.clientX - d.startX;
+    d.dy = e.clientY - d.startY;
+    if (Math.abs(d.dx) + Math.abs(d.dy) > 4) d.moved = true;
+    positionDragged(refs.current.get(d.id));
+
+    // Which cell is the pointer over? Move the dragged id to that slot.
+    const fromIdx = order.indexOf(d.id);
+    let toIdx = fromIdx;
+    for (let i = 0; i < order.length; i++) {
+      const id = order[i];
+      if (id === d.id) continue;
+      const el = refs.current.get(id);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { toIdx = i; break; }
+    }
+    if (toIdx !== fromIdx) {
+      const next = [...order];
+      next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, d.id);
+      setOrder(next);
+    }
+  }
+
+  async function endDrag() {
+    const d = drag.current;
+    if (!d) return;
+    const el = refs.current.get(d.id);
+    if (el) {
+      // settle: glide from the lifted offset back into the cell
+      const settle = `translate(${d.dx + d.adjX}px, ${d.dy + d.adjY}px) scale(1.025)`;
+      el.style.transform = '';
+      el.animate([{ transform: settle, boxShadow: DRAG_GLOW }, { transform: 'none', boxShadow: '0 0 0 rgba(0,0,0,0)' }], { duration: 240, easing: DRAG_EASE });
+    }
+    if (blockScroll.current) { document.removeEventListener('touchmove', blockScroll.current); blockScroll.current = null; }
+    const changed = d.moved && order.join('|') !== idsKey;
+    drag.current = null;
+    setDraggingId(null);
+    if (changed && API.reorderAccounts) {
+      try { await API.reorderAccounts(order); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } catch { /* keep local order */ }
+    }
+  }
+
+  function onPointerDown(id, e) {
+    if (selectMode) return; // selection taps, no dragging
+    if (e.button != null && e.button !== 0) return;
+    if (e.target.closest('button[data-no-drag]')) return;
+    const isTouch = e.pointerType === 'touch';
+    const startX = e.clientX, startY = e.clientY;
+    let started = false;
+    let holdTimer = null;
+    const target = e.currentTarget;
+
+    const start = (ev) => {
+      if (started) return;
+      started = true;
+      try { target.setPointerCapture(ev.pointerId); } catch { /* fine */ }
+      beginDrag(id, ev);
+    };
+    const onMove = (ev) => {
+      if (!started) {
+        const dist = Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY);
+        if (isTouch) { if (dist > 10 && holdTimer) { clearTimeout(holdTimer); holdTimer = null; cleanup(); } return; } // a touch scroll, not a drag
+        if (dist > 6) start(ev);
+        return;
+      }
+      moveDrag(ev);
+    };
+    const onUp = () => {
+      if (holdTimer) clearTimeout(holdTimer);
+      cleanup();
+      if (started) endDrag();
+    };
+    const cleanup = () => {
+      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointerup', onUp);
+      target.removeEventListener('pointercancel', onUp);
+    };
+    if (isTouch) holdTimer = setTimeout(() => start(e), 300); // press-and-hold to lift
+    target.addEventListener('pointermove', onMove);
+    target.addEventListener('pointerup', onUp);
+    target.addEventListener('pointercancel', onUp);
+  }
+
+  return ordered.map((a) => {
+    const isSel = selected && selected.has(a.id);
+    return (
+      <div
+        key={a.id}
+        ref={(el) => { if (el) refs.current.set(a.id, el); else refs.current.delete(a.id); }}
+        onPointerDown={(e) => onPointerDown(a.id, e)}
+        onClickCapture={(e) => {
+          // a real drag must not count as a click-to-open
+          if (drag.current?.moved || (draggingId && drag.current == null)) { e.stopPropagation(); e.preventDefault(); return; }
+          if (selectMode) { e.stopPropagation(); e.preventDefault(); onToggleSelect(a.id); }
+        }}
+        style={{
+          cursor: selectMode ? 'pointer' : draggingId === a.id ? 'grabbing' : 'grab',
+          borderRadius: 'var(--radius-lg)',
+          outline: isSel ? '2px solid var(--accent)' : 'none',
+          outlineOffset: 2,
+          boxShadow: draggingId === a.id ? DRAG_GLOW : isSel ? '0 0 24px -8px rgba(63,208,127,0.4)' : undefined,
+          transition: 'box-shadow 160ms ease',
+          opacity: draggingId && draggingId !== a.id ? 0.92 : 1,
+          position: 'relative',
+          zIndex: draggingId === a.id ? 30 : undefined,
+          willChange: draggingId === a.id ? 'transform' : undefined,
+          touchAction: selectMode ? undefined : 'pan-y',
+        }}
+      >
+        {selectMode ? (
+          <span style={{
+            position: 'absolute', top: 10, right: 10, zIndex: 5, width: 24, height: 24,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999,
+            border: `2px solid ${isSel ? 'var(--accent)' : 'var(--border-strong, var(--border-hairline))'}`,
+            background: isSel ? 'var(--accent)' : 'var(--surface-card)',
+            color: 'var(--text-on-accent, #06130b)', fontSize: 13, fontWeight: 800,
+            transition: 'background 120ms ease, border-color 120ms ease',
+          }}>{isSel ? '✓' : ''}</span>
+        ) : null}
+        <ZHQAccountCard acct={a} onOpen={selectMode ? () => {} : onOpen} />
+      </div>
+    );
+  });
+}
+
 function ZHQAccounts({ onNavigate }) {
   const { Card, Button, Icon, StatTile } = window.ZittingHQDesignSystem_c9e528;
   const A = window.ZHQ_DATA.accounts || { checking: [], savings: [], credit: [] };
@@ -526,6 +732,22 @@ function ZHQAccounts({ onNavigate }) {
   // to the list if the account was deleted.
   const [openId, setOpenId] = React.useState(() => window.__zhqOpenAccount || null);
   const [showAdd, setShowAdd] = React.useState(false);
+  // Multi-select: pick several cards, then group/hide them in one go.
+  const [selectMode, setSelectMode] = React.useState(false);
+  const [selected, setSelected] = React.useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const toggleSelect = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+  async function bulkVisibility(mode) {
+    const API = window.ZHQ_API || {};
+    if (!API.setAccountsVisibility || !selected.size) return;
+    setBulkBusy(true);
+    try {
+      await API.setAccountsVisibility([...selected], mode);
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      exitSelect();
+    } finally { setBulkBusy(false); }
+  }
   const openAccount = (acct) => { window.__zhqOpenAccount = acct.id; setOpenId(acct.id); };
   const closeAccount = () => { window.__zhqOpenAccount = null; setOpenId(null); };
   const open = openId ? flat.find((a) => a.id === openId) : null;
@@ -574,6 +796,11 @@ function ZHQAccounts({ onNavigate }) {
           <StatTile label="Net worth" value={ZHQMoney(cash + debt, false)} accent />
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+          {total > 1 ? (
+            <Button variant={selectMode ? 'secondary' : 'ghost'} iconLeft={<Icon name="check" size={15} />} onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}>
+              {selectMode ? 'Done' : 'Select'}
+            </Button>
+          ) : null}
           <Button variant="ghost" iconLeft={<Icon name="arrowDown" size={16} />} onClick={() => onNavigate && onNavigate('import')}>Import CSV</Button>
           <Button variant="secondary" iconLeft={<Icon name="plus" size={16} />} onClick={() => setShowAdd(true)}>Add manually</Button>
           <Button variant="primary" iconLeft={<Icon name="bank" size={16} />} onClick={() => window.ZHQ_PLAID && window.ZHQ_PLAID.connect()}>Connect bank</Button>
@@ -581,6 +808,28 @@ function ZHQAccounts({ onNavigate }) {
       </div>
 
       <ZHQConnectedBanks />
+
+      {selectMode ? (
+        <div style={{
+          position: 'sticky', top: 8, zIndex: 25,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', rowGap: 8,
+          padding: '10px 14px', background: 'var(--surface-raised)',
+          border: '1px solid var(--accent)', borderRadius: 'var(--radius-md)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+            {selected.size ? `${selected.size} selected` : 'Tap cards to select'}
+          </span>
+          <span style={{ flex: 1 }} />
+          <Button variant="secondary" size="sm" disabled={!selected.size || bulkBusy} onClick={() => bulkVisibility('grouped')}>
+            {bulkBusy ? '…' : 'Move to Other accounts'}
+          </Button>
+          <Button variant="secondary" size="sm" disabled={!selected.size || bulkBusy} onClick={() => bulkVisibility('hidden')}>
+            {bulkBusy ? '…' : 'Hide'}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={exitSelect} disabled={bulkBusy}>Cancel</Button>
+        </div>
+      ) : null}
 
       {groups.map(([title, list]) => (
         (list.length === 0 && title !== 'Checking') ? null : (
@@ -591,7 +840,7 @@ function ZHQAccounts({ onNavigate }) {
             <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{list.length}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-3)', gap: 14 }}>
-            {list.map((a) => <ZHQAccountCard key={a.id} acct={a} onOpen={openAccount} />)}
+            <ZHQAccountGrid accounts={list} onOpen={openAccount} selectMode={selectMode} selected={selected} onToggleSelect={toggleSelect} />
             {title === 'Checking' ? (
               <button onClick={() => setShowAdd(true)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 132, border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-lg)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', font: 'inherit' }}>
                 <Icon name="plus" size={20} /><span style={{ fontSize: 13, fontWeight: 500 }}>Add account</span>

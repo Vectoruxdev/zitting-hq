@@ -285,6 +285,22 @@ export async function setAccountVisibility(id: string, mode: "shown" | "grouped"
   return { ok: true as const };
 }
 
+/** Bulk visibility (multi-select on the Accounts screen). Sequential (pooler-safe). */
+export async function setAccountsVisibility(ids: string[], mode: "shown" | "grouped" | "hidden") {
+  for (const id of ids) await setAccountVisibility(id, mode);
+  return { ok: true as const, count: ids.length };
+}
+
+/** Persist a drag-reorder: sortOrder = position in `idsInOrder`. Only the
+ *  given ids are touched (per-type ordering — groups don't interleave). */
+export async function reorderAccounts(idsInOrder: string[]) {
+  const database = requireDb();
+  for (let i = 0; i < idsInOrder.length; i++) {
+    await database.update(s.accounts).set({ sortOrder: i }).where(eq(s.accounts.id, idsInOrder[i]));
+  }
+  return { ok: true as const, count: idsInOrder.length };
+}
+
 // ---- member ↔ account assignment + allowance ----
 
 /** Accounts a member is "in charge of". Fail-closed (empty set) on any error. */
