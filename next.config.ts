@@ -29,6 +29,14 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_SHA: buildSha,
     NEXT_PUBLIC_BUILD_TIME: buildTime,
   },
+  experimental: {
+    serverActions: {
+      // Receipt photos upload through a server action; the 1MB default
+      // rejects any real camera photo. The client downscales to ~1MB first —
+      // this is headroom for originals that slip through, not the norm.
+      bodySizeLimit: "12mb",
+    },
+  },
 };
 
 export default nextConfig;

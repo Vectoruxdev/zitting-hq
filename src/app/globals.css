@@ -185,16 +185,26 @@ body {
 /* ---- Family dashboard (/) ---- */
 .hq-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 16px;
 }
 @media (max-width: 980px) {
+  /* tablets: hero full-width, the rest pair up (!important beats inline spans) */
   .hq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hq-grid > * { grid-column: auto !important; }
+  .hq-grid > *:first-child { grid-column: 1 / -1 !important; }
 }
 @media (max-width: 640px) {
   .hq-grid { grid-template-columns: 1fr; }
-  /* the finance hero spans columns on desktop; collapse cleanly on phones */
+  /* the cards span columns on desktop; collapse cleanly on phones */
   .hq-grid > * { grid-column: auto !important; }
+}
+.hq-skel {
+  animation: hq-skel-pulse 1.4s ease-in-out infinite;
+}
+@keyframes hq-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 a.hq-card {
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;

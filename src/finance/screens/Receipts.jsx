@@ -1,4 +1,5 @@
 import React from 'react';
+import { downscaleReceiptPhoto } from './shared/imageDownscale';
 /* Receipts — uploaded receipt images, matched to transactions. Reads
    D.receipts (server-derived); images live in a private storage bucket and
    thumbnails load via the receiptSignedUrl action (short-lived URLs).
@@ -179,8 +180,9 @@ function ZHQCaptureFlow({ children }) {
     setBusy(true);
     setError(null);
     try {
+      const upload = await downscaleReceiptPhoto(file);
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', upload);
       const res = await window.ZHQ_API.uploadReceipt(fd);
       if (res && res.ok === false) setError(res.error || 'Upload failed');
       else window.ZHQ_REFRESH && window.ZHQ_REFRESH();

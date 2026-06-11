@@ -56,6 +56,10 @@ export interface DashboardData {
     memberName?: string;
     remainingLabel?: string | null;
     allowanceLabel?: string | null;
+    memberSpent?: number;
+    memberSpentLabel?: string | null;
+    memberAllowance?: number;
+    memberUnlocked?: boolean;
     memberToReview?: number;
     monthLabel?: string;
   };
@@ -75,7 +79,19 @@ const FEED_COLORS = ["var(--accent)", "var(--indigo-500)", "var(--amber-500)", "
 export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   const todayISO = familyTodayISO();
 
-  // ---- finance ----
+  // The four sections are independent — run them concurrently (the pooled
+  // postgres client handles a few parallel streams fine; the heavy sequential
+  // discipline lives INSIDE getFinanceData, unchanged).
+  const [finance, meals, groceries, calendar] = await Promise.all([
+    financeSection(viewer),
+    mealsSection(todayISO),
+    groceriesSection(),
+    calendarSection(todayISO),
+  ]);
+  return { todayISO, finance, meals, groceries, calendar };
+}
+
+async function financeSection(viewer: Viewer): Promise<DashboardData["finance"]> {
   const finance: DashboardData["finance"] = { role: viewer.role };
   try {
     const d: any = await getFinanceData(viewer);
@@ -85,6 +101,10 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
         finance.memberName = h.name;
         finance.remainingLabel = h.allowance > 0 ? h.remainingLabel : null;
         finance.allowanceLabel = h.allowance > 0 ? h.allowanceLabel : null;
+        finance.memberSpent = h.spent ?? 0;
+        finance.memberSpentLabel = h.spentLabel ?? null;
+        finance.memberAllowance = h.allowance ?? 0;
+        finance.memberUnlocked = h.allowanceUnlocked !== false;
         finance.memberToReview = h.totalRemaining ?? 0;
         finance.monthLabel = h.monthLabel;
       }
@@ -102,12 +122,15 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   } catch {
     /* finance card renders its empty state */
   }
+  return finance;
+}
 
-  // ---- meals: tonight + the next few planned dinners (this week + next) ----
+// Tonight's dinner + the next few planned (this week + next).
+async function mealsSection(todayISO: string): Promise<DashboardData["meals"]> {
   const meals: DashboardData["meals"] = { tonight: null, upcoming: [] };
   try {
     const weekStart = mondayOfISO(todayISO);
-    const [thisWeek, nextWeek] = [await getMealsData(weekStart), await getMealsData(addDaysISO(weekStart, 7))];
+    const [thisWeek, nextWeek] = await Promise.all([getMealsData(weekStart), getMealsData(addDaysISO(weekStart, 7))]);
     const recipes = new Map([...thisWeek.recipes, ...nextWeek.recipes].map((r: any) => [r.id, r]));
     const plan = [...thisWeek.plan, ...nextWeek.plan]
       .filter((m: any) => String(m.date) >= todayISO && (m.slot ?? "dinner") === "dinner")
@@ -128,8 +151,10 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   } catch {
     /* empty meals card */
   }
+  return meals;
+}
 
-  // ---- groceries ----
+async function groceriesSection(): Promise<DashboardData["groceries"]> {
   const groceries: DashboardData["groceries"] = { listCount: 0, lowCount: 0, lowNames: [] };
   try {
     const g = await getGroceriesData();
@@ -140,27 +165,37 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   } catch {
     /* empty groceries card */
   }
+  return groceries;
+}
 
-  // ---- calendar: the next 7 days across feeds + family events ----
+// The next 7 days across feeds + family events. Feeds fetch IN PARALLEL —
+// sequential external fetches were the dashboard's slowest path.
+async function calendarSection(todayISO: string): Promise<DashboardData["calendar"]> {
   const calendar: DashboardData["calendar"] = { events: [], feedCount: 0 };
   try {
     const cfg = await getCalendarConfig();
     const windowEnd = addDaysISO(todayISO, 7);
     const enabled = cfg.feeds.filter((f: any) => f.enabled);
     calendar.feedCount = enabled.length;
-    const events: DashboardData["calendar"]["events"] = [];
-    for (const feed of enabled) {
-      try {
-        const res = await fetch(feed.url, { next: { revalidate: 900 } });
-        if (!res.ok) continue;
-        const color = feed.color || FEED_COLORS[(feed.id - 1) % FEED_COLORS.length];
-        for (const ev of expandIcs(await res.text(), todayISO, windowEnd)) {
-          events.push({ chip: dayChip(ev.dateISO, todayISO), dateISO: ev.dateISO, title: ev.title, time: ev.time ?? null, color });
+    const perFeed = await Promise.all(
+      enabled.map(async (feed: any) => {
+        try {
+          const res = await fetch(feed.url, { next: { revalidate: 900 } });
+          if (!res.ok) return [];
+          const color = feed.color || FEED_COLORS[(feed.id - 1) % FEED_COLORS.length];
+          return expandIcs(await res.text(), todayISO, windowEnd).map((ev) => ({
+            chip: dayChip(ev.dateISO, todayISO),
+            dateISO: ev.dateISO,
+            title: ev.title,
+            time: ev.time ?? null,
+            color,
+          }));
+        } catch {
+          return []; // one broken feed never hides the rest
         }
-      } catch {
-        /* one broken feed never hides the rest */
-      }
-    }
+      })
+    );
+    const events: DashboardData["calendar"]["events"] = perFeed.flat();
     for (const ev of cfg.events) {
       const date = String(ev.date);
       if (date < todayISO || date > windowEnd) continue;
@@ -171,6 +206,5 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   } catch {
     /* empty calendar card */
   }
-
-  return { todayISO, finance, meals, groceries, calendar };
+  return calendar;
 }

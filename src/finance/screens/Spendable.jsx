@@ -1,5 +1,6 @@
 import React from 'react';
 import { pickCelebration, CELEBRATION_EMOJI } from '../celebrations';
+import { downscaleReceiptPhoto } from './shared/imageDownscale';
 /* Spendable — the member mobile experience: their spending money, the accounts
    they manage (with balances), savings, a browsable activity feed, and a
    finger-friendly categorize flow. Driven by D.memberHome (server-computed).
@@ -391,8 +392,11 @@ function ZHQSpendable() {
     setSnapBusy(true);
     setSnapResult(null);
     try {
+      // Camera photos are 3-12MB; shrink to ~2000px JPEG before upload so it's
+      // fast on cell data and within the scanner's limits.
+      const upload = await downscaleReceiptPhoto(file);
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', upload);
       const res = await API.uploadReceipt(fd);
       if (res && res.ok === false) setSnapResult({ tone: 'bad', text: res.error || 'Upload failed' });
       else if (res) {
