@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePerfAllowance, type PerfAllowanceInput } from "./perfAllowance";
+import { computePerfAllowance, sumPaycheckIncome, type PerfAllowanceInput } from "./perfAllowance";
 
 const base = (over: Partial<PerfAllowanceInput> = {}): PerfAllowanceInput => ({
   income: 0,
@@ -106,3 +106,77 @@ describe("computePerfAllowance", () => {
 });
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+describe("sumPaycheckIncome", () => {
+  const txn = (over: Partial<{ merchantKey: string; amount: number; dateISO: string | null; income: boolean; isTransfer: boolean }> = {}) => ({
+    merchantKey: "adp payroll",
+    amount: 2000,
+    dateISO: "2026-06-05",
+    income: true,
+    isTransfer: false,
+    ...over,
+  });
+  const june = (iso: string) => iso.startsWith("2026-06");
+  const owned = new Set(["adp payroll", "from the farm"]);
+
+  it("sums income txns whose payer is a registered source owned by the earner", () => {
+    const sum = sumPaycheckIncome({
+      txns: [txn(), txn({ merchantKey: "from the farm", amount: 1250 })],
+      ownedKeys: owned,
+      matchKeys: null,
+      inPeriod: june,
+    });
+    expect(sum).toBe(3250);
+  });
+
+  it("ignores income from unregistered payers (refunds/one-offs never count)", () => {
+    const sum = sumPaycheckIncome({
+      txns: [txn(), txn({ merchantKey: "amazon refund", amount: 75 })],
+      ownedKeys: owned,
+      matchKeys: null,
+      inPeriod: june,
+    });
+    expect(sum).toBe(2000);
+  });
+
+  it("returns 0 when the earner owns no registered sources (registry is opt-in)", () => {
+    const sum = sumPaycheckIncome({ txns: [txn()], ownedKeys: new Set(), matchKeys: null, inPeriod: june });
+    expect(sum).toBe(0);
+  });
+
+  it("narrows to the rule's employer matchKeys when set", () => {
+    const sum = sumPaycheckIncome({
+      txns: [txn(), txn({ merchantKey: "from the farm", amount: 1250 })],
+      ownedKeys: owned,
+      matchKeys: ["adp payroll"],
+      inPeriod: june,
+    });
+    expect(sum).toBe(2000);
+  });
+
+  it("skips transfers, non-income, undated, and out-of-period txns", () => {
+    const sum = sumPaycheckIncome({
+      txns: [
+        txn({ isTransfer: true }),
+        txn({ income: false }),
+        txn({ dateISO: null }),
+        txn({ dateISO: "2026-05-30" }),
+        txn({ amount: 1500 }),
+      ],
+      ownedKeys: owned,
+      matchKeys: null,
+      inPeriod: june,
+    });
+    expect(sum).toBe(1500);
+  });
+
+  it("rounds to cents", () => {
+    const sum = sumPaycheckIncome({
+      txns: [txn({ amount: 1000.005 }), txn({ amount: 0.111 })],
+      ownedKeys: owned,
+      matchKeys: null,
+      inPeriod: june,
+    });
+    expect(sum).toBe(1000.12);
+  });
+});

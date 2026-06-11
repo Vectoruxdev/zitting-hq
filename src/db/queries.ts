@@ -16,7 +16,7 @@ import { asc, eq } from "drizzle-orm";
 import { isEmailConfigured } from "@/lib/email";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
-import { computePerfAllowance } from "./perfAllowance";
+import { computePerfAllowance, sumPaycheckIncome } from "./perfAllowance";
 import { forecastIncome, computeCoverage, type IncomeSourceInput } from "./forecast";
 import { extractMerchant } from "./categorize";
 import { mergePrefs } from "./notifyPrefs";
@@ -1248,18 +1248,35 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       allowanceSplitsByRule.set(sp.ruleId, arr);
     }
     // Earner's current calendar-month paycheck income for a rule (preview only).
-    const allowanceIncomeFor = (rule: (typeof allowanceRuleRows)[number]): number => {
-      const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
-      let sum = 0;
-      for (const t of txnRows) {
-        if (t.memberId !== rule.memberId || !t.income || t.isTransfer) continue;
-        const dt = parseDate(t.date as string | null);
-        if (!dt || monthKey(dt) !== curMonthKey) continue;
-        if (keys && keys.length && !keys.includes(extractMerchant(t.merchant))) continue;
-        sum += n(t.amount);
-      }
-      return Math.round(sum * 100) / 100;
+    // REGISTRY semantics — paychecks are income txns whose payer is a registered
+    // income source owned by the earner, matching the crediting engine
+    // (mutations.ts sumPaychecks). NOT txn attribution: Plaid deposits arrive
+    // unattributed, so attribution-based previews showed $0 while crons credited.
+    const ownedKeysByMember = new Map<string, Set<string>>();
+    for (const r of incomeSourceRows) {
+      if (!r.active || !r.memberId) continue;
+      const set = ownedKeysByMember.get(r.memberId) || new Set<string>();
+      set.add(r.matchKey);
+      ownedKeysByMember.set(r.memberId, set);
+    }
+    const paycheckTxnInput = txnRows.map((t) => ({
+      merchantKey: extractMerchant(t.merchant),
+      amount: n(t.amount),
+      dateISO: t.date as string | null,
+      income: t.income,
+      isTransfer: t.isTransfer,
+    }));
+    const inCurrentMonth = (iso: string) => {
+      const dt = parseDate(iso);
+      return !!dt && monthKey(dt) === curMonthKey;
     };
+    const allowanceIncomeFor = (rule: (typeof allowanceRuleRows)[number]): number =>
+      sumPaycheckIncome({
+        txns: paycheckTxnInput,
+        ownedKeys: ownedKeysByMember.get(rule.memberId) ?? new Set<string>(),
+        matchKeys: (rule.incomeMatchKeys as string[] | null) ?? null,
+        inPeriod: inCurrentMonth,
+      });
     const allowancePreviewFor = (rule: (typeof allowanceRuleRows)[number]) => {
       const splits = (allowanceSplitsByRule.get(rule.id) ?? []).map((sp) => ({
         memberId: sp.memberId,

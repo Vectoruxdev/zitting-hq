@@ -56,6 +56,32 @@ export interface PerfAllowanceResult {
   warnings: AllowanceWarning[];
 }
 
+/**
+ * Sum an earner's paycheck income for a period — registry semantics, matching
+ * the crediting engine (mutations.ts paycheckTxnsFor/sumPaychecks): a paycheck
+ * is an income, non-transfer transaction whose PAYER (merchant key) is a
+ * registered income source owned by the earner. Curated, not txn attribution —
+ * Plaid deposits arrive unattributed, and refunds/one-offs must never count.
+ * `matchKeys` (the rule's employer keys) narrows further; empty/null = all of
+ * the earner's registered payers. Returns 0 when the earner owns no sources.
+ */
+export function sumPaycheckIncome(args: {
+  txns: { merchantKey: string; amount: number; dateISO: string | null; income: boolean; isTransfer: boolean }[];
+  ownedKeys: ReadonlySet<string>;
+  matchKeys: string[] | null;
+  inPeriod: (iso: string) => boolean;
+}): number {
+  if (!args.ownedKeys.size) return 0;
+  let sum = 0;
+  for (const t of args.txns) {
+    if (!t.income || t.isTransfer || !t.dateISO || !args.inPeriod(t.dateISO)) continue;
+    if (!args.ownedKeys.has(t.merchantKey)) continue;
+    if (args.matchKeys && args.matchKeys.length && !args.matchKeys.includes(t.merchantKey)) continue;
+    sum += t.amount;
+  }
+  return round2(sum);
+}
+
 export function computePerfAllowance(input: PerfAllowanceInput): PerfAllowanceResult {
   const income = round2(Math.max(0, input.income));
   const goal = round2(Math.max(0, input.goal));
