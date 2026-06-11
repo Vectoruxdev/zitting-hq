@@ -76,6 +76,9 @@ export async function addMember(args: { name: string; email?: string | null; rol
 
 export async function updateMember(id: string, patch: Parameters<typeof m.updateMember>[1]) {
   await ensureOwner();
+  if (patch.celebrationStyle && !["spicy", "clean", "off"].includes(patch.celebrationStyle)) {
+    delete patch.celebrationStyle;
+  }
   const res = await m.updateMember(id, patch);
   refresh();
   return res;

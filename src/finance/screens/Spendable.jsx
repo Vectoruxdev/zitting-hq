@@ -1,9 +1,54 @@
 import React from 'react';
+import { pickCelebration, CELEBRATION_EMOJI } from '../celebrations';
 /* Spendable — the member mobile experience: their spending money, the accounts
    they manage (with balances), savings, a browsable activity feed, and a
    finger-friendly categorize flow. Driven by D.memberHome (server-computed).
    Rendered inside a phone mockup on desktop (owner preview) and full-bleed on
    a real phone (see globals.css .zhq-phone-frame @media). */
+
+/* Full-screen confetti + message card for the moment the review queue hits
+   zero. The line comes from THIS member's celebration pack (picked when the
+   trigger fires) — never another member's. Tap anywhere to dismiss. */
+const CONFETTI_COLORS = ['var(--accent)', 'var(--indigo-500)', 'var(--amber-500)', '#f973ab', '#7c8cf8', '#ffffff'];
+function MemberCelebration({ celebration, onClose }) {
+  const pieces = React.useMemo(() => Array.from({ length: 90 }, (_, i) => ({
+    left: Math.random() * 100,
+    delay: Math.random() * 0.9,
+    dur: 2.4 + Math.random() * 2.2,
+    size: 6 + Math.random() * 7,
+    drift: (Math.random() - 0.5) * 160,
+    spin: 360 + Math.random() * 720,
+    color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    round: Math.random() < 0.3,
+  })), []);
+  React.useEffect(() => {
+    const t = setTimeout(onClose, 9000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 60, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', cursor: 'pointer' }}>
+      {pieces.map((p, i) => (
+        <span key={i} className="zhq-confetti" style={{
+          left: `${p.left}%`,
+          width: p.size, height: p.round ? p.size : p.size * 0.45,
+          background: p.color,
+          borderRadius: p.round ? 999 : 2,
+          '--drift': `${p.drift}px`,
+          '--spin': `${p.spin}deg`,
+          animationDelay: `${p.delay}s`,
+          animationDuration: `${p.dur}s`,
+        }} />
+      ))}
+      <div className="zhq-celeb-card" style={{ position: 'relative', maxWidth: 320, margin: '0 26px', background: 'var(--surface-card)', border: '1px solid var(--green-tint)', borderRadius: 'var(--radius-lg)', padding: '30px 26px', textAlign: 'center', boxShadow: '0 0 60px -12px rgba(63,208,127,0.45), var(--shadow-pop)' }}>
+        <div style={{ fontSize: 46, lineHeight: 1, marginBottom: 14 }}>{CELEBRATION_EMOJI[celebration.tone] || '🎉'}</div>
+        <div className="zt-eyebrow" style={{ color: 'var(--accent)', marginBottom: 10 }}>All reviewed</div>
+        <div style={{ fontSize: 17.5, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.45 }}>{celebration.text}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 16 }}>Tap anywhere to keep going</div>
+      </div>
+    </div>
+  );
+}
+
 function ZHQPhoneFrame({ children }) {
   return (
     <div className="zhq-phone-frame" style={{
@@ -369,6 +414,27 @@ function ZHQSpendable() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [D]);
+  // --- celebration: fires the moment THIS member's queue goes >0 → 0 ---
+  // Effective remaining includes the optimistic overlay, so the confetti pops
+  // on the very tap that clears the last one. The line is picked from this
+  // member's own celebration pack (H.celebrationStyle) — per-login payload,
+  // so nobody ever sees another member's messages.
+  const [celebration, setCelebration] = React.useState(null);
+  const effectiveRemaining = H ? Math.max(0, H.totalRemaining - (rawQueue.length - queue.length)) : null;
+  const celebStyle = (H && H.celebrationStyle) || 'spicy';
+  const prevRemaining = React.useRef(null);
+  React.useEffect(() => {
+    const prev = prevRemaining.current;
+    prevRemaining.current = effectiveRemaining;
+    if (prev != null && prev > 0 && effectiveRemaining === 0) setCelebration(pickCelebration(celebStyle));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveRemaining]);
+  React.useEffect(() => {
+    // Console/demo hook: window.ZHQ_CELEBRATE('spicy'|'clean'|'off') previews the moment.
+    window.ZHQ_CELEBRATE = (style) => setCelebration(pickCelebration(style || celebStyle));
+    return () => { delete window.ZHQ_CELEBRATE; };
+  }, [celebStyle]);
+
   const budgets = (H && H.budgets) || [];
   const goals = (D.goals || []).filter((g) => !g.archived);
   const allowance = H ? H.allowance : 0;
@@ -879,6 +945,7 @@ function ZHQSpendable() {
           </div>
         </Modal>
       ) : null}
+      {celebration ? <MemberCelebration celebration={celebration} onClose={() => setCelebration(null)} /> : null}
     </ZHQPhoneFrame>
   );
 }

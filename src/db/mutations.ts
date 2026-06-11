@@ -194,7 +194,7 @@ export async function createMember(args: {
 
 export async function updateMember(
   id: string,
-  patch: { name?: string; role?: string; email?: string | null; color?: string | null; status?: string; authId?: string | null }
+  patch: { name?: string; role?: string; email?: string | null; color?: string | null; status?: string; authId?: string | null; celebrationStyle?: string }
 ) {
   const database = requireDb();
   await database.update(s.familyMembers).set(patch).where(eq(s.familyMembers.id, id));

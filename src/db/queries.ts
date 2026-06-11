@@ -250,6 +250,12 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .select({ id: s.familyMembers.id, digestOptIn: s.familyMembers.digestOptIn })
       .from(s.familyMembers)
       .catch(() => [] as { id: string; digestOptIn: boolean }[]);
+    // Celebration style (supabase-celebrations.sql) — separate defensive read;
+    // pre-migration DBs default everyone to the spicy pack (adults-only app).
+    const celebrationRows = await db
+      .select({ id: s.familyMembers.id, celebrationStyle: s.familyMembers.celebrationStyle })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; celebrationStyle: string }[]);
     const [digestRow] = await db.select().from(s.digestSettings).where(eq(s.digestSettings.id, "household")).catch(() => []);
     // Performance-allowance rules + splits (migration 0007) — defensive so a
     // pre-migration DB degrades to "no allowance rules" not a wipe.
@@ -282,6 +288,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const allowanceById = new Map(allowanceRows.map((r) => [r.id, n(r.allowance)]));
     const lastSeenById = new Map(lastSeenRows.map((r) => [r.id, r.lastSeenAt ? new Date(r.lastSeenAt) : null]));
     const digestOptInById = new Map(digestOptInRows.map((r) => [r.id, r.digestOptIn]));
+    const celebrationById = new Map(celebrationRows.map((r) => [r.id, r.celebrationStyle]));
     const managersByAccount = new Map<string, { id: string; name: string; color: string | null }[]>();
     const accountsByMember = new Map<string, Set<string>>();
     for (const am of acctMemberRows) {
@@ -327,6 +334,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         color: m.color,
         allowance: allowanceById.get(m.id) ?? 0,
         digestOptIn: digestOptInById.get(m.id) ?? true,
+        celebrationStyle: celebrationById.get(m.id) ?? "spicy",
         // Presence of a last-seen stamp means they've signed in at least once.
         active: !!seen,
         lastSeen: seen ? relTime(seen, seenNow) : null,
@@ -1610,6 +1618,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         allCaughtUp: prog.allCaughtUp,
         prevMonthRemaining: prog.prevMonthRemaining,
         allowanceUnlocked: prog.allowanceUnlocked,
+        // THIS member's celebration pack — the payload is per-login, so no
+        // member ever receives another member's style or lines.
+        celebrationStyle: celebrationById.get(mid) ?? "spicy",
         // unreviewed txns (Categorize tab) and the full activity list (Activity tab).
         reviewQueue: myTxns.filter((t) => !t.reviewed),
         activity: myTxns,

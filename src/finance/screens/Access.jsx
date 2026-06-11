@@ -246,6 +246,7 @@ function ZHQAccess() {
   }
 
   async function changeRole(m, role) { setBusy(true); try { await API.updateMember(m.id, { role }); refresh(); } finally { setBusy(false); } }
+  async function changeCelebration(m, celebrationStyle) { setBusy(true); try { await API.updateMember(m.id, { celebrationStyle }); refresh(); } finally { setBusy(false); } }
   async function remove(m) {
     if (!window.confirm(`Remove ${m.name}? Their transactions move to Household and their login (if any) is revoked.`)) return;
     setBusy(true); try { await API.removeMember(m.id); refresh(); } finally { setBusy(false); }
@@ -308,6 +309,11 @@ function ZHQAccess() {
               {isOwner ? (
                 <Select value={m.role} onChange={(v) => changeRole(m, v)} options={[{ value: 'owner', label: 'Owner' }, { value: 'partner', label: 'Partner' }, { value: 'member', label: 'Member' }]} style={{ width: 124 }} />
               ) : <Badge tone="neutral" size="sm">{ROLE_LABEL[m.role] || m.role}</Badge>}
+              {isOwner ? (
+                <span title="Celebration messages when they finish reviewing — Spicy is the full adults-only pack, Clean keeps it family-friendly, Off is confetti only.">
+                  <Select value={m.celebrationStyle || 'spicy'} onChange={(v) => changeCelebration(m, v)} options={[{ value: 'spicy', label: '🌶️ Spicy' }, { value: 'clean', label: '🎉 Clean' }, { value: 'off', label: 'Confetti only' }]} style={{ width: 142 }} />
+                </span>
+              ) : null}
               {isOwner && m.email && me.email !== m.email ? <Button variant="secondary" size="sm" iconLeft={<Icon name="bell" size={14} />} onClick={() => sendInvite(m.email)} disabled={busy}>Send invite</Button> : null}
               {isOwner && me.email !== m.email ? (
                 <button onClick={() => remove(m)} disabled={busy} title="Remove" className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={16} /></button>

@@ -278,6 +278,7 @@ export const MOCK_FINANCE_DATA: any = {
     allCaughtUp: false,
     prevMonthRemaining: 0,
     allowanceUnlocked: true,
+    celebrationStyle: 'spicy',
     // Unreviewed txns drive the Review tab (one-at-a-time mode) and resolve
     // the bulkGroups ids above for the by-merchant drill-in.
     reviewQueue: [

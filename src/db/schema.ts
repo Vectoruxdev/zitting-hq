@@ -35,6 +35,8 @@ export const familyMembers = pgTable("family_members", {
   allowance: numeric("allowance", { precision: 14, scale: 2 }), // monthly spending money (owner-set); null = none
   digestOptIn: boolean("digest_opt_in").notNull().default(true), // receives the email spending digest
   lastSeenAt: timestamp("last_seen_at"), // last time they opened the app (presence = they've signed in)
+  // "All reviewed" celebration pack: spicy | clean | off (supabase-celebrations.sql)
+  celebrationStyle: text("celebration_style").notNull().default("spicy"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
