@@ -32,7 +32,7 @@ export const MODULES: HqModule[] = [
     name: "Calendar",
     description: "The family schedule in one place — pulls in your Google Calendars.",
     icon: "📅",
-    status: "planned",
+    status: "active",
   },
   {
     slug: "meals",
