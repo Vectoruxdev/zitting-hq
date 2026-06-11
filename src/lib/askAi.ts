@@ -87,7 +87,9 @@ export async function askMoneyCoach(context: string, turns: CoachTurn[]): Promis
       },
       body: JSON.stringify({
         model: "claude-opus-4-8",
-        max_tokens: 1500,
+        // Adaptive thinking spends from the same budget as the answer — keep
+        // headroom so a long think never truncates the visible reply.
+        max_tokens: 4000,
         thinking: { type: "adaptive" },
         system: `${SYSTEM_PROMPT}\n\nHousehold snapshot (live data):\n${context}`,
         messages: turns.map((t) => ({ role: t.role, content: t.text })),
