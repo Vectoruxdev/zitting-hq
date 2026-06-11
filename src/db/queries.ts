@@ -1046,6 +1046,12 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // spend (for personal-allowance budgets). Classification lives in
     // monthStats.ts (flowOf/foldMonthStats — pure, unit-tested): income is
     // summed SIGNED, refunds net spending down, transfers count as neither.
+    // Registry-aware income semantics: once the household has curated income
+    // sources, only registered payers count as income — other positive
+    // deposits are refunds that net spending down (Plaid flags EVERY positive
+    // amount `income`, which otherwise counts card refunds as income).
+    const activeIncomeKeys = new Set(incomeSourceRows.filter((r) => r.active).map((r) => r.matchKey));
+    const flowOpts = { registryActive: activeIncomeKeys.size > 0 };
     const toFlowTxn = (t: (typeof txnRows)[number]): FlowTxn => {
       const splits = t.hasSplit ? splitsByTxn.get(t.id) : undefined;
       return {
@@ -1055,6 +1061,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
         categoryId: t.categoryId,
         memberId: t.memberId,
+        registeredPayer: activeIncomeKeys.has(extractMerchant(t.merchant)),
         splits: splits?.length ? splits.map((sp) => ({ categoryId: sp.categoryId, amount: n(sp.amount) })) : null,
       };
     };
@@ -1062,7 +1069,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const dt = parseDate(t.date as string | null);
       return !!dt && monthKey(dt) === targetKey;
     });
-    const monthStats = foldMonthStats(monthTxns.map(toFlowTxn));
+    const monthStats = foldMonthStats(monthTxns.map(toFlowTxn), flowOpts);
     const catTotals = monthStats.catTotals;
     const memberTotals = monthStats.memberTotals;
     const monthSpending = monthStats.spending;
@@ -1170,14 +1177,18 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       if (!dt) continue;
       const b = bucket.get(monthKey(dt));
       if (!b) continue;
-      // Same classification as the stats cards (flowOf): signed income;
-      // non-income positives are refunds that net down spending.
-      const flow = flowOf({
-        amount: n(t.amount),
-        income: t.income,
-        isTransfer: t.isTransfer,
-        catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
-      });
+      // Same classification as the stats cards (flowOf): registry-aware,
+      // signed income; non-income positives are refunds that net down spending.
+      const flow = flowOf(
+        {
+          amount: n(t.amount),
+          income: t.income,
+          isTransfer: t.isTransfer,
+          catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
+          registeredPayer: activeIncomeKeys.has(extractMerchant(t.merchant)),
+        },
+        flowOpts
+      );
       b.inc += flow.income;
       b.sp += flow.spendNet;
     }

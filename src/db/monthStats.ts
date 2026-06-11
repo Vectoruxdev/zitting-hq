@@ -3,7 +3,7 @@
  * the donut, the per-member spend, and the 6-month trend:
  *
  *   transfer (flag or category kind)  → neither income nor spending
- *   income-flagged                    → income, SIGNED (a negative income txn,
+ *   income                            → income, SIGNED (a negative income txn,
  *                                       e.g. a payroll reversal in an import,
  *                                       reduces income — it must never inflate
  *                                       it the way Math.abs did)
@@ -11,6 +11,13 @@
  *                                       a refund (amt>0, not income) subtracts —
  *                                       so a return nets DOWN spending instead
  *                                       of inflating income.
+ *
+ * REGISTRY-AWARE income: Plaid marks EVERY positive deposit `income`, so the
+ * raw flag counts card refunds as income. When the household has curated its
+ * income registry (`registryActive`), only deposits from REGISTERED payers
+ * count as income; other positive deposits get refund semantics (net spending
+ * down, attributed to their category). When the registry is empty the raw
+ * flag is kept — a family that hasn't marked payers keeps today's behavior.
  */
 
 export interface FlowTxn {
@@ -21,17 +28,25 @@ export interface FlowTxn {
   catKind: string | null;
   categoryId: string | null;
   memberId: string | null;
+  /** Whether the txn's payer (merchant key) is an active registered income source. */
+  registeredPayer?: boolean;
   /** Split rows when the txn is split (per-category attribution); else null. */
   splits: { categoryId: string | null; amount: number }[] | null;
 }
 
+export interface FlowOpts {
+  /** True when at least one income source is registered (registry curated). */
+  registryActive?: boolean;
+}
+
 /** A txn's contribution to the dashboard: income dollars + net spend dollars. */
-export function flowOf(t: Pick<FlowTxn, "amount" | "income" | "isTransfer" | "catKind">): {
-  income: number;
-  spendNet: number;
-} {
+export function flowOf(
+  t: Pick<FlowTxn, "amount" | "income" | "isTransfer" | "catKind" | "registeredPayer">,
+  opts?: FlowOpts
+): { income: number; spendNet: number } {
   if (t.isTransfer || t.catKind === "transfer") return { income: 0, spendNet: 0 };
-  if (t.income) return { income: t.amount, spendNet: 0 };
+  const isIncome = opts?.registryActive ? t.income && !!t.registeredPayer : t.income;
+  if (isIncome) return { income: t.amount, spendNet: 0 };
   return { income: 0, spendNet: -t.amount };
 }
 
@@ -44,17 +59,29 @@ export interface MonthStats {
   memberTotals: Map<string, number>;
 }
 
+/** Whether a txn classifies as income under the active semantics. */
+function flowIsIncome(
+  t: Pick<FlowTxn, "income" | "registeredPayer">,
+  opts?: FlowOpts
+): boolean {
+  return opts?.registryActive ? t.income && !!t.registeredPayer : t.income;
+}
+
 /** Fold one month's transactions into the dashboard aggregates. */
-export function foldMonthStats(txns: FlowTxn[]): MonthStats {
+export function foldMonthStats(txns: FlowTxn[], opts?: FlowOpts): MonthStats {
   const catTotals = new Map<string, number>();
   const memberTotals = new Map<string, number>();
   let income = 0;
   let spending = 0;
   for (const t of txns) {
-    const flow = flowOf(t);
-    income += flow.income;
-    if (t.isTransfer || t.catKind === "transfer" || t.income) continue;
-    const net = flow.spendNet;
+    if (t.isTransfer || t.catKind === "transfer") continue;
+    if (flowIsIncome(t, opts)) {
+      income += t.amount; // signed — a reversal reduces income
+      continue;
+    }
+    // Net spend: a charge adds, a refund (incl. an unregistered "income"
+    // deposit under registry semantics) subtracts — attributed to its category.
+    const net = -t.amount;
     spending += net;
     if (t.memberId) memberTotals.set(t.memberId, (memberTotals.get(t.memberId) || 0) + net);
     if (t.splits && t.splits.length) {

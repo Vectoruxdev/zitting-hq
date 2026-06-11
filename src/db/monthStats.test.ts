@@ -92,3 +92,39 @@ describe("foldMonthStats", () => {
     expect(r.spending).toBe(0);
   });
 });
+
+describe("registry-aware income (registryActive)", () => {
+  const opts = { registryActive: true };
+
+  it("registered payers count as income", () => {
+    expect(flowOf(txn({ amount: 4000, income: true, registeredPayer: true }), opts)).toEqual({ income: 4000, spendNet: 0 });
+  });
+
+  it("an unregistered positive deposit is a refund — nets spending down, never income", () => {
+    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false }), opts)).toEqual({ income: 0, spendNet: -75 });
+  });
+
+  it("with the registry EMPTY, the raw income flag keeps today's behavior", () => {
+    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false }), { registryActive: false })).toEqual({ income: 75, spendNet: 0 });
+    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false }))).toEqual({ income: 75, spendNet: 0 });
+  });
+
+  it("foldMonthStats: refund-from-unregistered-payer reduces its category's spend", () => {
+    const r = foldMonthStats(
+      [
+        txn({ amount: -100, categoryId: "shopping" }),
+        // Plaid-flagged "income" that's actually a card refund
+        txn({ amount: 40, income: true, registeredPayer: false, categoryId: "shopping" }),
+        txn({ amount: 4000, income: true, registeredPayer: true, categoryId: "income" }),
+      ],
+      opts
+    );
+    expect(r.income).toBe(4000);
+    expect(r.spending).toBe(60);
+    expect(r.catTotals.get("shopping")).toBe(60);
+  });
+
+  it("transfers stay excluded regardless of registry state", () => {
+    expect(flowOf(txn({ amount: 600, income: true, registeredPayer: true, isTransfer: true }), opts)).toEqual({ income: 0, spendNet: 0 });
+  });
+});
