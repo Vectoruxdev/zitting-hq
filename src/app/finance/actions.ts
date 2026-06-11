@@ -10,6 +10,8 @@ import { sendDigestPreview } from "@/db/digestSend";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 import { scanReceiptImage, isScanConfigured } from "@/lib/receiptScan";
 import { findReceiptMatch } from "@/db/receiptMatch";
+import { askMoneyCoach, buildCoachContext, isAskConfigured } from "@/lib/askAi";
+import { getFinanceData } from "@/db/queries";
 
 async function ensureOwner() {
   if (!isAuthConfigured) return; // local dev / no auth → allow
@@ -860,6 +862,33 @@ export async function saveReceiptLines(
   });
   refresh();
   return res;
+}
+
+// ---- Ask AI (money coach) ----
+
+/** Ask the money coach a question. Owner/partner only — the coach sees the
+ *  whole household. `turns` is the chat so far, ending with the new question.
+ *  Same ANTHROPIC_API_KEY as receipt scanning. */
+export async function askAi(turns: { role: string; text: string }[]) {
+  if (isAuthConfigured) {
+    const u = await getCurrentUser();
+    if (!u || (u.role !== "owner" && u.role !== "partner")) throw new Error("Not authorized");
+  }
+  if (!isAskConfigured()) {
+    return { ok: false as const, error: "The AI coach isn't connected yet — add the ANTHROPIC_API_KEY env var to turn it on." };
+  }
+  // Keep the conversation bounded: last 12 turns, each capped, ending on user.
+  const clean = (Array.isArray(turns) ? turns : [])
+    .filter((t) => t && typeof t.text === "string" && t.text.trim())
+    .slice(-12)
+    .map((t) => ({ role: (t.role === "user" ? "user" : "assistant") as "user" | "assistant", text: t.text.slice(0, 2000) }));
+  if (!clean.length || clean[clean.length - 1].role !== "user") {
+    return { ok: false as const, error: "Ask a question first." };
+  }
+  const data = await getFinanceData({ memberId: null, role: "owner" });
+  const text = await askMoneyCoach(buildCoachContext(data), clean);
+  if (!text) return { ok: false as const, error: "The coach couldn't answer that one — give it another try." };
+  return { ok: true as const, text };
 }
 
 /** Delete a receipt (row + stored image). Owner/partner, or the uploader. */
