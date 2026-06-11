@@ -370,8 +370,8 @@ function ZHQTransfers() {
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Tap the circle as you move each one — or it auto-checks when the transfer shows up in an import.</span>
               <Button variant="accent" size="sm" iconLeft={<Icon name="check" size={15} />} onClick={markAll} disabled={busy}>Mark all sent</Button>
             </div>
-            {upcoming.map((t) => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {upcoming.map((t, i) => (
+              <div key={t.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <ChecklistRow to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon}
                     state={t.state === 'auto' ? 'auto' : 'todo'}
@@ -397,8 +397,8 @@ function ZHQTransfers() {
         scheduled.length ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Set for a future date. Each moves to your Pending list and reminds you on its day. You can move one early or cancel it.</span>
-            {scheduled.map((t) => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {scheduled.map((t, i) => (
+              <div key={t.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <ChecklistRow to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon} state="todo" onToggle={() => mark(t, true)} />
                 </div>
@@ -415,8 +415,8 @@ function ZHQTransfers() {
         past.length ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Completed and detected transfers, newest first.</span>
-            {past.map((t) => (
-              <ChecklistRow key={t.id} to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon}
+            {past.map((t, i) => (
+              <ChecklistRow key={t.id ?? i} to={t.to} from={t.from} amount={t.amount} due={t.due} icon={t.icon}
                 state={t.state === 'auto' ? 'auto' : 'done'}
                 onToggle={t.detected || typeof t.id !== 'number' ? undefined : () => mark(t, false)} />
             ))}

@@ -185,7 +185,7 @@ function ZHQBudgets() {
             <span className="zt-eyebrow">Personal allowances</span><span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-3)', gap: 14 }}>
-            {allowances.map((b) => <ZHQAllowanceCard key={b.id} b={b} onEdit={openEdit} onDelete={remove} />)}
+            {allowances.map((b, i) => <ZHQAllowanceCard key={b.id ?? i} b={b} onEdit={openEdit} onDelete={remove} />)}
           </div>
         </div>
       ) : null}
@@ -197,12 +197,12 @@ function ZHQBudgets() {
           </div>
           <Card>
             <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-2)', gap: '20px 36px' }}>
-              {shared.map((b) => {
+              {shared.map((b, i) => {
                 const left = b.limit - b.spent;
                 const over = left < 0;
                 const near = !over && b.limit > 0 && left / b.limit <= 0.15;
                 return (
-                  <BudgetRow key={b.id} name={b.name} value={b.spent} max={b.limit}
+                  <BudgetRow key={b.id ?? i} name={b.name} value={b.spent} max={b.limit}
                     left={<Icon name={b.icon || 'pie'} size={15} style={{ color: 'var(--text-tertiary)' }} />}
                     right={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span className="zt-num" style={{ fontSize: 13.5, color: over ? 'var(--negative)' : near ? 'var(--warning)' : 'var(--text-secondary)' }}>{over ? `$${Math.abs(left).toLocaleString()} over` : `$${left.toLocaleString()} left`}</span>
