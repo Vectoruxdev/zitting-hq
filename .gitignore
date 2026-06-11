@@ -47,3 +47,6 @@ next-env.d.ts
 
 # QA screenshots (contain real financial data)
 .qa-screens/
+
+# editor-local settings
+.vscode/
