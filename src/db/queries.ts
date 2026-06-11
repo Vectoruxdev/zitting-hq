@@ -24,6 +24,7 @@ import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
 import { scoreCategory, type MemoryMap, type RuleLike } from "./categorize";
 import { projectGoal, canViewGoal } from "./savings";
 import { scrubForMemberView } from "./memberScrub";
+import { budgetSpent } from "./budgetMath";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -1116,9 +1117,11 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // category budgets pull from that category's spend, allowances from that
     // member's spend. Falls back to the stored column for untargeted rows.
     data.budgets = budgetRows.map((b) => {
-      let spent = n(b.spent);
-      if (b.categoryId) spent = catTotals.get(b.categoryId) || 0;
-      else if (b.memberId) spent = memberTotals.get(b.memberId) || 0;
+      const spent = budgetSpent(
+        { categoryId: b.categoryId, memberId: b.memberId, storedSpent: n(b.spent) },
+        catTotals,
+        memberTotals
+      );
       return {
         id: b.id,
         name: b.name,
@@ -1383,10 +1386,16 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const spent = memberTotals.get(mid) || 0;
       const remaining = allowance > 0 ? Math.max(0, allowance - spent) : 0;
       // The member's personal budgets (owner sets these to a person on Budgets).
+      // Same precedence as the owner Budgets screen (budgetSpent), so a budget
+      // shows the SAME number to the owner and the member.
       const myBudgets = budgetRows
         .filter((b) => b.memberId === mid)
         .map((b) => {
-          const bSpent = memberTotals.get(mid) || 0;
+          const bSpent = budgetSpent(
+            { categoryId: b.categoryId, memberId: b.memberId, storedSpent: n(b.spent) },
+            catTotals,
+            memberTotals
+          );
           const limit = n(b.limitAmount);
           return {
             id: b.id,
