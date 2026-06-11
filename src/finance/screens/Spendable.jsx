@@ -159,7 +159,7 @@ function ReceiptMatchSheet({ receipt, activity, onClose }) {
   async function pick(txnId) {
     if (!API.matchReceipt) return;
     setBusy(true);
-    try { await API.matchReceipt(receipt.id, txnId); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); onClose(); }
+    try { await API.matchReceipt(receipt.id, txnId); onClose(); }
     finally { setBusy(false); }
   }
   const Row = ({ t, highlight }) => (
@@ -211,9 +211,12 @@ function ZHQSpendable() {
   const [acctFilter, setAcctFilter] = React.useState('all'); // Activity account filter
   const [bulkUndo, setBulkUndo] = React.useState(() => (typeof window !== 'undefined' ? window.__ZHQ_BULK_UNDO || null : null));
 
+  // No router.refresh() after these actions: they revalidatePath("/finance")
+  // server-side, so the action response itself already carries the fresh page
+  // payload. A client refresh here would recompute everything a second time.
   async function run(id, fn) {
     setBusy(id);
-    try { await fn(); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); }
+    try { await fn(); }
     finally { setBusy(null); }
   }
   const pickCategory = (id, categoryId) => run(id, () => API.updateTransaction(id, { categoryId }, { learn: true }));
@@ -229,7 +232,6 @@ function ZHQSpendable() {
       const res = await API.applyBulkCategories(groups.map((g) => ({ ids: g.ids, categoryId: g.categoryId })));
       const count = groups.reduce((s, g) => s + g.ids.length, 0);
       setBulkSnap(res && res.undo ? { pairs: res.undo, count, label } : null);
-      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
     } finally { setBusy(null); }
   }
   const acceptGroup = (g) => applyGroups([{ ids: g.ids, categoryId: g.suggestion.categoryId }], `${g.merchant} → ${g.suggestion.name}`);
@@ -237,7 +239,7 @@ function ZHQSpendable() {
   async function undoBulk() {
     if (!bulkUndo || !API.restoreTransactionCategories) return;
     setBusy('bulk');
-    try { await API.restoreTransactionCategories(bulkUndo.pairs); setBulkSnap(null); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); }
+    try { await API.restoreTransactionCategories(bulkUndo.pairs); setBulkSnap(null); }
     finally { setBusy(null); }
   }
   const bulkGroups = (D.bulkGroups || []).filter((g) => g.unreviewed > 0 || g.uncategorized > 0);
@@ -269,7 +271,6 @@ function ZHQSpendable() {
         if (res.matchedTxnId != null) setSnapResult({ tone: 'good', text: `Matched${res.merchant ? ` — ${res.merchant}` : ''}${res.total != null ? ` · $${res.total.toFixed(2)}` : ''}. Receipt attached!` });
         else if (res.scanned) setSnapResult({ tone: 'mid', text: `Read it${res.merchant ? ` — ${res.merchant}` : ''}${res.total != null ? ` · $${res.total.toFixed(2)}` : ''}. Pick which purchase it belongs to below.`, receiptId: res.id });
         else setSnapResult({ tone: 'mid', text: 'Saved! Attach it to a purchase below.', receiptId: res.id });
-        window.ZHQ_REFRESH && window.ZHQ_REFRESH();
       }
     } catch {
       setSnapResult({ tone: 'bad', text: 'Upload failed — try again' });
