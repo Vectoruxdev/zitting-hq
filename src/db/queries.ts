@@ -25,6 +25,7 @@ import { scoreCategory, type MemoryMap, type RuleLike } from "./categorize";
 import { projectGoal, canViewGoal } from "./savings";
 import { scrubForMemberView } from "./memberScrub";
 import { budgetSpent } from "./budgetMath";
+import { flowOf, foldMonthStats, type FlowTxn } from "./monthStats";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -1042,41 +1043,30 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     data.statsMonth = targetDate.toLocaleString("en-US", { month: "long" });
 
     // Spending breakdown by category (current month, splits-aware) + per-member
-    // spend (for personal-allowance budgets).
-    const catTotals = new Map<string, number>();
-    const memberTotals = new Map<string, number>();
-    let monthSpending = 0;
-    let monthIncome = 0;
-    for (const t of txnRows) {
+    // spend (for personal-allowance budgets). Classification lives in
+    // monthStats.ts (flowOf/foldMonthStats — pure, unit-tested): income is
+    // summed SIGNED, refunds net spending down, transfers count as neither.
+    const toFlowTxn = (t: (typeof txnRows)[number]): FlowTxn => {
+      const splits = t.hasSplit ? splitsByTxn.get(t.id) : undefined;
+      return {
+        amount: n(t.amount),
+        income: t.income,
+        isTransfer: t.isTransfer,
+        catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
+        categoryId: t.categoryId,
+        memberId: t.memberId,
+        splits: splits?.length ? splits.map((sp) => ({ categoryId: sp.categoryId, amount: n(sp.amount) })) : null,
+      };
+    };
+    const monthTxns = txnRows.filter((t) => {
       const dt = parseDate(t.date as string | null);
-      if (!dt || monthKey(dt) !== targetKey) continue;
-      if (t.isTransfer) continue;
-      const amt = n(t.amount);
-      const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
-      if (cat?.kind === "transfer") continue;
-      if (t.income) {
-        // Genuine income only (a positive amount that ISN'T flagged income is a
-        // refund/reimbursement — handled below as negative spend, not income).
-        monthIncome += Math.abs(amt);
-      } else {
-        // net: +spend for a charge (amt<0), −spend for a refund (amt>0), so a
-        // return nets DOWN spending instead of inflating income.
-        const net = -amt;
-        monthSpending += net;
-        if (t.memberId) memberTotals.set(t.memberId, (memberTotals.get(t.memberId) || 0) + net);
-        const splits = splitsByTxn.get(t.id);
-        if (t.hasSplit && splits?.length) {
-          const sign = net >= 0 ? 1 : -1;
-          for (const sp of splits) {
-            const key = sp.categoryId || "uncategorized";
-            catTotals.set(key, (catTotals.get(key) || 0) + Math.abs(n(sp.amount)) * sign);
-          }
-        } else {
-          const key = t.categoryId || "uncategorized";
-          catTotals.set(key, (catTotals.get(key) || 0) + net);
-        }
-      }
-    }
+      return !!dt && monthKey(dt) === targetKey;
+    });
+    const monthStats = foldMonthStats(monthTxns.map(toFlowTxn));
+    const catTotals = monthStats.catTotals;
+    const memberTotals = monthStats.memberTotals;
+    const monthSpending = monthStats.spending;
+    const monthIncome = monthStats.income;
 
     // Cash-flow reconciliation for the target month (checking + savings only),
     // so the dashboard's numbers visibly add up: every cash-account transaction
@@ -1179,14 +1169,17 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const dt = parseDate(t.date as string | null);
       if (!dt) continue;
       const b = bucket.get(monthKey(dt));
-      if (!b || t.isTransfer) continue;
-      const cat = t.categoryId ? catById.get(t.categoryId) : undefined;
-      if (cat?.kind === "transfer") continue;
-      const amt = n(t.amount);
-      // income only for flagged income; non-income positives are refunds that
-      // net down spending (consistent with the stats loop above).
-      if (t.income) b.inc += Math.abs(amt);
-      else b.sp += -amt;
+      if (!b) continue;
+      // Same classification as the stats cards (flowOf): signed income;
+      // non-income positives are refunds that net down spending.
+      const flow = flowOf({
+        amount: n(t.amount),
+        income: t.income,
+        isTransfer: t.isTransfer,
+        catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
+      });
+      b.inc += flow.income;
+      b.sp += flow.spendNet;
     }
     for (const v of bucket.values()) {
       incomeArr.push(Math.round(v.inc));
