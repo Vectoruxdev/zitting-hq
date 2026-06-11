@@ -268,7 +268,18 @@ function ZHQSpendable() {
   const H = D.memberHome || null;
   const name = (H && H.name) || user.name || 'there';
 
-  const [tab, setTab] = React.useState('home');
+  // Restore the pre-refresh tab so a reload keeps the member where they were
+  // (Home / Activity / Review) instead of bouncing back to Home.
+  const [tab, setTab] = React.useState(() => {
+    try {
+      const t = typeof window !== 'undefined' ? window.sessionStorage.getItem('zhq-member-tab') : null;
+      return t === 'home' || t === 'activity' || t === 'categorize' ? t : 'home';
+    } catch { return 'home'; }
+  });
+  React.useEffect(() => {
+    try { window.sessionStorage.setItem('zhq-member-tab', tab); }
+    catch { /* storage blocked — losing the tab on refresh is fine */ }
+  }, [tab]);
   const [acctOpen, setAcctOpen] = React.useState(false); // account menu (Log out lives here)
   const [picker, setPicker] = React.useState(null); // txn id being categorized
   const [groupPicker, setGroupPicker] = React.useState(null); // merchant group being set
@@ -458,15 +469,25 @@ function ZHQSpendable() {
     <ZHQPhoneFrame>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 'max(8px, env(safe-area-inset-top)) 18px 24px' }}>
-          {/* header — tap to open the account menu (Log out lives there) */}
-          <button onClick={() => setAcctOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 18px', width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
-            <Avatar name={name} size="md" />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Welcome back</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-            </div>
-            <span style={{ flex: 'none', width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', color: 'var(--text-tertiary)' }}><Icon name="chevronDown" size={18} /></span>
-          </button>
+          {/* header — avatar/name opens the account menu; the grid button jumps
+              to the family dashboard (calendar, meals, groceries, …) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 18px' }}>
+            <button onClick={() => setAcctOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+              <Avatar name={name} size="md" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Welcome back</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+              </div>
+              <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', color: 'var(--text-tertiary)' }}><Icon name="chevronDown" size={18} /></span>
+            </button>
+            <button onClick={() => { window.location.href = '/'; }} title="Family HQ — calendar, meals, groceries" style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', border: '1px solid var(--border-hairline)', color: 'var(--accent)', cursor: 'pointer' }}>
+              <Icon name="grid" size={18} />
+            </button>
+          </div>
+
+          {/* receipt capture input — always mounted so the camera FAB works from
+              any tab; capture="environment" opens the camera directly on phones */}
+          <input ref={snapInput} type="file" accept="image/*" capture="environment" onChange={onSnap} style={{ display: 'none' }} />
 
           {!H ? (
             <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 14, lineHeight: 1.6 }}>
@@ -543,8 +564,7 @@ function ZHQSpendable() {
               ) : null}
 
               {/* snap a receipt — opens the camera on mobile, gets scanned + matched */}
-              <input ref={snapInput} type="file" accept="image/*" capture="environment" onChange={onSnap} style={{ display: 'none' }} />
-              <button onClick={() => snapInput.current && snapInput.current.click()} disabled={snapBusy} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left', opacity: snapBusy ? 0.6 : 1 }}>
+              <button onClick={() => snapInput.current && snapInput.current.click()} disabled={snapBusy} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--green-tint)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left', opacity: snapBusy ? 0.6 : 1 }}>
                 <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="camera" size={18} /></span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>{snapBusy ? 'Reading your receipt…' : 'Snap a receipt'}</span>
@@ -552,16 +572,6 @@ function ZHQSpendable() {
                 </span>
                 <Icon name="chevronRight" size={17} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
               </button>
-              {snapResult ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', marginTop: 10, borderRadius: 'var(--radius-md)', background: snapResult.tone === 'good' ? 'var(--green-glow)' : 'var(--surface-card)', border: `1px solid ${snapResult.tone === 'good' ? 'var(--green-tint)' : snapResult.tone === 'bad' ? 'var(--negative)' : 'var(--border-hairline)'}` }}>
-                  <Icon name={snapResult.tone === 'good' ? 'check' : snapResult.tone === 'bad' ? 'alert' : 'receipt'} size={16} style={{ color: snapResult.tone === 'good' ? 'var(--accent)' : snapResult.tone === 'bad' ? 'var(--negative)' : 'var(--text-secondary)', flex: 'none' }} />
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.4 }}>{snapResult.text}</span>
-                  {snapResult.receiptId ? (
-                    <Button variant="secondary" size="sm" onClick={() => { const r = myReceipts.find((x) => x.id === snapResult.receiptId); if (r) { setMatchSheet(r); setSnapResult(null); } }}>Pick</Button>
-                  ) : null}
-                  <button onClick={() => setSnapResult(null)} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={14} /></button>
-                </div>
-              ) : null}
 
               {/* receipts — tap a matched one for the item-by-item breakdown */}
               {myReceipts.length ? (
@@ -895,6 +905,26 @@ function ZHQSpendable() {
             </>
           )}
         </div>
+
+        {/* snap-result toast — floats over any tab so the scan outcome is never missed */}
+        {snapResult ? (
+          <div style={{ position: 'absolute', top: 'max(58px, calc(env(safe-area-inset-top) + 50px))', left: 14, right: 14, zIndex: 55, display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 'var(--radius-md)', background: snapResult.tone === 'good' ? 'var(--green-glow)' : 'var(--surface-card)', border: `1px solid ${snapResult.tone === 'good' ? 'var(--green-tint)' : snapResult.tone === 'bad' ? 'var(--negative)' : 'var(--border-hairline)'}`, boxShadow: 'var(--shadow-pop)' }}>
+            <Icon name={snapResult.tone === 'good' ? 'check' : snapResult.tone === 'bad' ? 'alert' : 'receipt'} size={16} style={{ color: snapResult.tone === 'good' ? 'var(--accent)' : snapResult.tone === 'bad' ? 'var(--negative)' : 'var(--text-secondary)', flex: 'none' }} />
+            <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.4 }}>{snapResult.text}</span>
+            {snapResult.receiptId ? (
+              <Button variant="secondary" size="sm" onClick={() => { const r = myReceipts.find((x) => x.id === snapResult.receiptId); if (r) { setMatchSheet(r); setSnapResult(null); } }}>Pick</Button>
+            ) : null}
+            <button onClick={() => setSnapResult(null)} style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={14} /></button>
+          </div>
+        ) : null}
+
+        {/* camera FAB — receipt capture from anywhere in the member app */}
+        {H ? (
+          <button onClick={() => snapInput.current && snapInput.current.click()} disabled={snapBusy} title="Snap a receipt"
+            style={{ position: 'absolute', right: 16, bottom: 'calc(92px + env(safe-area-inset-bottom))', zIndex: 40, width: 56, height: 56, borderRadius: 999, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent)', color: 'var(--text-on-accent, #06281a)', boxShadow: '0 10px 28px -8px rgba(63,208,127,0.65)', opacity: snapBusy ? 0.6 : 1 }}>
+            <Icon name="camera" size={24} />
+          </button>
+        ) : null}
 
         {/* bottom tab bar */}
         <div style={{ flex: 'none', height: 78, borderTop: '1px solid var(--border-hairline)', background: 'var(--bg-app)', display: 'flex', padding: '10px 12px 0', paddingBottom: 'env(safe-area-inset-bottom)' }}>

@@ -67,6 +67,26 @@ const ALIASES: Record<string, { route: string; tab: string }> = {
   receipts: { route: "settings", tab: "receipts" },
 };
 
+// Routes that may be restored after a page reload. The current position is
+// kept in sessionStorage so a refresh re-opens the same screen instead of
+// resetting to Overview; a brand-new tab/session still lands on the default.
+// "member" is the owner's view-as-member preview.
+const RESTORABLE_ROUTES = new Set([
+  "overview", "accounts", "transactions", "budgets", "transfers", "savings",
+  "income", "notifications", "ask", "settings", "member", "onboarding",
+]);
+function savedPosition(isMember: boolean): { route: string; tab: string | null } {
+  const fallback = { route: isMember ? "member" : "overview", tab: null as string | null };
+  if (isMember || typeof window === "undefined") return fallback;
+  try {
+    const route = sessionStorage.getItem("zhq-route");
+    if (!route || !RESTORABLE_ROUTES.has(route)) return fallback;
+    return { route, tab: sessionStorage.getItem("zhq-hub-tab") };
+  } catch {
+    return fallback; // storage blocked (private mode) — default position
+  }
+}
+
 // Expose the design-system namespace exactly as the screens expect it.
 if (typeof window !== "undefined") {
   w.ZittingHQDesignSystem_c9e528 = DS;
@@ -106,10 +126,12 @@ export default function FinanceApp({
 
   const router = useRouter();
   const isMember = role === "member";
-  const [route, setRoute] = React.useState(isMember ? "member" : "overview");
+  // Restore the pre-refresh position (sessionStorage); see savedPosition().
+  const saved = savedPosition(isMember);
+  const [route, setRoute] = React.useState(saved.route);
   // Active tab within a hub screen (Transactions/Transfers/Income/Settings).
   // Owned here (not in the hub) so alias navigations land on a specific tab.
-  const [hubTab, setHubTab] = React.useState<string | null>(null);
+  const [hubTab, setHubTab] = React.useState<string | null>(saved.tab);
   // True while a post-mutation router.refresh() is in flight. Drives the
   // topbar LoadingBar only — the current data stays on screen meanwhile.
   const [refreshing, startRefresh] = React.useTransition();
@@ -143,8 +165,8 @@ export default function FinanceApp({
   // go where we already are (otherwise loading would stick: the clearing
   // effect below only refires when route/hubTab actually change).
   const posRef = React.useRef<{ route: string; tab: string | null }>({
-    route: isMember ? "member" : "overview",
-    tab: null,
+    route: saved.route,
+    tab: saved.tab,
   });
 
   const setTab = React.useCallback((t: string) => {
@@ -163,6 +185,16 @@ export default function FinanceApp({
     setRoute(next.route);
     setHubTab(next.tab);
   }, []);
+
+  // Remember where the user is, so a refresh lands back on the same screen.
+  React.useEffect(() => {
+    if (isMember) return; // a member is always on Spendable (its own tab persists there)
+    try {
+      sessionStorage.setItem("zhq-route", route);
+      if (hubTab) sessionStorage.setItem("zhq-hub-tab", hubTab);
+      else sessionStorage.removeItem("zhq-hub-tab");
+    } catch { /* storage blocked — losing the position on refresh is fine */ }
+  }, [isMember, route, hubTab]);
 
   // boot splash sequence — long enough to cover the window-global bootstrap
   // and font swap on first paint, short enough not to feel like a gate.
