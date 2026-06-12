@@ -42,10 +42,19 @@ function CardHead({ icon, label, hint }: { icon: string; label: string; hint: st
       <span aria-hidden style={{ fontSize: 15, lineHeight: 1 }}>{icon}</span>
       <span className="zt-eyebrow">{label}</span>
       <span style={{ flex: 1 }} />
-      <span className="hq-card-open" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{hint} →</span>
+      {hint ? <span className="hq-card-open" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{hint} →</span> : null}
     </div>
   );
 }
+
+// Quick-action shortcuts — the common "add something" jumps. Universal for
+// every role; /finance lands on the member camera/receipt flow for members.
+const QUICK_ACTIONS = [
+  { icon: "📸", label: "Snap receipt", href: "/finance" },
+  { icon: "🛒", label: "Add to list", href: "/groceries" },
+  { icon: "🍽️", label: "Plan dinner", href: "/meals" },
+  { icon: "📅", label: "Add event", href: "/calendar" },
+];
 
 const DayChip = ({ chip }: { chip: string }) => (
   <span className="zt-num" style={{ flex: "none", width: 78, fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: chip === "Today" ? "var(--accent)" : "var(--text-tertiary)" }}>{chip}</span>
@@ -93,11 +102,71 @@ export default async function Home() {
       <main style={{ flex: 1, padding: "clamp(22px, 4vw, 44px) 18px 64px" }}>
         <div style={{ maxWidth: 1060, margin: "0 auto" }}>
           {/* greeting */}
-          <div style={{ marginBottom: "clamp(20px, 3.5vw, 32px)" }}>
+          <div style={{ marginBottom: 18 }}>
             <p className="zt-eyebrow" style={{ marginBottom: 10 }}>{familyDateLabel()}</p>
             <h1 style={{ fontSize: "clamp(26px, 4vw, 34px)", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--text-primary)", lineHeight: 1.15 }}>
               {greeting}, {firstName}.
             </h1>
+          </div>
+
+          {/* quick actions — the most common "add something" jumps. Scrolls
+              horizontally on phones instead of wrapping. */}
+          <div className="zhq-hscroll" style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, marginBottom: 16 }}>
+            {QUICK_ACTIONS.map((a) => (
+              <Link key={a.href + a.label} href={a.href} className="hq-quick" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 9, padding: "11px 16px", borderRadius: "var(--radius-pill, 999px)", border: "1px solid var(--border-hairline)", background: "var(--surface-card)", color: "var(--text-primary)", fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", textDecoration: "none" }}>
+                <span aria-hidden style={{ fontSize: 17 }}>{a.icon}</span>
+                {a.label}
+              </Link>
+            ))}
+          </div>
+
+          {/* action zone — Today's agenda + what needs doing */}
+          <div className="hq-grid" style={{ marginBottom: 16 }}>
+            {/* Today */}
+            <div className="hq-card hq-static" style={{ ...cardStyle(3) }}>
+              <CardHead icon="🗓️" label="Today" hint="" />
+              {d.today.events.length || d.today.dinner ? (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {d.today.events.map((ev, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 9, padding: "7px 0", borderBottom: "1px solid var(--border-hairline)" }}>
+                      <span className="zt-num" style={{ flex: "none", width: 58, fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)" }}>{ev.time || "All day"}</span>
+                      <span style={{ flex: "none", width: 7, height: 7, borderRadius: 999, background: ev.color, position: "relative", top: -1 }} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</span>
+                    </div>
+                  ))}
+                  {d.today.dinner ? (
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 9, padding: "7px 0" }}>
+                      <span className="zt-num" style={{ flex: "none", width: 58, fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)" }}>Dinner</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)" }}>{d.today.dinner.emoji ? `${d.today.dinner.emoji} ` : ""}{d.today.dinner.name}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p style={{ fontSize: 13.5, color: "var(--text-tertiary)", lineHeight: 1.55 }}>
+                  Nothing on the agenda today{d.calendar.feedCount ? "" : " — connect a calendar to see events"}.
+                </p>
+              )}
+            </div>
+
+            {/* Needs attention */}
+            <div className="hq-card hq-static" style={{ ...cardStyle(3) }}>
+              <CardHead icon="✅" label="Needs attention" hint="" />
+              {d.needsAttention.length ? (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {d.needsAttention.map((it, i) => (
+                    <Link key={it.key} href={it.href} className="hq-attn-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 2px", textDecoration: "none", borderBottom: i < d.needsAttention.length - 1 ? "1px solid var(--border-hairline)" : "none" }}>
+                      <span style={{ flex: "none", width: 7, height: 7, borderRadius: 999, background: it.tone === "accent" ? "var(--accent)" : "var(--warning)" }} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)" }}>{it.label}</span>
+                      <span style={{ flex: "none", color: "var(--text-tertiary)", fontSize: 15 }}>›</span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: "var(--accent)" }}>
+                  ✓ All caught up — nothing needs you right now.
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="hq-grid">

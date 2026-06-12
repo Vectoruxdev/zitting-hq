@@ -62,6 +62,9 @@ export interface DashboardData {
     memberUnlocked?: boolean;
     memberToReview?: number;
     monthLabel?: string;
+    // counts feeding the Needs-attention list (owner/partner only)
+    billsDueSoon?: number;
+    billsChanged?: number;
   };
   meals: {
     tonight: { name: string; emoji: string | null; note: string | null } | null;
@@ -72,6 +75,13 @@ export interface DashboardData {
     events: { chip: string; dateISO: string; title: string; time: string | null; color: string }[];
     feedCount: number;
   };
+  // Today's glance — events happening today + tonight's dinner.
+  today: {
+    events: { title: string; time: string | null; color: string }[];
+    dinner: { name: string; emoji: string | null } | null;
+  };
+  // Consolidated "what needs doing" — each item links straight to the fix.
+  needsAttention: { key: string; label: string; href: string; tone: "warn" | "accent" }[];
 }
 
 const FEED_COLORS = ["var(--accent)", "var(--indigo-500)", "var(--amber-500)", "var(--data-2, #7c8cf8)", "var(--gray-500)"];
@@ -88,7 +98,33 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
     groceriesSection(),
     calendarSection(todayISO),
   ]);
-  return { todayISO, finance, meals, groceries, calendar };
+
+  // Today's glance — calendar events whose chip is "Today" + tonight's dinner.
+  const today: DashboardData["today"] = {
+    events: calendar.events.filter((e) => e.chip === "Today").map((e) => ({ title: e.title, time: e.time, color: e.color })),
+    dinner: meals.tonight ? { name: meals.tonight.name, emoji: meals.tonight.emoji } : null,
+  };
+
+  // Needs attention — the household's (or member's) open action items, each a
+  // deep link. Ordered most-urgent first.
+  const needsAttention: DashboardData["needsAttention"] = [];
+  if (viewer.role === "member") {
+    if (finance.memberToReview)
+      needsAttention.push({ key: "review", label: `${finance.memberToReview} purchase${finance.memberToReview === 1 ? "" : "s"} to review`, href: "/finance", tone: "warn" });
+  } else {
+    if (finance.transfersPending)
+      needsAttention.push({ key: "transfers", label: `${finance.transfersPending} transfer${finance.transfersPending === 1 ? "" : "s"} ready · ${finance.transfersPendingTotal}`, href: "/finance", tone: "accent" });
+    if (finance.toReview)
+      needsAttention.push({ key: "review", label: `${finance.toReview} transaction${finance.toReview === 1 ? "" : "s"} to review`, href: "/finance", tone: "warn" });
+    if (finance.billsChanged)
+      needsAttention.push({ key: "bills-changed", label: `${finance.billsChanged} bill${finance.billsChanged === 1 ? "" : "s"} changed amount`, href: "/finance", tone: "warn" });
+    if (finance.billsDueSoon)
+      needsAttention.push({ key: "bills-due", label: `${finance.billsDueSoon} bill${finance.billsDueSoon === 1 ? "" : "s"} due this week`, href: "/finance", tone: "warn" });
+  }
+  if (groceries.lowCount)
+    needsAttention.push({ key: "pantry", label: `${groceries.lowCount} item${groceries.lowCount === 1 ? "" : "s"} running low`, href: "/groceries", tone: "warn" });
+
+  return { todayISO, finance, meals, groceries, calendar, today, needsAttention };
 }
 
 async function financeSection(viewer: Viewer): Promise<DashboardData["finance"]> {
@@ -118,6 +154,11 @@ async function financeSection(viewer: Viewer): Promise<DashboardData["finance"]>
       finance.toReview = Array.isArray(d.txns) ? d.txns.filter((t: any) => !t.reviewed).length : 0;
       finance.spendTrend = d.trend?.spending ?? [];
       finance.monthLabel = new Date().toLocaleDateString("en-US", { timeZone: TZ, month: "long" });
+      // Detected recurring bills carry a badge: "due soon" (within ~7 days) or
+      // "changed" (amount moved). Feed both into Needs-attention.
+      const bills = Array.isArray(d.bills) ? d.bills : [];
+      finance.billsDueSoon = bills.filter((b: any) => b.badge === "due soon").length;
+      finance.billsChanged = bills.filter((b: any) => b.badge === "changed").length;
     }
   } catch {
     /* finance card renders its empty state */

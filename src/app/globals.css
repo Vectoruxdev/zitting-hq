@@ -229,6 +229,39 @@ body {
   /* the cards span columns on desktop; collapse cleanly on phones */
   .hq-grid > * { grid-column: auto !important; }
 }
+/* Quick-action pills */
+.hq-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background var(--dur-fast, 140ms) ease, border-color var(--dur-fast, 140ms) ease, transform var(--dur-fast, 140ms) ease;
+}
+.hq-quick:hover {
+  background: var(--surface-hover);
+  border-color: var(--green-tint, rgba(63, 208, 127, 0.35));
+  transform: translateY(-1px);
+}
+/* Needs-attention rows */
+.hq-attn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 2px;
+  text-decoration: none;
+  transition: padding-left var(--dur-fast, 140ms) ease;
+}
+.hq-attn-row:hover {
+  padding-left: 6px;
+}
 .hq-skel {
   animation: hq-skel-pulse 1.4s ease-in-out infinite;
 }
