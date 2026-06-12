@@ -13,7 +13,7 @@ import { computeMemberProgress } from "./allowance";
 import { computePerfAllowance } from "./perfAllowance";
 import { channelsFor, mergePrefs } from "./notifyPrefs";
 import { findExactDuplicates } from "./dedupe";
-import { dedupeKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
+import { dedupeKey, contentDupKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
 import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./schedule";
@@ -255,6 +255,30 @@ export async function updateAccount(
 export async function deleteAccount(id: string) {
   const database = requireDb();
   await database.transaction(async (tx) => {
+    // Everything that references this account (or its transactions) has to be
+    // detached or removed first — none of these FKs cascade, so skipping any of
+    // them aborts the whole delete with an FK violation.
+    const txnIds = tx
+      .select({ id: s.transactions.id })
+      .from(s.transactions)
+      .where(eq(s.transactions.accountId, id));
+    // Transfer instances completed by one of this account's transactions keep
+    // their history but lose the txn link; partner legs of detected transfer
+    // pairs are unlinked (autoLinkTransfers re-pairs whatever still matches).
+    await tx.update(s.transferInstances).set({ completedTxnId: null }).where(inArray(s.transferInstances.completedTxnId, txnIds));
+    await tx.update(s.transactions).set({ transferPairId: null }).where(inArray(s.transactions.transferPairId, txnIds));
+    // Rules and suggestions routed through this account are meaningless without it.
+    await tx.delete(s.transferInstances).where(or(eq(s.transferInstances.fromAccountId, id), eq(s.transferInstances.toAccountId, id)));
+    await tx.delete(s.allocationRules).where(or(eq(s.allocationRules.fromAccountId, id), eq(s.allocationRules.toAccountId, id)));
+    await tx.delete(s.allowanceSplits).where(eq(s.allowanceSplits.toAccountId, id));
+    await tx.delete(s.allowanceRules).where(or(eq(s.allowanceRules.fromAccountId, id), eq(s.allowanceRules.toAccountId, id)));
+    // Optional links elsewhere just drop the account reference.
+    await tx.update(s.incomeSources).set({ accountId: null }).where(eq(s.incomeSources.accountId, id));
+    await tx.update(s.expectedIncome).set({ accountId: null }).where(eq(s.expectedIncome.accountId, id));
+    await tx.update(s.savingsGoals).set({ accountId: null }).where(eq(s.savingsGoals.accountId, id));
+    await tx.update(s.savingsContributions).set({ accountId: null }).where(eq(s.savingsContributions.accountId, id));
+    await tx.update(s.columnMappingTemplates).set({ accountId: null }).where(eq(s.columnMappingTemplates.accountId, id));
+    await tx.delete(s.plaidAccounts).where(eq(s.plaidAccounts.accountId, id));
     await tx.delete(s.transactions).where(eq(s.transactions.accountId, id));
     await tx.delete(s.importBatches).where(eq(s.importBatches.accountId, id));
     await tx.delete(s.accountMembers).where(eq(s.accountMembers.accountId, id));
@@ -397,19 +421,39 @@ export async function commitImport(args: {
   // exactly what's already stored; existing records are kept). The server is
   // authoritative — even if the client preview is stale or a duplicate row was
   // force-included, this is where the final decision is made.
+  // Existing rows are ALSO counted by content key (date+amount+merchant): a
+  // re-linked Plaid item reissues transaction_ids for the same history, so the
+  // id-based hash alone would re-import the whole account (seen live: Jared
+  // Checking doubled Mar–Jun 2026). Content keys catch that second backfill.
   const existingRows = await database
-    .select({ h: s.transactions.dedupeHash })
+    .select({
+      h: s.transactions.dedupeHash,
+      date: s.transactions.date,
+      amount: s.transactions.amount,
+      merchant: s.transactions.merchant,
+    })
     .from(s.transactions)
     .where(eq(s.transactions.accountId, args.accountId));
   const existingCounts = new Map<string, number>();
+  const existingContentCounts = new Map<string, number>();
   for (const r of existingRows) {
     if (r.h) existingCounts.set(r.h, (existingCounts.get(r.h) || 0) + 1);
+    if (r.date) {
+      const ck = contentDupKey({ date: String(r.date), amount: Number(r.amount ?? 0), merchant: r.merchant ?? "", accountId: args.accountId });
+      existingContentCounts.set(ck, (existingContentCounts.get(ck) || 0) + 1);
+    }
   }
   const keyed = args.rows.map((r) => ({
     row: r,
     dedupeKey: dedupeKey({ externalId: r.externalId, date: r.date, amount: r.amount, merchant: r.merchant, accountId: args.accountId }),
+    // Content fallback only for id-keyed rows — for rows without an externalId
+    // the primary key IS the content key, so adding it again would let two
+    // different incoming rows consume the same stored row twice.
+    contentKey: r.externalId && r.externalId.trim()
+      ? contentDupKey({ date: r.date, amount: r.amount, merchant: r.merchant, accountId: args.accountId })
+      : null,
   }));
-  const decided = markDuplicates(keyed, existingCounts);
+  const decided = markDuplicates(keyed, existingCounts, existingContentCounts);
 
   const batchId = crypto.randomUUID();
   const inserts: (typeof s.transactions.$inferInsert)[] = [];
@@ -1463,7 +1507,7 @@ export async function maybeGeneratePerCheckAllowance(txnId: number) {
     })
     .from(s.transactions)
     .where(eq(s.transactions.id, txnId));
-  if (!t || !t.income || t.isTransfer) return { ok: true as const, created: 0 };
+  if (!t || !t.income || t.isTransfer || Number(t.amount ?? 0) <= 0) return { ok: true as const, created: 0 };
   // The earner is whoever owns this payer in the income registry (not txn attribution).
   const owner = (await activeIncomeSources()).find((src) => src.matchKey === extractMerchant(t.merchant))?.memberId ?? null;
   if (!owner) return { ok: true as const, created: 0 };
@@ -1472,16 +1516,19 @@ export async function maybeGeneratePerCheckAllowance(txnId: number) {
     .from(s.allowanceRules)
     .where(and(eq(s.allowanceRules.memberId, owner), eq(s.allowanceRules.period, "per_paycheck"), eq(s.allowanceRules.enabled, true)))
     .catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
-  const rule = rules[0];
-  if (!rule) return { ok: true as const, created: 0 };
-  const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
-  if (keys && keys.length && !keys.includes(extractMerchant(t.merchant))) return { ok: true as const, created: 0 };
-  return generateAllowanceTransfers({
-    ruleId: rule.id,
-    periodKey: `check:${txnId}`,
-    income: Number(t.amount ?? 0),
-    plannedDate: (t.date as string | null) ?? null,
-  });
+  let created = 0;
+  for (const rule of rules) {
+    const keys = (rule.incomeMatchKeys as string[] | null) ?? null;
+    if (keys && keys.length && !keys.includes(extractMerchant(t.merchant))) continue;
+    const res = await generateAllowanceTransfers({
+      ruleId: rule.id,
+      periodKey: `check:${txnId}`,
+      income: Number(t.amount ?? 0),
+      plannedDate: (t.date as string | null) ?? null,
+    });
+    created += res.created;
+  }
+  return { ok: true as const, created };
 }
 
 /** Owner: create or update an allowance rule + its splits (delete-then-insert). */

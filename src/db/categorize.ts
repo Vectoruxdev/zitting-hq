@@ -403,6 +403,22 @@ export function dedupeKey(args: {
   if (args.externalId && args.externalId.trim()) {
     return `ext:${args.accountId ?? ""}:${args.externalId.trim()}`;
   }
+  return contentDupKey(args);
+}
+
+/**
+ * Content-identity key (account + date + amount + normalized merchant). This is
+ * the no-externalId form of `dedupeKey`, exported separately so imports can
+ * also catch a re-linked bank feed: Plaid issues brand-new transaction_ids for
+ * the same history, so id-based keys see "new" rows even though the content is
+ * already stored.
+ */
+export function contentDupKey(args: {
+  date: string;
+  amount: number;
+  merchant: string;
+  accountId?: string | null;
+}): string {
   return [args.accountId ?? "", args.date, args.amount.toFixed(2), normalizeMerchant(args.merchant)].join("|");
 }
 
@@ -418,23 +434,41 @@ export type DupReason = "exists" | "file" | null;
  *     overlapping date ranges skip exactly what's already stored (no double
  *     count) while genuinely new rows in the overlap window still import.
  *   - "file": an exact repeat of an earlier row in the same file.
+ *
+ * Rows may also carry a `contentKey` (account+date+amount+merchant). When the
+ * id-based key misses but the content key matches a stored row (consumed
+ * one-for-one, same multiset semantics), the row is still "exists" — this is
+ * what stops a re-linked Plaid item (new transaction_ids, same history) or a
+ * CSV-after-Plaid overlap from double-importing an account's history. Content
+ * matching is only consulted against EXISTING rows, never within the file, so
+ * two genuinely identical same-day purchases arriving together both import.
  */
-export function markDuplicates<T extends { dedupeKey: string }>(
+export function markDuplicates<T extends { dedupeKey: string; contentKey?: string | null }>(
   rows: T[],
-  existingCounts: Record<string, number> | Map<string, number>
+  existingCounts: Record<string, number> | Map<string, number>,
+  existingContentCounts?: Record<string, number> | Map<string, number>
 ): { row: T; duplicate: boolean; reason: DupReason }[] {
-  const countOf = (k: string) =>
-    existingCounts instanceof Map ? existingCounts.get(k) || 0 : existingCounts[k] || 0;
+  const countIn = (m: Record<string, number> | Map<string, number> | undefined, k: string) =>
+    m == null ? 0 : m instanceof Map ? m.get(k) || 0 : m[k] || 0;
   const consumed = new Map<string, number>();
+  const contentConsumed = new Map<string, number>();
   const seenInFile = new Set<string>();
   return rows.map((row) => {
     const k = row.dedupeKey;
     const used = consumed.get(k) || 0;
-    if (used < countOf(k)) {
+    if (used < countIn(existingCounts, k)) {
       consumed.set(k, used + 1);
       return { row, duplicate: true, reason: "exists" as const };
     }
     if (seenInFile.has(k)) return { row, duplicate: true, reason: "file" as const };
+    const ck = row.contentKey;
+    if (ck) {
+      const cUsed = contentConsumed.get(ck) || 0;
+      if (cUsed < countIn(existingContentCounts, ck)) {
+        contentConsumed.set(ck, cUsed + 1);
+        return { row, duplicate: true, reason: "exists" as const };
+      }
+    }
     seenInFile.add(k);
     return { row, duplicate: false, reason: null };
   });

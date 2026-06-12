@@ -460,6 +460,9 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       return {
         id: t.id,
         date: dt ? dayLabel(dt) : t.dateLabel ?? "",
+        // Raw ISO date (YYYY-MM-DD) — `date` above is a display label, so any
+        // programmatic filtering (MCP month filter) must use this instead.
+        isoDate: (t.date as string | null) ?? null,
         merchant: t.merchant,
         // Full raw bank text when richer than the cleaned merchant name.
         description: t.description ?? null,

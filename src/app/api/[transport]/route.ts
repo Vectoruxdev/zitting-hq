@@ -97,7 +97,7 @@ const baseHandler = createMcpHandler(
             .reverse()
             .slice(start, start + (limit ?? 50))
             .map((t) => ({
-              id: t.id, date: t.date, merchant: t.merchant, amount: t.amt, category: t.cat,
+              id: t.id, date: t.date, isoDate: t.isoDate, merchant: t.merchant, amount: t.amt, category: t.cat,
               categoryId: t.categoryId, who: t.who, memberId: t.memberId, account: t.account,
               accountId: t.accountId, income: t.income, isTransfer: t.isTransfer, reviewed: t.reviewed,
             }));
@@ -131,6 +131,19 @@ const baseHandler = createMcpHandler(
       "list_income",
       { description: "Detected recurring income streams (paychecks, etc.).", inputSchema: {} },
       guard(async () => ok((await getFinanceData()).incomeStreams || []))
+    );
+    server.registerTool(
+      "list_allowance_rules",
+      {
+        description:
+          "Performance-allowance rules (income goal, base/min, bonus type, bonus splits between members) with a live current-month preview of computed payouts, plus the curated income registry (which payers count as whose income). Use this to verify allowance + bonus config is set up and firing.",
+        inputSchema: {},
+      },
+      guard(async () => {
+        const d = await getFinanceData();
+        const income = d.income as { sources?: unknown[] } | undefined;
+        return ok({ rules: d.allowanceRules || [], incomeRegistry: income?.sources || [] });
+      })
     );
     server.registerTool(
       "list_transfers",

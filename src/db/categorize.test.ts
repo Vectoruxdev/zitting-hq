@@ -293,3 +293,56 @@ describe("markDuplicates (multiset-aware import dedup)", () => {
     expect(flags(r)).toEqual(["exists", "new"]);
   });
 });
+
+describe("markDuplicates content fallback (re-linked Plaid item)", () => {
+  const flags = (r: ReturnType<typeof markDuplicates>) => r.map((x) => (x.duplicate ? x.reason : "new"));
+
+  it("skips a re-linked backfill: new ext ids, content already stored", () => {
+    // Account history was imported under item A; re-link created item B which
+    // re-sends the same transactions with brand-new transaction_ids.
+    const incoming = [
+      { dedupeKey: "ext:acc:B1", contentKey: "acc|2026-06-03|3265.49|adp payroll" },
+      { dedupeKey: "ext:acc:B2", contentKey: "acc|2026-06-04|-544.00|dockstader katel" },
+      { dedupeKey: "ext:acc:B3", contentKey: "acc|2026-06-10|-19.54|netflix" }, // genuinely new
+    ];
+    const r = markDuplicates(
+      incoming,
+      { "ext:acc:A1": 1, "ext:acc:A2": 1 },
+      { "acc|2026-06-03|3265.49|adp payroll": 1, "acc|2026-06-04|-544.00|dockstader katel": 1 }
+    );
+    expect(flags(r)).toEqual(["exists", "exists", "new"]);
+  });
+
+  it("consumes content twins one-for-one (1 stored, 2 incoming → second imports)", () => {
+    const incoming = [
+      { dedupeKey: "ext:acc:B1", contentKey: "acc|2026-06-05|-5.00|coffee" },
+      { dedupeKey: "ext:acc:B2", contentKey: "acc|2026-06-05|-5.00|coffee" },
+    ];
+    const r = markDuplicates(incoming, {}, { "acc|2026-06-05|-5.00|coffee": 1 });
+    expect(flags(r)).toEqual(["exists", "new"]);
+  });
+
+  it("never content-dedupes within the same file (two real same-day purchases)", () => {
+    const incoming = [
+      { dedupeKey: "ext:acc:B1", contentKey: "acc|2026-06-05|-5.00|coffee" },
+      { dedupeKey: "ext:acc:B2", contentKey: "acc|2026-06-05|-5.00|coffee" },
+    ];
+    const r = markDuplicates(incoming, {}, {});
+    expect(flags(r)).toEqual(["new", "new"]);
+  });
+
+  it("prefers the id key: same ext id stays 'exists' regardless of content", () => {
+    const incoming = [{ dedupeKey: "ext:acc:A1", contentKey: "acc|2026-06-05|-5.00|coffee" }];
+    const r = markDuplicates(incoming, { "ext:acc:A1": 1 }, {});
+    expect(flags(r)).toEqual(["exists"]);
+  });
+
+  it("rows without a contentKey keep the original behavior", () => {
+    const r = markDuplicates(
+      [{ dedupeKey: "ext:acc:B9" }],
+      {},
+      { "acc|2026-06-05|-5.00|coffee": 1 }
+    );
+    expect(flags(r)).toEqual(["new"]);
+  });
+});
