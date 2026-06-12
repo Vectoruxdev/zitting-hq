@@ -1,6 +1,6 @@
 {
   "crons": [
-    { "path": "/api/plaid/cron-sync", "schedule": "0 8 * * *" },
+    { "path": "/api/plaid/cron-sync", "schedule": "0 */6 * * *" },
     { "path": "/api/transfers/cron", "schedule": "0 13 * * *" },
     { "path": "/api/digest/cron", "schedule": "0 14 * * *" }
   ]

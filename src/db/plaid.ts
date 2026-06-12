@@ -14,29 +14,14 @@ import * as s from "./schema";
 import { getPlaid, PLAID_PRODUCTS, PLAID_COUNTRY_CODES, PLAID_WEBHOOK_URL } from "@/lib/plaid";
 import { commitImport, suggestCategories, createNotification } from "./mutations";
 import { looksLikeTransfer, dedupeKey } from "./categorize";
+import { mapAccountType, signedBankBalance } from "./accountType";
 
 function requireDb() {
   if (!db) throw new Error("Database not configured");
   return db;
 }
 
-/**
- * Map a Plaid account type/subtype to our 3 buckets (checking | savings |
- * credit). Credit cards and loans are debt; savings/CD/money-market/HSA and
- * investment accounts are treated as savings-side assets; everyday spending
- * accounts are checking. We don't have a dedicated investment bucket, so
- * investments land in savings (an asset) rather than checking.
- */
-function mapAccountType(type: string, subtype: string | null | undefined): string {
-  const sub = (subtype || "").toLowerCase();
-  if (type === "credit" || type === "loan") return "credit";
-  if (type === "investment" || type === "brokerage") return "savings";
-  if (type === "depository") {
-    const savingsLike = ["savings", "cd", "money market", "hsa", "prepaid"];
-    return savingsLike.includes(sub) ? "savings" : "checking";
-  }
-  return "checking";
-}
+// Pure type/sign helpers live in ./accountType (dependency-free + unit-tested).
 
 /** Create a short-lived link_token to open Plaid Link on the client. */
 export async function createLinkToken(clientUserId: string): Promise<string> {
@@ -337,16 +322,27 @@ export async function syncItem(itemId: string) {
     if (!p.accountId) continue;
     const bankBal = balanceByPlaid.get(p.plaidAccountId);
     if (bankBal == null) continue;
+    // Plaid reports credit-card and loan balances as a POSITIVE "amount owed".
+    // We store debt as NEGATIVE so net worth subtracts it and signs stay
+    // consistent across every card/loan (depository balances pass through).
+    // Without this, a $30k auto loan and credit-card debt show up as positive
+    // assets and inflate net worth. mapAccountType buckets credit+loan as
+    // "credit"; p.type/p.subtype are the raw Plaid values.
+    const isDebt = mapAccountType(p.type ?? "", p.subtype) === "credit";
+    const signedBank = signedBankBalance(p.type ?? "", p.subtype, bankBal);
     const balRows = await database
       .select({ a: s.transactions.amount })
       .from(s.transactions)
       .where(eq(s.transactions.accountId, p.accountId));
     const net = balRows.reduce((sum, r) => sum + Number(r.a ?? 0), 0);
-    // Core reconcile: displayed (current) balance = opening + net.
-    await database.update(s.accounts).set({ balance: String(bankBal - net) }).where(eq(s.accounts.id, p.accountId));
-    // Available snapshot (point-in-time, not derived). Written separately + defensively
-    // so a not-yet-migrated `available_balance` column can't break the core sync above.
-    const avail = availableByPlaid.get(p.plaidAccountId);
+    // Core reconcile: displayed (current) balance = opening + net = signedBank.
+    await database.update(s.accounts).set({ balance: String(signedBank - net) }).where(eq(s.accounts.id, p.accountId));
+    // Available snapshot (point-in-time, not derived). For depository accounts
+    // this is spendable cash; for credit it's available credit, so only keep it
+    // on non-debt accounts (a credit "available" isn't cash and must never feed
+    // a cash/coverage total). Written separately + defensively so a
+    // not-yet-migrated `available_balance` column can't break the core sync.
+    const avail = isDebt ? null : availableByPlaid.get(p.plaidAccountId);
     await database
       .update(s.accounts)
       .set({ availableBalance: avail != null ? String(avail) : null })
