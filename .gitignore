@@ -50,3 +50,6 @@ next-env.d.ts
 
 # editor-local settings
 .vscode/
+
+# Claude Code personal settings (per-user allow-list)
+.claude/settings.local.json
