@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { MODULES } from "@/lib/modules";
 import { signOut } from "@/app/login/actions";
 import { isAuthConfigured } from "@/lib/supabase/server";
 
@@ -15,52 +14,19 @@ export function SiteHeader() {
         borderBottom: "1px solid var(--border-hairline)",
       }}
     >
+      {/* The logo is the only header nav — it returns to the dashboard, where
+          the cards are the navigation. */}
       <Link
         href="/"
-        style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", whiteSpace: "nowrap" }}
+        title="Family HQ home"
+        style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, whiteSpace: "nowrap" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/finance/mark.svg" width={28} height={28} alt="" style={{ borderRadius: 8 }} />
-        <span className="zt-wordmark zhq-desktop-only" style={{ fontSize: 20, color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+        <span className="zt-wordmark" style={{ fontSize: 20, color: "var(--text-primary)", whiteSpace: "nowrap" }}>
           Zitting <span style={{ color: "var(--accent)" }}>HQ</span>
         </span>
       </Link>
-      {/* module nav scrolls horizontally on phones instead of wrapping/clipping */}
-      <nav className="zhq-hscroll" style={{ display: "flex", alignItems: "center", gap: 2, overflowX: "auto", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
-        <Link
-          href="/"
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            padding: "7px 12px",
-            borderRadius: "var(--radius-sm, 10px)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          Home
-        </Link>
-        {MODULES.map((m) => {
-          const active = m.status === "active";
-          return (
-            <Link
-              key={m.slug}
-              href={active ? `/${m.slug}` : "/"}
-              aria-disabled={!active}
-              style={{
-                fontSize: 14,
-                fontWeight: 500,
-                padding: "7px 12px",
-                borderRadius: "var(--radius-sm, 10px)",
-                color: active ? "var(--text-secondary)" : "var(--text-tertiary)",
-                pointerEvents: active ? undefined : "none",
-                opacity: active ? 1 : 0.6,
-              }}
-            >
-              {m.name}
-            </Link>
-          );
-        })}
-      </nav>
       {isAuthConfigured && (
         <form action={signOut}>
           <button
