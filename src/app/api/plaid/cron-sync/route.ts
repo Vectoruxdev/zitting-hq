@@ -21,7 +21,9 @@ export async function GET(req: Request) {
   }
   try {
     const res = await syncAllItems();
-    return NextResponse.json(res);
+    // Per-bank failures surface as a 500 so Vercel's cron monitoring flags the
+    // run instead of recording a green check over a bank that didn't sync.
+    return NextResponse.json(res, { status: res.ok ? 200 : 500 });
   } catch (e) {
     console.error("[plaid cron] sync failed", e);
     return NextResponse.json({ ok: false, error: true }, { status: 500 });

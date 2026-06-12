@@ -472,6 +472,11 @@ function ZHQConnectedBanks() {
               <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>
                 {b.lastSyncedAt ? `Last synced ${new Date(b.lastSyncedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Not synced yet'}
               </div>
+              {b.status !== 'good' && b.error ? (
+                <div style={{ fontSize: 11.5, color: 'var(--warning)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.error}>
+                  {b.error}
+                </div>
+              ) : null}
             </div>
             {b.status !== 'good' ? <Badge tone="warning" size="sm">{b.status === 'login_required' ? 'Reconnect' : 'Error'}</Badge> : <Badge tone="positive" size="sm">Active</Badge>}
             <button onClick={() => disconnect(b.itemId, b.institutionName)} disabled={busy === b.itemId} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-tertiary)', font: 'inherit' }}>

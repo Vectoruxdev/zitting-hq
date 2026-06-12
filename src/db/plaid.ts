@@ -158,8 +158,27 @@ export async function exchangePublicToken(publicToken: string, createdBy: string
   return { ok: true as const, itemId, institutionName, ...result };
 }
 
-/** Incremental transaction sync for one item → commitImport pipeline. */
+/** Incremental transaction sync for one item → commitImport pipeline.
+ *  Any failure (not just the Plaid pull — also the import/reconcile steps) is
+ *  persisted to the item row before rethrowing. Without that, a mid-sync crash
+ *  left status "good" + a stale lastSyncedAt, so the UI showed an Active bank
+ *  that silently hadn't synced in days. */
 export async function syncItem(itemId: string) {
+  try {
+    return await syncItemInner(itemId);
+  } catch (e) {
+    const msg = (e as { message?: string })?.message || String(e);
+    try {
+      const database = requireDb();
+      await database.update(s.plaidItems).set({ status: "error", error: msg }).where(eq(s.plaidItems.itemId, itemId));
+    } catch {
+      /* persisting the failure is best-effort */
+    }
+    throw e;
+  }
+}
+
+async function syncItemInner(itemId: string) {
   const plaid = getPlaid();
   if (!plaid) throw new Error("Plaid is not configured");
   const database = requireDb();
@@ -472,20 +491,26 @@ async function emitSyncNotifications(
   }
 }
 
-/** Sync every connected item (used by the nightly cron + webhook fan-out). */
+/** Sync every connected item (used by the nightly cron + webhook fan-out).
+ *  One bad item doesn't stop the rest, but failures are returned (not
+ *  swallowed) so the manual "Sync now" can tell the user what broke. */
 export async function syncAllItems() {
   const database = requireDb();
-  const items = await database.select({ itemId: s.plaidItems.itemId }).from(s.plaidItems);
+  const items = await database
+    .select({ itemId: s.plaidItems.itemId, institutionName: s.plaidItems.institutionName })
+    .from(s.plaidItems);
   let total = 0;
+  const failed: { itemId: string; institutionName: string | null; error: string }[] = [];
   for (const it of items) {
     try {
       const r = await syncItem(it.itemId);
       total += r.imported;
-    } catch {
-      /* one bad item shouldn't stop the rest */
+    } catch (e) {
+      console.error(`[plaid] sync failed for ${it.institutionName || it.itemId}`, e);
+      failed.push({ itemId: it.itemId, institutionName: it.institutionName, error: (e as { message?: string })?.message || String(e) });
     }
   }
-  return { ok: true as const, items: items.length, imported: total };
+  return { ok: failed.length === 0, items: items.length, imported: total, failed };
 }
 
 /** Disconnect a bank: remove the item at Plaid + locally (keeps transactions). */

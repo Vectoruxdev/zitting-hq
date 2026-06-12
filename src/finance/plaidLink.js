@@ -41,7 +41,10 @@ async function connect(onDone) {
     token,
     onSuccess: async (publicToken) => {
       try {
-        await API.exchangePlaidPublicToken(publicToken);
+        const res = await API.exchangePlaidPublicToken(publicToken);
+        // The action returns { ok:false, error } instead of throwing — surface
+        // it, or a failed link looks like it silently worked.
+        if (res && res.ok === false) alert('Couldn’t link the bank: ' + (res.error || 'unknown error'));
       } finally {
         window.ZHQ_REFRESH && window.ZHQ_REFRESH();
         if (onDone) onDone();
@@ -62,7 +65,16 @@ async function sync(onDone) {
     alert('Sync failed. ' + (e && e.message ? e.message : ''));
     return;
   }
+  // Refresh first so statuses/timestamps reflect reality even on failure.
   window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+  // The action reports failures in-band ({ ok:false }, per-bank in `failed`) —
+  // surface them; silently ignoring them is how a broken sync kept looking "Active".
+  if (res && res.ok === false) {
+    const perBank = (res.failed || [])
+      .map((f) => (f.institutionName || 'Bank') + ': ' + f.error)
+      .join('\n');
+    alert('Sync failed.\n' + (perBank || res.error || 'Unknown error'));
+  }
   if (onDone) onDone(res);
   return res;
 }
