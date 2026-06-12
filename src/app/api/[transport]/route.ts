@@ -12,9 +12,11 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { getFinanceData } from "@/db/queries";
 import * as m from "@/db/mutations";
+import { syncAllItems, listPlaidItems } from "@/db/plaid";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 300s so the sync_now tool (slow bank pulls) fits; reads return in well under 60.
+export const maxDuration = 300;
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
@@ -259,6 +261,20 @@ const baseHandler = createMcpHandler(
     );
 
     server.registerTool(
+      "sync_now",
+      {
+        description:
+          "Trigger a Plaid sync for every connected bank (same as the UI's Sync now button). Idempotent. Returns per-bank results plus each item's status and lastSyncedAt so a stuck sync is visible.",
+        inputSchema: {},
+      },
+      guard(async () => {
+        const res = await syncAllItems();
+        const items = await listPlaidItems();
+        return ok({ ...res, banks: items });
+      })
+    );
+
+    server.registerTool(
       "add_savings_contribution",
       {
         description: "Record a contribution toward a savings goal (goalId from list_savings_goals). date is YYYY-MM-DD.",
@@ -302,7 +318,7 @@ const baseHandler = createMcpHandler(
     );
   },
   {},
-  { basePath: "/api", maxDuration: 60 }
+  { basePath: "/api", maxDuration: 300 }
 );
 
 /** Shared-secret gate. Returns a Response to short-circuit, or null to proceed. */

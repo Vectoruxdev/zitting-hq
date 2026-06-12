@@ -30,6 +30,13 @@ export function getPlaid(): PlaidApi | null {
             "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
             "PLAID-SECRET": process.env.PLAID_SECRET,
           },
+          // Hard cap per Plaid call. Without it axios waits FOREVER: one hung
+          // MACU balance pull ran the sync function into Vercel's kill switch,
+          // so no catch fired, no status/error/lastSyncedAt was written, and
+          // the bank sat "Active / last synced days ago" while every sync
+          // (cron + manual) silently died. 30s lets the existing per-call
+          // try/catch fallbacks actually run instead.
+          timeout: 30_000,
         },
       })
     );

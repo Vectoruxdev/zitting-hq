@@ -449,7 +449,16 @@ function ZHQConnectedBanks() {
 
   async function syncNow(itemId) {
     setBusy(itemId || 'all');
-    try { await (window.ZHQ_PLAID && window.ZHQ_PLAID.sync()); await load(); } finally { setBusy(null); }
+    try {
+      if (!window.ZHQ_PLAID || !window.ZHQ_PLAID.sync) {
+        // Bridge not loaded (usually a stale tab from an older deploy) — say so
+        // instead of flashing a fake success.
+        alert('Sync isn’t available in this tab — refresh the page and try again.');
+        return;
+      }
+      await window.ZHQ_PLAID.sync();
+      await load();
+    } finally { setBusy(null); }
   }
   async function disconnect(itemId, name) {
     if (!window.confirm(`Disconnect ${name || 'this bank'}? Imported transactions stay; new ones stop syncing.`)) return;

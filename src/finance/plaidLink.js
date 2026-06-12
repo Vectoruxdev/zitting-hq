@@ -62,7 +62,9 @@ async function sync(onDone) {
   try {
     res = await API.syncPlaid();
   } catch (e) {
-    alert('Sync failed. ' + (e && e.message ? e.message : ''));
+    // A thrown action call usually means deployment skew (this tab predates the
+    // current deploy) or a killed/timed-out function — refreshing fixes the former.
+    alert('Sync failed. ' + (e && e.message ? e.message : '') + '\nTry refreshing the page and syncing again.');
     return;
   }
   // Refresh first so statuses/timestamps reflect reality even on failure.

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { syncAllItems } from "@/db/plaid";
 
 export const dynamic = "force-dynamic";
+// Full headroom: a multi-account sync (paginated pulls + balance calls + import
+// + reconcile) can take a few minutes when the bank is slow.
+export const maxDuration = 300;
 
 /**
  * Nightly safety-net sync (Vercel cron → see vercel.json). Pulls any new

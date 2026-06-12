@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 import { syncItem } from "@/db/plaid";
 
 export const dynamic = "force-dynamic";
+// Syncs run inline on SYNC_UPDATES_AVAILABLE — give them the same headroom as the cron.
+export const maxDuration = 300;
 
 /**
  * Plaid transactions webhook. Plaid pings this when new transactions are
