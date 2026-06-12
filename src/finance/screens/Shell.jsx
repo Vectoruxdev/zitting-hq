@@ -15,9 +15,15 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
       background: 'var(--bg-app)', borderRight: '1px solid var(--border-hairline)',
       padding: '18px 12px',
     }}>
-      <a href="/" title="Back to the family dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px 18px', textDecoration: 'none' }}>
+      <a href="/" title="Back to the family dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px 14px', textDecoration: 'none' }}>
         <img src="/finance/mark.svg" width="30" height="30" alt="" style={{ borderRadius: 9 }} />
         <span className="zt-wordmark" style={{ fontSize: 20, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Zitting <span style={{ color: 'var(--accent)' }}>HQ</span></span>
+      </a>
+
+      {/* Back to the family dashboard (calendar, meals, groceries, …) */}
+      <a href="/" className="zhq-back-hq" title="Back to Family HQ">
+        <Icon name="chevronLeft" size={16} className="zhq-nav-icon" />
+        Family HQ
       </a>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto' }}>
@@ -33,9 +39,6 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
       </nav>
 
       <div style={{ borderTop: '1px solid var(--border-hairline)', paddingTop: 12, marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <button className="zhq-nav-item" data-active="false" onClick={() => { window.location.href = '/'; }}>
-          <Icon name="grid" size={18} className="zhq-nav-icon" /> Family HQ
-        </button>
         <button className="zhq-nav-item" data-active="false" onClick={() => onNavigate && onNavigate('member')}>
           <Icon name="eye" size={18} className="zhq-nav-icon" /> View as member
         </button>

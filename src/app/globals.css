@@ -59,6 +59,36 @@ body {
   color: var(--accent);
 }
 
+/* Back-to-dashboard pill at the top of the finance sidebar. */
+.zhq-back-hq {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  width: fit-content;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.zhq-back-hq:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--green-tint, rgba(63, 208, 127, 0.35));
+}
+.zhq-back-hq:hover .zhq-nav-icon {
+  transform: translateX(-2px);
+}
+.zhq-back-hq .zhq-nav-icon {
+  color: var(--accent);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
 /* =========================================================================
    Responsive / mobile chrome
    Screens use inline styles, so shared layout grids are exposed as classes
