@@ -43,7 +43,13 @@ async function memberMap() {
 }
 async function accountLabel(accountId: string | null | undefined): Promise<string | null> {
   if (!accountId) return null;
-  const [a] = await requireDb().select().from(s.accounts).where(eq(s.accounts.id, accountId));
+  // Project ONLY the columns we use. A bare select() pulls every schema column,
+  // which breaks the whole sync if a newer one (available_balance / space /
+  // collapsed) isn't migrated yet — the rest of the app reads those defensively.
+  const [a] = await requireDb()
+    .select({ name: s.accounts.name, mask: s.accounts.mask })
+    .from(s.accounts)
+    .where(eq(s.accounts.id, accountId));
   if (!a) return null;
   return a.mask ? `${a.name} ••${a.mask}` : a.name;
 }
