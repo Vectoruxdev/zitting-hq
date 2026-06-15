@@ -602,6 +602,55 @@ function ZHQSpendable() {
   const memberUnread = memberNotifs.filter((n) => n && n.unread).length;
   const [notifOpen, setNotifOpen] = React.useState(false);
 
+  // Pull-to-refresh: members have no other way to pull fresh data (sync is
+  // owner-only + the daily cron), and native pull-to-refresh doesn't fire on an
+  // inner scroll container inside the phone frame / installed PWA. So we own the
+  // gesture and call ZHQ_REFRESH (re-fetches the latest synced data).
+  const scrollRef = React.useRef(null);
+  const [pullPx, setPullPx] = React.useState(0);
+  const [refreshing, setRefreshing] = React.useState(false);
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    let startY = 0;
+    let pulling = false;
+    const onStart = (e) => { pulling = el.scrollTop <= 0; startY = e.touches[0].clientY; };
+    const onMove = (e) => {
+      if (!pulling || refreshing) return;
+      const dy = e.touches[0].clientY - startY;
+      if (dy > 0 && el.scrollTop <= 0) {
+        e.preventDefault(); // we own the pull — stop the native bounce
+        setPullPx(Math.min(dy * 0.5, 80));
+      } else {
+        pulling = false;
+        setPullPx(0);
+      }
+    };
+    const onEnd = () => {
+      if (!pulling) return;
+      pulling = false;
+      setPullPx((p) => {
+        if (p >= 56 && !refreshing) {
+          setRefreshing(true);
+          try { window.ZHQ_REFRESH && window.ZHQ_REFRESH(); } catch { /* noop */ }
+          setTimeout(() => { setRefreshing(false); setPullPx(0); }, 1400);
+          return 44; // hold the spinner briefly
+        }
+        return 0;
+      });
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [refreshing]);
+
   const budgets = (H && H.budgets) || [];
   const goals = (D.goals || []).filter((g) => !g.archived);
   const allowance = H ? H.allowance : 0;
@@ -624,7 +673,13 @@ function ZHQSpendable() {
   return (
     <ZHQPhoneFrame>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 'max(8px, env(safe-area-inset-top)) 18px 24px' }}>
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', padding: 'max(8px, env(safe-area-inset-top)) 18px 24px' }}>
+          {/* pull-to-refresh spinner — height grows with the pull, holds while refreshing */}
+          <div style={{ height: refreshing ? 44 : pullPx, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: pullPx === 0 || refreshing ? 'height 200ms ease' : 'none', color: 'var(--text-tertiary)', flex: 'none' }}>
+            {refreshing || pullPx > 4 ? (
+              <Icon name="repeat" size={18} className={refreshing ? 'zhq-spin' : undefined} style={{ opacity: refreshing ? 1 : Math.min(1, pullPx / 56) }} />
+            ) : null}
+          </div>
           {/* header — avatar/name opens the account menu; the grid button jumps
               to the family dashboard (calendar, meals, groceries, …) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 18px' }}>

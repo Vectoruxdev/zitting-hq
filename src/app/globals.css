@@ -309,3 +309,7 @@ a.hq-card:hover {
   .zhq-confetti { animation-duration: 0.01s !important; opacity: 0 !important; }
   .zhq-celeb-card { animation: none; }
 }
+
+/* Pull-to-refresh spinner (member view) */
+@keyframes zhq-spin { to { transform: rotate(360deg); } }
+.zhq-spin { animation: zhq-spin 0.8s linear infinite; }
