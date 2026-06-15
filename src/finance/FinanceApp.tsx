@@ -40,6 +40,7 @@ import "./screens/Allocations.jsx";
 import "./screens/Savings.jsx";
 import "./screens/Receipts.jsx";
 import "./screens/Notifications.jsx";
+import "./screens/NotificationDetail.jsx";
 import "./screens/Ask.jsx";
 import "./screens/Access.jsx";
 import "./screens/Spendable.jsx";
@@ -140,11 +141,40 @@ export default function FinanceApp({
   // Bumped whenever fresh server `data` arrives (after a mutation +
   // router.refresh()); used in the screen `key` to force a re-render.
   const [dataVersion, setDataVersion] = React.useState(0);
+  // The notification whose detail overlay is open (id, string id, or full row).
+  const [openNotif, setOpenNotif] = React.useState<number | string | Record<string, unknown> | null>(null);
 
   if (typeof window !== "undefined") {
     w.ZHQ_REFRESH = () => startRefresh(() => router.refresh());
     w.ZHQ_LOGOUT = () => signOut();
+    // Any surface (feed, bell, push) opens the notification detail via this.
+    w.ZHQ_OPEN_NOTIF = (x: number | string | Record<string, unknown>) => setOpenNotif(x);
+    w.ZHQ_CLOSE_NOTIF = () => setOpenNotif(null);
   }
+
+  // Deep-link to a notification: ?notif=<id> on cold start, or a serviceWorker
+  // postMessage when an already-open tab is focused by a push click.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const u = new URL(window.location.href);
+      const nid = u.searchParams.get("notif");
+      if (nid) {
+        setOpenNotif(/^\d+$/.test(nid) ? Number(nid) : nid);
+        u.searchParams.delete("notif");
+        window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+      }
+    } catch {
+      /* no-op */
+    }
+    const onMsg = (e: MessageEvent) => {
+      if (e.data && e.data.type === "open-notif" && e.data.notifId != null) setOpenNotif(e.data.notifId);
+    };
+    if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => {
+      if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", onMsg);
+    };
+  }, []);
 
   // Register the service worker on load (not just when enabling push) so the app
   // is installable as a PWA ("Add to Home Screen") for everyone.
@@ -210,6 +240,20 @@ export default function FinanceApp({
   const ShellC = w.ZHQShell;
   const Spendable = w.ZHQSpendable;
   const Onboarding = w.ZHQOnboarding;
+  // Notification detail overlay — rendered above whatever screen is showing
+  // (owner Shell, member canvas, or onboarding) so feed/bell/push all reach it.
+  const NotifDetail = w.ZHQNotificationDetail;
+  const notifOverlay =
+    openNotif != null && NotifDetail
+      ? React.createElement(NotifDetail, {
+          notif: openNotif,
+          onClose: () => setOpenNotif(null),
+          onNavigate: navigate,
+          // The member canvas is showing for a real member OR an owner previewing
+          // — either way render the member-style detail + route via member tabs.
+          memberView: isMember || route === "member",
+        })
+      : null;
   const BootSplash = w.ZHQBootSplash;
   // Sourced as `any` (the JS components have no prop types) so JSX usage below
   // isn't constrained by types inferred from their default parameter values.
@@ -255,6 +299,7 @@ export default function FinanceApp({
             </div>
           ) : null}
         </div>
+        {notifOverlay}
       </>
     );
   }
@@ -272,6 +317,7 @@ export default function FinanceApp({
         >
           {Onboarding ? <Onboarding onDone={() => navigate("overview")} /> : null}
         </div>
+        {notifOverlay}
       </>
     );
   }
@@ -288,6 +334,7 @@ export default function FinanceApp({
           </ErrorBoundary>
         </div>
       </ShellC>
+      {notifOverlay}
     </>
   );
 }

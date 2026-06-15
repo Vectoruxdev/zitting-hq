@@ -418,6 +418,8 @@ async function emitSyncNotifications(
         title: `Large charge · ${fmtUsd(r.amount)}`,
         body: `${r.merchant} — posted at ${bank}.`,
         linkTo: "transactions",
+        entityType: "transaction",
+        entityRef: r.externalId || null,
         dedupeKey: r.externalId ? `plaid:large:${r.externalId}` : undefined,
       });
     }
@@ -434,6 +436,8 @@ async function emitSyncNotifications(
         title: `New transaction · ${fmtUsd(r.amount)}`,
         body: `${r.merchant} — ${r.income ? "deposit at" : "from"} ${bank}.`,
         linkTo: "transactions",
+        entityType: "transaction",
+        entityRef: r.externalId || null,
         dedupeKey: r.externalId ? `plaid:txn:${r.externalId}` : undefined,
       });
     } else if (rest.length > 1) {
@@ -447,6 +451,8 @@ async function emitSyncNotifications(
         title: `${rest.length} new transactions`,
         body: `${fmtUsd(spent)} in spending synced from ${bank}.`,
         linkTo: "transactions",
+        entityType: "transaction-group",
+        entityRef: ids, // comma-joined externalIds → detail resolves the set
         dedupeKey: `plaid:sync:${ids}`,
       });
     }
@@ -482,6 +488,8 @@ async function emitSyncNotifications(
           memberId,
           title: rows.length === 1 ? "1 new transaction to categorize" : `${rows.length} new transactions to categorize`,
           body: `New activity on ${label}. Tap to review and confirm.`,
+          entityType: "account", // account-scoped → drives the member access guard
+          entityRef: aid,
           dedupeKey: `plaid:mnudge:${memberId}:${aid}:${ids}`,
         });
       }

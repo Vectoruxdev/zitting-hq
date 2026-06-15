@@ -591,6 +591,16 @@ function ZHQSpendable() {
     window.ZHQ_CELEBRATE = (style) => setCelebration(pickCelebration(style || celebStyle));
     return () => { delete window.ZHQ_CELEBRATE; };
   }, [celebStyle]);
+  // Lets the notification detail overlay (owned by FinanceApp) drive the member's
+  // tabs — e.g. a "Review now" CTA jumps to Categorize. Mirrors ZHQ_CELEBRATE.
+  React.useEffect(() => {
+    window.ZHQ_MEMBER_NAV = (t) => { if (t === 'home' || t === 'activity' || t === 'categorize') setTab(t); };
+    return () => { delete window.ZHQ_MEMBER_NAV; };
+  }, []);
+  // Member notifications (already audience+account scoped server-side).
+  const memberNotifs = (D.notifications) || [];
+  const memberUnread = memberNotifs.filter((n) => n && n.unread).length;
+  const [notifOpen, setNotifOpen] = React.useState(false);
 
   const budgets = (H && H.budgets) || [];
   const goals = (D.goals || []).filter((g) => !g.archived);
@@ -625,6 +635,10 @@ function ZHQSpendable() {
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
               </div>
               <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', color: 'var(--text-tertiary)' }}><Icon name="chevronDown" size={18} /></span>
+            </button>
+            <button onClick={() => setNotifOpen(true)} title="Notifications" style={{ position: 'relative', flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', border: '1px solid var(--border-hairline)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+              <Icon name="bell" size={18} />
+              {memberUnread > 0 ? <span style={{ position: 'absolute', top: -3, right: -3, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999, background: 'var(--warning)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{memberUnread}</span> : null}
             </button>
             <button onClick={() => { window.location.href = '/'; }} title="Family HQ — calendar, meals, groceries" style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', border: '1px solid var(--border-hairline)', color: 'var(--accent)', cursor: 'pointer' }}>
               <Icon name="grid" size={18} />
@@ -1135,9 +1149,29 @@ function ZHQSpendable() {
           </div>
         </Modal>
       ) : null}
+      {notifOpen && Modal ? (
+        <Modal open onClose={() => setNotifOpen(false)} title="Notifications" width={360}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '62vh', overflowY: 'auto' }}>
+            {window.ZHQPushPrompt ? <div style={{ marginBottom: 4 }}><window.ZHQPushPrompt compact /></div> : null}
+            {memberNotifs.length ? memberNotifs.map((n) => (
+              <button key={n.id} onClick={() => { setNotifOpen(false); window.ZHQ_OPEN_NOTIF && window.ZHQ_OPEN_NOTIF(n); }} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, width: '100%', textAlign: 'left', padding: '12px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: n.unread ? 'var(--surface-card)' : 'transparent', cursor: 'pointer', font: 'inherit' }}>
+                <span style={{ flex: 'none', width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: n.tone === 'accent' ? 'var(--green-glow)' : 'var(--surface-sunken)', color: n.tone === 'warning' || n.tone === 'negative' ? 'var(--warning)' : 'var(--accent)' }}><Icon name={n.icon || 'bell'} size={15} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{n.title}</span>
+                  {n.body ? <span style={{ display: 'block', fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>{n.body}</span> : null}
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>{n.time}</span>
+                </span>
+                {n.unread ? <span style={{ flex: 'none', width: 8, height: 8, borderRadius: 999, background: 'var(--accent)', marginTop: 4 }} /> : null}
+              </button>
+            )) : (
+              <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>You're all caught up — no notifications.</div>
+            )}
+          </div>
+        </Modal>
+      ) : null}
       {celebration ? <MemberCelebration celebration={celebration} onClose={() => setCelebration(null)} /> : null}
     </ZHQPhoneFrame>
   );
 }
 
-Object.assign(window, { ZHQSpendable, ZHQPhoneFrame });
+Object.assign(window, { ZHQSpendable, ZHQPhoneFrame, MemberCategoryPicker, MemberTxnRow });

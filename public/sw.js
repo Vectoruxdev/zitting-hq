@@ -22,21 +22,31 @@ self.addEventListener("push", (event) => {
     badge: "/icons/icon-192.png",
     tag: data.tag || undefined,
     renotify: Boolean(data.tag),
-    data: { url: data.url || "/finance", linkTo: data.linkTo || null },
+    data: { url: data.url || "/finance", linkTo: data.linkTo || null, notifId: data.notifId || null },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/finance";
+  const d = event.notification.data || {};
+  const url = d.url || "/finance";
+  const notifId = d.notifId || null;
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    (async () => {
+      const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of list) {
-        if (client.url.includes("/finance") && "focus" in client) return client.focus();
+        if (client.url.includes("/finance") && "focus" in client) {
+          await client.focus();
+          // Focus alone won't navigate the SPA — tell it which notification to open.
+          if (notifId != null && "postMessage" in client) {
+            client.postMessage({ type: "open-notif", notifId });
+          }
+          return;
+        }
       }
-      if (self.clients.openWindow) return self.clients.openWindow(url);
-      return undefined;
-    })
+      // No open window: cold-start at the deep-link URL (carries ?notif=<id>).
+      if (self.clients.openWindow) await self.clients.openWindow(url);
+    })()
   );
 });

@@ -36,11 +36,25 @@ export interface PushTarget {
   title: string;
   body?: string | null;
   linkTo?: string | null; // internal finance route id (for deep-link focus)
+  notifId?: number | null; // notification id → deep-link to its detail on click
   tag?: string | null; // collapse key so repeats replace, not stack
 }
 
-export async function sendPushToAudience(t: PushTarget): Promise<void> {
-  if (!ensureVapid() || !db) return;
+export interface PushStats {
+  devices: number; // subscriptions targeted
+  sent: number; // delivered ok
+  failed: number; // gave up after retry
+  pruned: number; // dead endpoints removed
+}
+
+const ZERO: PushStats = { devices: 0, sent: 0, failed: 0, pruned: 0 };
+
+/** Send a web push to an audience. Best-effort (never throws), but returns
+ *  delivery stats so callers can log/surface "0 devices" and failures instead
+ *  of failing silently. Transient (5xx / network) errors get one retry; dead
+ *  endpoints (404/410) are pruned. */
+export async function sendPushToAudience(t: PushTarget): Promise<PushStats> {
+  if (!ensureVapid() || !db) return ZERO;
   try {
     let rows;
     if (t.audience === "all") {
@@ -51,33 +65,51 @@ export async function sendPushToAudience(t: PushTarget): Promise<void> {
       // owners (+partners)
       rows = await db.select().from(s.pushSubscriptions).where(inArray(s.pushSubscriptions.role, ["owner", "partner"]));
     }
-    if (!rows.length) return;
+    if (!rows.length) return ZERO;
 
     const payload = JSON.stringify({
       title: t.title,
       body: t.body ?? "",
-      url: "/finance",
+      url: t.notifId != null ? `/finance?notif=${t.notifId}` : "/finance",
       linkTo: t.linkTo ?? null,
+      notifId: t.notifId ?? null,
       tag: t.tag ?? undefined,
     });
+
+    const stats: PushStats = { devices: rows.length, sent: 0, failed: 0, pruned: 0 };
+    const send = (sub: (typeof rows)[number]) =>
+      webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
 
     await Promise.allSettled(
       rows.map(async (sub) => {
         try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
-          );
+          await send(sub);
+          stats.sent++;
         } catch (e) {
           const code = (e as { statusCode?: number })?.statusCode;
-          // 404 Not Found / 410 Gone → the subscription is dead; prune it.
           if (code === 404 || code === 410) {
+            // Dead subscription — prune it.
             await db!.delete(s.pushSubscriptions).where(eq(s.pushSubscriptions.endpoint, sub.endpoint)).catch(() => {});
+            stats.pruned++;
+            return;
           }
+          // Transient (5xx) or network blip → retry once before giving up.
+          if (code == null || code >= 500) {
+            try {
+              await send(sub);
+              stats.sent++;
+              return;
+            } catch {
+              /* fall through to failed */
+            }
+          }
+          stats.failed++;
         }
       })
     );
-  } catch {
-    /* best-effort */
+    return stats;
+  } catch (err) {
+    console.error("[push] send failed", err);
+    return ZERO;
   }
 }

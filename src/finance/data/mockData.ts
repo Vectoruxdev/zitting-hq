@@ -334,12 +334,13 @@ export const MOCK_FINANCE_DATA: any = {
   },
 
   notifications: [
-    { id: 1, type: 'transfers', icon: 'transfers', tone: 'accent', title: 'Transfers ready', body: '$4,000 income arrived — 5 transfers totaling $4,000 are ready to send.', time: 'Just now', unread: true },
-    { id: 2, type: 'bill', icon: 'repeat', tone: 'warning', title: 'Bill amount changed', body: 'Rocky Mountain Power is $142.66 this month, up $22 from May.', time: '2h ago', unread: true },
-    { id: 3, type: 'sub', icon: 'alert', tone: 'info', title: 'New subscription detected', body: 'Netflix — $22.99/mo on Amex ••3008.', time: '5h ago', unread: true },
-    { id: 4, type: 'budget', icon: 'pie', tone: 'negative', title: 'Allowance overspent', body: "Rebecca is $0 left with 22 days to go in June.", time: 'Yesterday', unread: false },
-    { id: 5, type: 'income', icon: 'trendingUp', tone: 'warning', title: 'Income looks late', body: 'Basement rental ($1,100) was expected Jun 3 and hasn’t arrived.', time: 'Yesterday', unread: false },
-    { id: 6, type: 'txn', icon: 'flag', tone: 'warning', title: 'Large charge flagged', body: 'Target — $36.40 by Sarah was auto-flagged (over your $35 alert).', time: '2d ago', unread: false },
+    { id: 1, type: 'transfers', icon: 'transfers', tone: 'accent', title: 'Transfers ready', body: '$4,000 income arrived — 5 transfers totaling $4,000 are ready to send.', time: 'Just now', unread: true, entityType: 'route', entityId: 'transfers' },
+    { id: 6, type: 'large-charge', icon: 'flag', tone: 'warning', title: 'Large charge · $36.40', body: 'Target — posted at Amex ••3008.', time: '2d ago', unread: true, entityType: 'transaction', entityId: '5' },
+    { id: 2, type: 'bill', icon: 'repeat', tone: 'warning', title: 'Bill amount changed', body: 'Rocky Mountain Power is $142.66 this month, up $22 from May.', time: '2h ago', unread: true, entityType: 'transaction', entityId: '4' },
+    { id: 7, type: 'new-transactions', icon: 'list', tone: 'info', title: '3 new transactions', body: '$139.36 in spending synced from Amex ••3008.', time: '3h ago', unread: true, entityType: 'transaction-group', entityId: '1,3,5' },
+    { id: 8, type: 'categorize-nudge', icon: 'list', tone: 'accent', title: '2 new transactions to categorize', body: "New activity on Sarah's wallet. Tap to review and confirm.", time: '4h ago', unread: true, entityType: 'account', entityId: 'sarah-wallet' },
+    { id: 4, type: 'budget', icon: 'pie', tone: 'negative', title: 'Allowance overspent', body: "Rebecca is $0 left with 22 days to go in June.", time: 'Yesterday', unread: false, entityType: 'route', entityId: 'overview' },
+    { id: 5, type: 'income', icon: 'trendingUp', tone: 'warning', title: 'Income looks late', body: 'Basement rental ($1,100) was expected Jun 3 and hasn’t arrived.', time: 'Yesterday', unread: false, entityType: 'route', entityId: 'income' },
   ],
 
   notifRules: [

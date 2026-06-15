@@ -579,6 +579,28 @@ export async function markNotificationsRead(ids?: number[]) {
   return res;
 }
 
+/** Fire a notification to yourself to verify the pipeline end-to-end (feed +
+ *  push + deep-link). Goes to the caller only — members to themselves, owners to
+ *  the owners audience. */
+export async function sendTestNotification() {
+  const u = isAuthConfigured ? await getCurrentUser() : null;
+  const isMember = u?.role === "member" && !!u.memberId;
+  const res = await m.createNotification({
+    type: "test",
+    tone: "accent",
+    icon: "bell",
+    title: "Test notification",
+    body: "If you can see this, alerts are working. Tap to open.",
+    audience: isMember ? "member" : "owners",
+    memberId: isMember ? u!.memberId : null,
+    entityType: "route",
+    entityRef: "overview",
+    // No dedupeKey — a test should fire every time you tap it.
+  });
+  refresh();
+  return res;
+}
+
 /** Owner sets which events notify, and on which channel (in-app / push). */
 export async function setNotificationPref(event: string, patch: { enabled?: boolean; inApp?: boolean; push?: boolean }) {
   await ensureOwner();

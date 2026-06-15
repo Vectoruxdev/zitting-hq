@@ -206,7 +206,39 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // come from transfer_instances (real, account-linked).
     const instanceRows = await db.select().from(s.transferInstances).orderBy(asc(s.transferInstances.id)).catch(() => []);
     const batchRows = await db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt)).catch(() => []);
-    const notifRows = await db.select().from(s.notifications).orderBy(asc(s.notifications.sortOrder)).catch(() => []);
+    // Column-explicit (NOT select()) so a not-yet-migrated entity_type/entity_ref
+    // column can't make this CORE read throw and wipe the whole feed; those two
+    // are read separately + defensively below.
+    const notifRows = await db
+      .select({
+        id: s.notifications.id,
+        type: s.notifications.type,
+        icon: s.notifications.icon,
+        tone: s.notifications.tone,
+        title: s.notifications.title,
+        body: s.notifications.body,
+        timeLabel: s.notifications.timeLabel,
+        unread: s.notifications.unread,
+        audience: s.notifications.audience,
+        memberId: s.notifications.memberId,
+        linkTo: s.notifications.linkTo,
+        createdAt: s.notifications.createdAt,
+        sortOrder: s.notifications.sortOrder,
+      })
+      .from(s.notifications)
+      .orderBy(asc(s.notifications.sortOrder))
+      .catch(() => [] as {
+        id: number; type: string; icon: string | null; tone: string; title: string;
+        body: string | null; timeLabel: string | null; unread: boolean; audience: string;
+        memberId: string | null; linkTo: string | null; createdAt: Date | null; sortOrder: number;
+      }[]);
+    // Entity linkage (supabase-notif-entity.sql) — separate defensive read so a
+    // pre-migration DB degrades to "no entity" (route fallback), not a broken feed.
+    const notifEntRows = await db
+      .select({ id: s.notifications.id, entityType: s.notifications.entityType, entityRef: s.notifications.entityRef })
+      .from(s.notifications)
+      .catch(() => [] as { id: number; entityType: string | null; entityRef: string | null }[]);
+    const notifEntById = new Map(notifEntRows.map((r) => [r.id, r]));
     const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)).catch(() => []);
     const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)).catch(() => []);
     // Uploaded receipt images (migration supabase-receipts.sql) — defensive so a
@@ -830,6 +862,23 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         message,
       };
     }
+    // Resolve notification entity refs (read-time). Transactions are stored by
+    // their stable externalId (dedupeHash); map to the serial id + account so a
+    // click can open the live row and the member guard can check access.
+    const txnByHash = new Map<string, { id: number; accountId: string | null }>();
+    for (const t of txnRows) {
+      const h = (t as { dedupeHash?: string | null }).dedupeHash;
+      if (h) txnByHash.set(h, { id: t.id, accountId: t.accountId });
+    }
+    // The single account an alert concerns (for the member access guard); null
+    // when it isn't account-scoped (group/transfer/member/route pass through).
+    const notifAccountOf = (ent?: { entityType: string | null; entityRef: string | null }) => {
+      if (!ent) return null;
+      if (ent.entityType === "account") return ent.entityRef;
+      if (ent.entityType === "transaction" && ent.entityRef) return txnByHash.get(ent.entityRef)?.accountId ?? null;
+      return null;
+    };
+
     // Scope to the viewer: a member sees only their own + household-wide
     // alerts; owner/partner see owner + household-wide. Newest first (by real
     // createdAt, falling back to sortOrder for legacy rows).
@@ -837,7 +886,15 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       .filter((notif) => {
         const aud = (notif.audience as string) || "owners";
         if (aud === "all") return true;
-        if (isMemberView) return aud === "member" && notif.memberId === viewer!.memberId;
+        if (isMemberView) {
+          if (aud !== "member" || notif.memberId !== viewer!.memberId) return false;
+          // Account guard: members only see notifications for accounts they
+          // manage. An account-scoped alert for an account they no longer
+          // manage (reassigned) is dropped.
+          const acct = notifAccountOf(notifEntById.get(notif.id));
+          if (acct && !(visibleAcctIds && visibleAcctIds.has(acct))) return false;
+          return true;
+        }
         return aud === "owners";
       })
       .sort((a, b) => {
@@ -846,17 +903,37 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         return tb - ta;
       });
     const notifNow = new Date();
-    data.notifications = visibleNotif.map((notif) => ({
-      id: notif.id,
-      type: notif.type,
-      icon: notif.icon,
-      tone: notif.tone,
-      title: notif.title,
-      body: notif.body,
-      time: notif.createdAt ? relTime(new Date(notif.createdAt), notifNow) : notif.timeLabel,
-      unread: notif.unread,
-      linkTo: notif.linkTo ?? null,
-    }));
+    data.notifications = visibleNotif.map((notif) => {
+      const ent = notifEntById.get(notif.id) ?? null;
+      let entityType = ent?.entityType ?? null;
+      let entityId: string | null = ent?.entityRef ?? null;
+      // Resolve stable refs to client-usable serial ids (data.txns exposes `id`).
+      if (entityType === "transaction" && ent?.entityRef) {
+        const hit = txnByHash.get(ent.entityRef);
+        entityId = hit ? String(hit.id) : null;
+        if (!hit) entityType = null; // deleted / not visible → route fallback
+      } else if (entityType === "transaction-group" && ent?.entityRef) {
+        const ids = ent.entityRef
+          .split(",")
+          .map((h) => txnByHash.get(h)?.id)
+          .filter((x): x is number => x != null);
+        entityId = ids.length ? ids.join(",") : null;
+        if (!ids.length) entityType = null;
+      }
+      return {
+        id: notif.id,
+        type: notif.type,
+        icon: notif.icon,
+        tone: notif.tone,
+        title: notif.title,
+        body: notif.body,
+        time: notif.createdAt ? relTime(new Date(notif.createdAt), notifNow) : notif.timeLabel,
+        unread: notif.unread,
+        linkTo: notif.linkTo ?? null,
+        entityType,
+        entityId,
+      };
+    });
     // Surface pending transfers as a derived (unstored) alert so the bell badges
     // and the feed shows what needs moving — without a stale stored row.
     // Owners/partners only — members don't manage household transfers.
@@ -872,6 +949,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           time: "Now",
           unread: true,
           linkTo: "transfers",
+          entityType: "route",
+          entityId: "transfers",
         },
         ...data.notifications,
       ];

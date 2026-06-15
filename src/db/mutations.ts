@@ -1487,6 +1487,8 @@ export async function generateAllowanceTransfers(args: {
       icon: "transfers",
       audience: "owners",
       linkTo: "transfers",
+      entityType: "route",
+      entityRef: "transfers",
       dedupeKey: `allowance:${args.ruleId}:${args.periodKey}`,
     });
   }
@@ -1723,6 +1725,8 @@ export async function createNotification(args: {
   audience?: "owners" | "member" | "all"; // who sees it (default owners)
   memberId?: string | null; // recipient when audience === "member"
   linkTo?: string | null; // optional route id to deep-link to
+  entityType?: string | null; // what it's about: transaction | transaction-group | transfer | account | member | route
+  entityRef?: string | null; // matching ref (txn externalId, transfer id, account/member id, joined ids, route id)
   dedupeKey?: string | null; // idempotency — skip if one already exists
 }) {
   const database = requireDb();
@@ -1740,43 +1744,59 @@ export async function createNotification(args: {
       .limit(1);
     if (dup.length) return { ok: true as const, skipped: true as const };
   }
+  let insertedId: number | undefined;
   if (ch.inApp) {
     const existing = await database.select({ so: s.notifications.sortOrder }).from(s.notifications);
     const sortOrder = existing.reduce((mx, n) => Math.max(mx, n.so), -1) + 1;
-    await database.insert(s.notifications).values({
-      type: args.type,
-      tone: args.tone ?? "info",
-      title: args.title,
-      body: args.body ?? null,
-      icon: args.icon ?? "bell",
-      timeLabel: args.timeLabel ?? null,
-      unread: true,
-      audience: args.audience ?? "owners",
-      memberId: args.memberId ?? null,
-      linkTo: args.linkTo ?? null,
-      dedupeKey: args.dedupeKey ?? null,
-      sortOrder,
-    });
+    const [row] = await database
+      .insert(s.notifications)
+      .values({
+        type: args.type,
+        tone: args.tone ?? "info",
+        title: args.title,
+        body: args.body ?? null,
+        icon: args.icon ?? "bell",
+        timeLabel: args.timeLabel ?? null,
+        unread: true,
+        audience: args.audience ?? "owners",
+        memberId: args.memberId ?? null,
+        linkTo: args.linkTo ?? null,
+        entityType: args.entityType ?? null,
+        entityRef: args.entityRef != null ? String(args.entityRef) : null,
+        dedupeKey: args.dedupeKey ?? null,
+        sortOrder,
+      })
+      .returning({ id: s.notifications.id });
+    insertedId = row?.id;
   }
   // Fan the same alert out to subscribed devices (best-effort — a push failure
   // must never undo the stored notification). Dynamic import keeps the web-push
-  // dependency out of paths that never notify.
+  // dependency out of paths that never notify. The notif id rides along so a
+  // push click can deep-link to its detail.
   if (ch.push) {
     try {
       const { sendPushToAudience } = await import("@/lib/push");
-      await sendPushToAudience({
+      const stats = await sendPushToAudience({
         audience: args.audience ?? "owners",
         memberId: args.memberId ?? null,
         title: args.title,
         body: args.body ?? null,
         linkTo: args.linkTo ?? null,
+        notifId: insertedId ?? null,
         tag: args.dedupeKey ?? args.type,
       });
-    } catch {
-      /* push is optional */
+      // Visibility: 0 devices for an intended recipient = "notifications on but
+      // no subscribed device" — the #1 silent-failure case.
+      if (stats && stats.devices === 0) {
+        console.warn(`[notif] ${args.type}: no subscribed devices for audience=${args.audience ?? "owners"}${args.memberId ? ` member=${args.memberId}` : ""}`);
+      } else if (stats && stats.failed > 0) {
+        console.warn(`[notif] ${args.type}: push ${stats.sent}/${stats.devices} sent, ${stats.failed} failed, ${stats.pruned} pruned`);
+      }
+    } catch (err) {
+      console.error("[notif] push failed", err); // log, never throw — in-app row already saved
     }
   }
-  return { ok: true as const };
+  return { ok: true as const, id: insertedId };
 }
 
 /** Load stored notification prefs (defensive — empty if the table isn't migrated). */
@@ -1898,6 +1918,8 @@ export async function notifyOwnersIfMemberCaughtUp(memberId: string | null | und
       title: `${name} finished categorizing`,
       body: `${name} has reviewed every transaction on their accounts for this month.`,
       linkTo: "transactions",
+      entityType: "member",
+      entityRef: memberId,
       dedupeKey: `member-caughtup:${memberId}:${prog.monthKey}`,
     });
   } catch {
@@ -2693,6 +2715,8 @@ export async function notifyTransferShortfall(todayISO: string) {
     title: alert.title,
     body: alert.body,
     linkTo: "transfers",
+    entityType: "route",
+    entityRef: "transfers",
     dedupeKey: `transfers:short:${todayISO}`,
   });
   return { ok: true as const, notified: !("skipped" in res && res.skipped) };

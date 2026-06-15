@@ -109,8 +109,17 @@ function ZHQNotifications({ onNavigate }) {
     }
   };
 
-  const openNotif = async (n) => {
-    // Mark this one read (skip synthetic string-id derived alerts), then deep-link.
+  const sendTest = async () => {
+    if (!API || !API.sendTestNotification) return;
+    setBusy(true);
+    try { await API.sendTestNotification(); window.ZHQ_REFRESH && window.ZHQ_REFRESH(); }
+    finally { setBusy(false); }
+  };
+
+  // Open the detail overlay (it marks-read on open + shows the entity + actions).
+  // Falls back to a route navigate if the overlay isn't mounted for any reason.
+  const openNotif = (n) => {
+    if (window.ZHQ_OPEN_NOTIF) { window.ZHQ_OPEN_NOTIF(n); return; }
     if (API && n.unread && typeof n.id === 'number') {
       API.markNotificationsRead([n.id]).then(() => window.ZHQ_REFRESH && window.ZHQ_REFRESH());
     }
@@ -142,7 +151,7 @@ function ZHQNotifications({ onNavigate }) {
                   <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-tertiary)' }}>{n.time}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.5 }}>{n.body}</div>
-                {n.type === 'transfers' ? <Button variant="accent" size="sm" style={{ marginTop: 10 }} onClick={(e) => { e.stopPropagation(); onNavigate && onNavigate('transfers'); }}>Review transfers</Button> : null}
+                {n.type === 'transfers' ? <Button variant="accent" size="sm" style={{ marginTop: 10 }} onClick={(e) => { e.stopPropagation(); openNotif(n); }}>Review transfers</Button> : null}
               </div>
             </div>
           ))}
@@ -187,6 +196,10 @@ function ZHQNotifications({ onNavigate }) {
             </div>
           ))}
         </Card>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 2 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>Not sure alerts are working? Send one to yourself.</span>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={sendTest}>Send test notification</Button>
+        </div>
         </>
         )}
         </>

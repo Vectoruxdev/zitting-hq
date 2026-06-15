@@ -496,6 +496,13 @@ export const notifications = pgTable(
     audience: text("audience").notNull().default("owners"),
     memberId: text("member_id").references(() => familyMembers.id, { onDelete: "cascade" }),
     linkTo: text("link_to"), // optional route id the alert deep-links to
+    // What the alert is ABOUT, so a click can open it. entityType is a kind
+    // ('transaction' | 'transaction-group' | 'transfer' | 'account' | 'member'
+    // | 'route'); entityRef holds the matching ref (a txn externalId, a
+    // transfer-instance id, an account/member id, comma-joined externalIds for a
+    // group, or a route id). Resolved to a live entity at read time. (supabase-notif-entity.sql)
+    entityType: text("entity_type"),
+    entityRef: text("entity_ref"),
     dedupeKey: text("dedupe_key"), // idempotency — skip insert if one exists
     createdAt: timestamp("created_at").defaultNow(),
     sortOrder: integer("sort_order").notNull().default(0),

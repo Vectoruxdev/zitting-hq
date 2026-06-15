@@ -53,6 +53,8 @@ export async function GET(req: Request) {
           title: `Transfer due today · ${usd}`,
           body: "A scheduled transfer reaches its date today.",
           linkTo: "transfers",
+          entityType: "transfer",
+          entityRef: String(p.id),
           dedupeKey: `transfer-due:${p.id}`,
         });
       }
@@ -67,6 +69,8 @@ export async function GET(req: Request) {
           title: `${due.length} transfer${due.length === 1 ? "" : "s"} to make`,
           body: `${usd} ready to move across your accounts.`,
           linkTo: "transfers",
+          entityType: "route",
+          entityRef: "transfers",
           dedupeKey: `transfers:ready:${today}`,
         });
         notified = !("skipped" in res && res.skipped);
