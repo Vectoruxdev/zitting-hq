@@ -295,7 +295,13 @@ function ZHQTransactions({ onNavigate }) {
   const [picker, setPicker] = React.useState(null); // { kind:'category'|'person', ids:[] }
   const [busy, setBusy] = React.useState(false);
 
-  const all = D.txns || [];
+  // Newest-first: data.txns arrives ordered by id ASC (oldest first), so without
+  // this the latest transactions sit at the very bottom of the list and the view
+  // looks frozen. Sort by date desc, with id desc as a stable tiebreak.
+  const all = React.useMemo(
+    () => [...(D.txns || [])].sort((a, b) => String(b.isoDate || '').localeCompare(String(a.isoDate || '')) || b.id - a.id),
+    [D.txns]
+  );
   const scoped = scope === 'Review' ? all.filter((t) => !t.reviewed)
     : scope === 'Flagged' ? all.filter((t) => t.flagged)
     : scope === 'Income' ? all.filter((t) => t.income) : all;
