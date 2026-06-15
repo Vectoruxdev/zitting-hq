@@ -1645,10 +1645,13 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         });
       // All transactions on the member's accounts (reviewed + not), newest
       // first — drives the browsable Activity tab. Same row shape as data.txns.
-      const myTxns = (data.txns as { id: number; reviewed: boolean; accountId: string | null }[])
+      // Newest first by date for the member activity feed + review queue.
+      // data.txns is in id (insertion) order, which isn't date order, so a plain
+      // .reverse() can mis-rank adjacent days; sort by isoDate desc, id desc.
+      const myTxns = (data.txns as { id: number; reviewed: boolean; accountId: string | null; isoDate: string | null }[])
         .filter((t) => t.accountId != null && managedSet.has(t.accountId))
         .slice()
-        .reverse();
+        .sort((a, b) => String(b.isoDate || "").localeCompare(String(a.isoDate || "")) || b.id - a.id);
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
       // Performance allowance, if this member is an earner (or just a recipient).

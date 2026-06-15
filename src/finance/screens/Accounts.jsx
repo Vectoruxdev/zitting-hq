@@ -205,7 +205,12 @@ function ZHQAccountDetail({ acct, onBack }) {
     : allRows;
   const needle = q.trim().toLowerCase();
   const filtered = !needle ? scoped : scoped.filter((t) => `${t.merchant} ${t.description || ''} ${t.cat} ${t.date} ${Math.abs(t.amt).toFixed(2)}`.toLowerCase().includes(needle));
-  const rows = [...filtered].reverse().slice(0, limit); // newest first
+  // Newest first by date. A plain .reverse() of the id-ordered list only
+  // approximates this — insertion (id) order isn't date order, so adjacent
+  // days can land out of sequence. Sort by isoDate desc, id desc tiebreak.
+  const rows = [...filtered]
+    .sort((a, b) => String(b.isoDate || '').localeCompare(String(a.isoDate || '')) || b.id - a.id)
+    .slice(0, limit);
 
   async function setCategory(id, categoryId) {
     setBusyTxn(id);

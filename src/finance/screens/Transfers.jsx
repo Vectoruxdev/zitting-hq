@@ -281,8 +281,12 @@ function ZHQTransfers() {
   const pendingTotal = D.transfersPendingTotal ?? '$0';
 
   // Most recent genuine income — lets us regenerate the checklist on demand.
+  // Pick by latest date, not array position: D.txns is in id (insertion) order,
+  // which isn't date order, so the last element can be an older paycheck that
+  // happened to sync later. Driving generate() off the wrong income event would
+  // build the checklist from the wrong paycheck.
   const incomeTxns = (D.txns || []).filter((t) => t.income && !t.isTransfer);
-  const lastIncome = incomeTxns[incomeTxns.length - 1];
+  const lastIncome = [...incomeTxns].sort((a, b) => String(b.isoDate || '').localeCompare(String(a.isoDate || '')) || b.id - a.id)[0];
 
   const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
 

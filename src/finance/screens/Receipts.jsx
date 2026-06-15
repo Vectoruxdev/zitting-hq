@@ -27,7 +27,10 @@ function MatchModal({ receipt, onClose }) {
   const { Modal, TextInput, Tag } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA || {};
   const [q, setQ] = React.useState('');
-  const txns = (D.txns || []).slice().reverse();
+  // Newest first by date for the match picker. D.txns is in id (insertion)
+  // order, which isn't date order, so a plain .reverse() can mis-rank adjacent
+  // days; sort by isoDate desc, id desc tiebreak.
+  const txns = (D.txns || []).slice().sort((a, b) => String(b.isoDate || '').localeCompare(String(a.isoDate || '')) || b.id - a.id);
   const needle = q.trim().toLowerCase();
   const list = (needle
     ? txns.filter((t) => `${t.merchant} ${t.amt} ${t.date}`.toLowerCase().includes(needle))

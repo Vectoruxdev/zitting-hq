@@ -26,6 +26,14 @@ function ZHQOverview({ onNavigate }) {
 
   const API = window.ZHQ_API || {};
   const txns = D.txns || [];
+  // Newest-first for the "Recent transactions" widget below. D.txns arrives in
+  // id (insertion) order, which is NOT date order — a raw slice(0,8) shows the
+  // oldest backfilled rows and never changes as new transactions sync, so the
+  // dashboard looks frozen. Sort by date desc, id desc as a stable tiebreak.
+  const recentTxns = React.useMemo(
+    () => [...txns].sort((a, b) => String(b.isoDate || '').localeCompare(String(a.isoDate || '')) || b.id - a.id),
+    [txns]
+  );
   const cats = D.categories || [];
   const budgets = D.budgets || [];
   const upcoming = D.upcoming || [];
@@ -245,7 +253,7 @@ function ZHQOverview({ onNavigate }) {
             { key: 'account', header: 'Account', render: (r) => <span style={{ color: 'var(--text-tertiary)', fontSize: 12.5 }} className="zt-num">{r.account}</span> },
             { key: 'amt', header: 'Amount', align: 'right', sortable: true, render: (r) => <AmountCell value={r.amt} income={r.income} /> },
           ]}
-          rows={txns.slice(0, 8)} sortKey="amt" />
+          rows={recentTxns.slice(0, 8)} sortKey="amt" />
       </Card>
     </div>
   );
