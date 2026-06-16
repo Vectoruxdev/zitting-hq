@@ -28,17 +28,33 @@ describe("monthlySpendSeries", () => {
     expect(r.values).toEqual([100, 0, 50, 0, 0, 84.21]);
   });
 
-  it("refunds net the month down; income and transfers are excluded", () => {
+  it("refunds (on an expense category) net the month down; income and transfers are excluded", () => {
     const r = monthlySpendSeries(
       [
-        txn("2026-06-01", -100),
-        txn("2026-06-03", 30), // refund
+        txn("2026-06-01", -100, { catKind: "expense", categoryId: "shopping" }),
+        txn("2026-06-03", 30, { catKind: "expense", categoryId: "shopping" }), // refund
         txn("2026-06-03", 4000, { income: true }),
         txn("2026-06-05", -600, { isTransfer: true }),
       ],
       NOW
     );
     expect(r.values[5]).toBe(70);
+  });
+
+  it("a positive deposit with no expense category does NOT net the month down (the −$10k bug)", () => {
+    // A credit-card payment / transfer-in / unregistered deposit: Plaid flags it
+    // income, but with no spending category it must not subtract from spend.
+    const r = monthlySpendSeries(
+      [
+        txn("2026-06-01", -100, { catKind: "expense", categoryId: "shopping" }),
+        txn("2026-06-04", 5000, { income: true, categoryId: null, catKind: null }),
+        txn("2026-06-05", 3000, { income: true, categoryId: "income", catKind: "income" }),
+      ],
+      NOW,
+      6,
+      { registryActive: true }
+    );
+    expect(r.values[5]).toBe(100); // only the real charge — deposits excluded, not netted negative
   });
 });
 
@@ -82,8 +98,8 @@ describe("topSpendCategories", () => {
 
   it("drops categories whose refunds outweigh spend, and untagged goes to 'uncategorized'", () => {
     const r = topSpendCategories([
-      txn("2026-06-01", -20, { categoryId: "a" }),
-      txn("2026-06-02", 30, { categoryId: "a" }), // net negative → dropped
+      txn("2026-06-01", -20, { categoryId: "a", catKind: "expense" }),
+      txn("2026-06-02", 30, { categoryId: "a", catKind: "expense" }), // net negative → dropped
       txn("2026-06-03", -15),
     ]);
     expect(r).toEqual([{ categoryId: "uncategorized", value: 15 }]);

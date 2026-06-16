@@ -5,7 +5,7 @@ const txn = (over: Partial<FlowTxn> = {}): FlowTxn => ({
   amount: -100,
   income: false,
   isTransfer: false,
-  catKind: null,
+  catKind: "expense", // default txn is a normal expense-category charge
   categoryId: "groceries",
   memberId: null,
   splits: null,
@@ -17,8 +17,15 @@ describe("flowOf", () => {
     expect(flowOf(txn({ amount: -84.21 }))).toEqual({ income: 0, spendNet: 84.21 });
   });
 
-  it("a refund (positive, not income) nets spending DOWN, never counts as income", () => {
+  it("a refund (positive, not income) on an expense category nets spending DOWN, never counts as income", () => {
     expect(flowOf(txn({ amount: 36.4 }))).toEqual({ income: 0, spendNet: -36.4 });
+  });
+
+  it("a positive amount NOT on an expense category is neither income nor spend — not a refund", () => {
+    // e.g. a credit-card payment or transfer-in Plaid didn't flag income, with
+    // no spending category: it must NOT net spending down (that's the −$10k bug).
+    expect(flowOf(txn({ amount: 500, income: false, catKind: null, categoryId: null }))).toEqual({ income: 0, spendNet: 0 });
+    expect(flowOf(txn({ amount: 500, income: false, catKind: "income", categoryId: "income" }))).toEqual({ income: 0, spendNet: 0 });
   });
 
   it("income is summed SIGNED — a payroll reversal reduces income instead of inflating it", () => {
@@ -38,7 +45,7 @@ describe("foldMonthStats", () => {
     const r = foldMonthStats([
       txn({ amount: -84.21, categoryId: "groceries", memberId: "sarah" }),
       txn({ amount: -18.75, categoryId: "dining", memberId: "rebecca" }),
-      txn({ amount: 4000, income: true, categoryId: "income" }),
+      txn({ amount: 4000, income: true, categoryId: "income", catKind: "income" }),
       txn({ amount: -600, isTransfer: true, categoryId: null }),
     ]);
     expect(r.income).toBe(4000);
@@ -50,7 +57,7 @@ describe("foldMonthStats", () => {
     expect(r.memberTotals.get("rebecca")).toBeCloseTo(18.75);
   });
 
-  it("a refund reduces the category, member, and overall spend", () => {
+  it("a refund on an expense category reduces the category, member, and overall spend", () => {
     const r = foldMonthStats([
       txn({ amount: -100, categoryId: "shopping", memberId: "sarah" }),
       txn({ amount: 40, categoryId: "shopping", memberId: "sarah" }), // return
@@ -97,31 +104,61 @@ describe("registry-aware income (registryActive)", () => {
   const opts = { registryActive: true };
 
   it("registered payers count as income", () => {
-    expect(flowOf(txn({ amount: 4000, income: true, registeredPayer: true }), opts)).toEqual({ income: 4000, spendNet: 0 });
+    expect(flowOf(txn({ amount: 4000, income: true, registeredPayer: true, catKind: "income" }), opts)).toEqual({ income: 4000, spendNet: 0 });
   });
 
-  it("an unregistered positive deposit is a refund — nets spending down, never income", () => {
-    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false }), opts)).toEqual({ income: 0, spendNet: -75 });
+  it("an unregistered positive deposit ON AN EXPENSE category is a refund — nets spending down, never income", () => {
+    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false, catKind: "expense" }), opts)).toEqual({ income: 0, spendNet: -75 });
+  });
+
+  it("an unregistered positive deposit NOT on an expense category is neither income nor spend", () => {
+    // The actual −$10k driver: CC payments, untagged transfers, unregistered
+    // income and windfalls — Plaid flags them income, the registry says they
+    // aren't, and with no expense category they must NOT become negative spend.
+    expect(flowOf(txn({ amount: 5000, income: true, registeredPayer: false, catKind: null, categoryId: null }), opts)).toEqual({ income: 0, spendNet: 0 });
+    expect(flowOf(txn({ amount: 3000, income: true, registeredPayer: false, catKind: "income", categoryId: "income" }), opts)).toEqual({ income: 0, spendNet: 0 });
   });
 
   it("with the registry EMPTY, the raw income flag keeps today's behavior", () => {
-    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false }), { registryActive: false })).toEqual({ income: 75, spendNet: 0 });
-    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false }))).toEqual({ income: 75, spendNet: 0 });
+    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false, catKind: "income" }), { registryActive: false })).toEqual({ income: 75, spendNet: 0 });
+    expect(flowOf(txn({ amount: 75, income: true, registeredPayer: false, catKind: "income" }))).toEqual({ income: 75, spendNet: 0 });
   });
 
-  it("foldMonthStats: refund-from-unregistered-payer reduces its category's spend", () => {
+  it("foldMonthStats: refund-from-unregistered-payer on an expense category reduces its category's spend", () => {
     const r = foldMonthStats(
       [
-        txn({ amount: -100, categoryId: "shopping" }),
-        // Plaid-flagged "income" that's actually a card refund
-        txn({ amount: 40, income: true, registeredPayer: false, categoryId: "shopping" }),
-        txn({ amount: 4000, income: true, registeredPayer: true, categoryId: "income" }),
+        txn({ amount: -100, categoryId: "shopping", catKind: "expense" }),
+        // Plaid-flagged "income" that's actually a card refund on a spend category
+        txn({ amount: 40, income: true, registeredPayer: false, categoryId: "shopping", catKind: "expense" }),
+        txn({ amount: 4000, income: true, registeredPayer: true, categoryId: "income", catKind: "income" }),
       ],
       opts
     );
     expect(r.income).toBe(4000);
     expect(r.spending).toBe(60);
     expect(r.catTotals.get("shopping")).toBe(60);
+  });
+
+  it("big unregistered deposits (CC payments / transfers-in / windfalls) never drag spending negative — the −$10k bug", () => {
+    const r = foldMonthStats(
+      [
+        txn({ amount: -84.21, categoryId: "groceries", catKind: "expense" }),
+        txn({ amount: -18.75, categoryId: "dining", catKind: "expense" }),
+        // unregistered positives Plaid flagged income: a CC payment (uncategorized)
+        // and a deposit that landed in an income-kind category
+        txn({ amount: 5000, income: true, registeredPayer: false, categoryId: null, catKind: null }),
+        txn({ amount: 3000, income: true, registeredPayer: false, categoryId: "income", catKind: "income" }),
+        // a real registered paycheck
+        txn({ amount: 4000, income: true, registeredPayer: true, categoryId: "income", catKind: "income" }),
+      ],
+      opts
+    );
+    expect(r.income).toBe(4000);
+    expect(r.spending).toBeCloseTo(102.96); // ONLY the real charges — deposits excluded, not netted negative
+    expect(r.catTotals.get("groceries")).toBeCloseTo(84.21);
+    expect(r.catTotals.get("dining")).toBeCloseTo(18.75);
+    expect(r.catTotals.has("uncategorized")).toBe(false); // the 5000 deposit didn't land here
+    expect(r.catTotals.has("income")).toBe(false);
   });
 
   it("transfers stay excluded regardless of registry state", () => {

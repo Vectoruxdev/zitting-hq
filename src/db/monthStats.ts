@@ -7,17 +7,25 @@
  *                                       e.g. a payroll reversal in an import,
  *                                       reduces income — it must never inflate
  *                                       it the way Math.abs did)
- *   everything else                   → net spend: a charge (amt<0) adds,
- *                                       a refund (amt>0, not income) subtracts —
- *                                       so a return nets DOWN spending instead
- *                                       of inflating income.
+ *   everything else                   → net spend: a charge (amt<0) adds; a
+ *                                       refund (amt>0) subtracts ONLY when it's
+ *                                       tagged to an EXPENSE category — so a
+ *                                       return nets DOWN its category, but a
+ *                                       stray positive deposit can't.
  *
- * REGISTRY-AWARE income: Plaid marks EVERY positive deposit `income`, so the
- * raw flag counts card refunds as income. When the household has curated its
+ * REGISTRY-AWARE income: Plaid marks EVERY positive deposit `income` (the flag
+ * is literally amount>0), so the raw flag counts card refunds, credit-card
+ * payments and transfers-in as income. When the household has curated its
  * income registry (`registryActive`), only deposits from REGISTERED payers
- * count as income; other positive deposits get refund semantics (net spending
- * down, attributed to their category). When the registry is empty the raw
- * flag is kept — a family that hasn't marked payers keeps today's behavior.
+ * count as income. When the registry is empty the raw flag is kept — a family
+ * that hasn't marked payers keeps today's behavior.
+ *
+ * NOT-A-REFUND guard: a leftover positive deposit only nets spending down when
+ * it's tagged to an EXPENSE category (a genuine return). Uncategorized or
+ * income-kind positives — credit-card payments, untagged inter-account
+ * transfers, unregistered income, windfalls — are NEITHER income nor spending.
+ * Without this they were folded in as negative spend and could drag a whole
+ * month's spending below zero (observed: a real −$10k "spending" total).
  */
 
 export interface FlowTxn {
@@ -47,7 +55,14 @@ export function flowOf(
   if (t.isTransfer || t.catKind === "transfer") return { income: 0, spendNet: 0 };
   const isIncome = opts?.registryActive ? t.income && !!t.registeredPayer : t.income;
   if (isIncome) return { income: t.amount, spendNet: 0 };
-  return { income: 0, spendNet: -t.amount };
+  const spendNet = -t.amount;
+  // Not-a-refund guard: a positive deposit (spendNet < 0) only nets spending
+  // down when it's a genuine refund — i.e. tagged to an EXPENSE category. The
+  // leftovers here are credit-card payments, untagged transfers, unregistered
+  // income and windfalls (Plaid flags every positive amount `income`); folding
+  // those in as negative spend dragged the month's total below zero.
+  if (spendNet < 0 && t.catKind !== "expense") return { income: 0, spendNet: 0 };
+  return { income: 0, spendNet };
 }
 
 export interface MonthStats {
@@ -79,9 +94,14 @@ export function foldMonthStats(txns: FlowTxn[], opts?: FlowOpts): MonthStats {
       income += t.amount; // signed — a reversal reduces income
       continue;
     }
-    // Net spend: a charge adds, a refund (incl. an unregistered "income"
-    // deposit under registry semantics) subtracts — attributed to its category.
+    // Net spend: a charge adds, a refund subtracts — attributed to its category.
     const net = -t.amount;
+    // Not-a-refund guard (mirrors flowOf): a positive deposit only nets spending
+    // down when it's a genuine refund on an EXPENSE category. Uncategorized or
+    // income-kind positives (CC payments, untagged transfers, unregistered
+    // income, windfalls — all flagged `income` by Plaid's amount>0 rule) are
+    // neither income nor spending; folding them in dragged the total negative.
+    if (net < 0 && t.catKind !== "expense") continue;
     spending += net;
     if (t.memberId) memberTotals.set(t.memberId, (memberTotals.get(t.memberId) || 0) + net);
     if (t.splits && t.splits.length) {
