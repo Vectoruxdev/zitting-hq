@@ -10,6 +10,7 @@ import {
   dedupeKey,
   markDuplicates,
   REVIEW_THRESHOLD,
+  shouldAutoApprove,
   type MemoryMap,
 } from "./categorize";
 
@@ -62,6 +63,24 @@ describe("looksLikeTransfer", () => {
     expect(looksLikeTransfer(MACU.transferTo)).toBe(true);
     expect(looksLikeTransfer(MACU.fromShare)).toBe(true);
     expect(looksLikeTransfer(MACU.netflix)).toBe(false);
+  });
+});
+
+describe("shouldAutoApprove", () => {
+  it("auto-approves only human-set categories and transfers", () => {
+    expect(shouldAutoApprove("manual", false)).toBe(true);
+    expect(shouldAutoApprove("transfer", false)).toBe(true);
+    expect(shouldAutoApprove(null, true)).toBe(true); // isTransfer flag, even without a transfer source
+  });
+  it("leaves every engine-guessed category PENDING approval (confidence no longer auto-approves)", () => {
+    // High-confidence guesses used to auto-approve at >= REVIEW_THRESHOLD; now they don't.
+    expect(shouldAutoApprove("merchant", false)).toBe(false);
+    expect(shouldAutoApprove("learned", false)).toBe(false);
+    expect(shouldAutoApprove("rule", false)).toBe(false);
+    expect(shouldAutoApprove("keyword", false)).toBe(false);
+    expect(shouldAutoApprove("income", false)).toBe(false);
+    expect(shouldAutoApprove("none", false)).toBe(false);
+    expect(shouldAutoApprove(undefined, false)).toBe(false);
   });
 });
 
@@ -211,6 +230,18 @@ describe("scoreCategory — sign/kind guard", () => {
     const memory: MemoryMap = new Map([[key, [{ categoryId: "groc-other", count: 9 }]]]);
     const s = scoreCategory({ merchant: MACU.harmons, amount: -50 }, { memory, catKind });
     expect(s.categoryId).toBe("groc-other");
+  });
+  it("treats a refund (positive amount at a known expense merchant) as that expense category, not income", () => {
+    // A $211 Amazon return should land back in misc-other so it nets against the
+    // original spend — NOT get bucketed as income just because the amount is positive.
+    const s = scoreCategory({ merchant: "AMAZON MKTPLACE PMTS return", amount: 211.72 }, {});
+    expect(s.categoryId).toBe("misc-other");
+    expect(s.source).toBe("merchant");
+  });
+  it("a positive deposit with no merchant signal still falls through to income", () => {
+    const s = scoreCategory({ merchant: "RANDOM DEPOSIT XYZ", amount: 1000 }, {});
+    expect(s.categoryId).toBe("income-other");
+    expect(s.source).toBe("income");
   });
 });
 

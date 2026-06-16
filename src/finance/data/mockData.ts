@@ -171,12 +171,15 @@ export const MOCK_FINANCE_DATA: any = {
   ],
 
   txns: [
-    { id: 1, date: 'Jun 4', isoDate: '2026-06-04', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -84.21, pending: false, receiptId: 'mock-receipt-1' },
-    { id: 2, date: 'Jun 3', isoDate: '2026-06-03', merchant: 'ADP Payroll', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 4000, income: true, pending: false },
-    { id: 3, date: 'Jun 3', isoDate: '2026-06-03', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', who: 'Rebecca', account: 'Amex ••3008', accountId: 'amex', amt: -18.75, pending: true },
-    { id: 4, date: 'Jun 2', isoDate: '2026-06-02', merchant: 'Rocky Mtn Power', cat: 'Utilities', color: 'var(--gray-500)', who: 'Household', account: 'Bills account', accountId: 'bills', amt: -142.66, pending: false },
-    { id: 5, date: 'Jun 2', isoDate: '2026-06-02', merchant: 'Target', cat: 'Shopping', color: 'var(--green-600)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -36.40, pending: false, flagged: true },
-    { id: 6, date: 'Jun 1', isoDate: '2026-06-01', merchant: 'From the Farm', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 1250, income: true, pending: false },
+    // `reviewed` is the approval state: auto-categorized rows (source !== manual)
+    // start UNapproved so a human signs off; manual stays approved. Mixed here so
+    // /dev-preview shows both Pending and Approved + the Approve action/filter.
+    { id: 1, date: 'Jun 4', isoDate: '2026-06-04', merchant: 'Harmons Grocery', cat: 'Groceries', color: 'var(--indigo-500)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -84.21, pending: false, reviewed: false, source: 'merchant', confidence: 0.82, receiptId: 'mock-receipt-1' },
+    { id: 2, date: 'Jun 3', isoDate: '2026-06-03', merchant: 'ADP Payroll', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 4000, income: true, pending: false, reviewed: true, source: 'manual' },
+    { id: 3, date: 'Jun 3', isoDate: '2026-06-03', merchant: 'Chick-fil-A', cat: 'Dining', color: 'var(--amber-500)', who: 'Rebecca', account: 'Amex ••3008', accountId: 'amex', amt: -18.75, pending: true, reviewed: false, source: 'keyword', confidence: 0.58 },
+    { id: 4, date: 'Jun 2', isoDate: '2026-06-02', merchant: 'Rocky Mtn Power', cat: 'Utilities', color: 'var(--gray-500)', who: 'Household', account: 'Bills account', accountId: 'bills', amt: -142.66, pending: false, reviewed: true, source: 'manual' },
+    { id: 5, date: 'Jun 2', isoDate: '2026-06-02', merchant: 'Target', cat: 'Shopping', color: 'var(--green-600)', who: 'Sarah', account: 'Amex ••3008', accountId: 'amex', amt: -36.40, pending: false, flagged: true, reviewed: false, source: 'merchant', confidence: 0.76 },
+    { id: 6, date: 'Jun 1', isoDate: '2026-06-01', merchant: 'From the Farm', cat: 'Income', color: 'var(--green-500)', who: 'Jared', account: 'Main Checking', accountId: 'main', amt: 1250, income: true, pending: false, reviewed: true, source: 'manual' },
   ],
 
   rules: [

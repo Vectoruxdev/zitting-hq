@@ -98,6 +98,29 @@ describe("foldMonthStats", () => {
     expect(r.income).toBe(1250);
     expect(r.spending).toBe(0);
   });
+
+  it("attributes income per member (signed), separate from spending", () => {
+    const r = foldMonthStats([
+      txn({ amount: 4000, income: true, catKind: "income", memberId: "jerry" }),
+      txn({ amount: 1500, income: true, catKind: "income", memberId: "jaelynn" }),
+      txn({ amount: -200, income: true, catKind: "income", memberId: "jerry" }), // reversal nets down
+      txn({ amount: -84.21, categoryId: "groceries", memberId: "jerry" }), // spend, not income
+    ]);
+    expect(r.memberIncome.get("jerry")).toBe(3800);
+    expect(r.memberIncome.get("jaelynn")).toBe(1500);
+    expect(r.memberTotals.get("jerry")).toBeCloseTo(84.21); // spend stays separate
+  });
+
+  it("registry-aware: only registered payers count as a member's income", () => {
+    const r = foldMonthStats(
+      [
+        txn({ amount: 4000, income: true, catKind: "income", registeredPayer: true, memberId: "jerry" }),
+        txn({ amount: 900, income: true, catKind: null, registeredPayer: false, categoryId: null, memberId: "jerry" }), // unregistered deposit
+      ],
+      { registryActive: true }
+    );
+    expect(r.memberIncome.get("jerry")).toBe(4000); // the unregistered $900 doesn't count
+  });
 });
 
 describe("registry-aware income (registryActive)", () => {

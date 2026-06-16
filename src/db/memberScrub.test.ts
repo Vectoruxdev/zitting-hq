@@ -57,6 +57,11 @@ describe("scrubForMemberView", () => {
     expect(d.transfersPending).toBe(0);
     expect(d.transferReadiness).toBeNull();
     expect(d.income.sources).toEqual([]);
+    // Per-person income analytics are owners-only — blanked for members.
+    expect((d.income as Record<string, unknown>).byMember).toEqual([]);
+    expect((d.income as Record<string, unknown>).series).toEqual([]);
+    expect((d.income as Record<string, unknown>).upcoming).toEqual([]);
+    expect(((d.income as Record<string, unknown>).runway as { dipsBelowBuffer: boolean }).dipsBelowBuffer).toBe(false);
     expect(d.incomeStreams).toEqual([]);
     expect(d.bills).toEqual([]);
     expect(d.budgets).toEqual([]);

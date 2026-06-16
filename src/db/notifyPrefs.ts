@@ -21,6 +21,8 @@ export const NOTIFICATION_EVENTS: NotifEvent[] = [
   { event: "transfers_due", label: "Transfer due", detail: "A scheduled transfer reaches its date", audience: "owners" },
   { event: "member_complete", label: "Member finished categorizing", detail: "When someone finishes reviewing their month", audience: "owners" },
   { event: "member_nudges", label: "Categorize reminders", detail: "Tell a member when they have new transactions to review", audience: "members" },
+  { event: "income_expected", label: "Income lands tomorrow", detail: "A heads-up the day before a paycheck is expected", audience: "owners" },
+  { event: "cash_runway", label: "Low-balance warning", detail: "When an account is projected to run low before income lands", audience: "owners" },
 ];
 
 export interface StoredPref {
@@ -55,6 +57,10 @@ export function prefKeyForType(type: string): string | null {
       return "member_complete";
     case "categorize-nudge":
       return "member_nudges";
+    case "income-expected":
+      return "income_expected";
+    case "cash-runway":
+      return "cash_runway";
     default:
       return null;
   }

@@ -1,0 +1,39 @@
+{"note":"ADP payroll","merchant":"Deposit ACH ADP  TYPE: PAYROLL CO: ADP TECH SVC","amount":3265.48,"type":"Retail ACH","expected":"income-paycheck"}
+{"note":"Harmons","merchant":"Debit Card purch COMMENT: HARMONS GROCERY ***1234 UT","amount":-84.21,"type":"Debit Card Purchase","expected":"groc-other"}
+{"note":"Chick-fil-A","merchant":"Debit Card purch COMMENT: CHICK-FIL-A #123 UT","amount":-18.75,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Rocky Mtn Power","merchant":"ACH Withdrawal COMMENT: ROCKY MTN POWER UTILITY","amount":-142.66,"type":"Retail ACH","expected":"util-electricity"}
+{"note":"Costco","merchant":"Debit Card purch COMMENT: COSTCO WHSE #0456 UT","amount":-60.00,"type":"Debit Card Purchase","expected":"groc-costco-walmart"}
+{"note":"Walmart","merchant":"Debit Card purch COMMENT: WAL-MART #2701 UT","amount":-112.40,"type":"Debit Card Purchase","expected":"groc-costco-walmart"}
+{"note":"Transfer to share","merchant":"Withdrawal Transfer to COMMENT: To Share 07","amount":-900.00,"type":"Transfer","expected":"transfer"}
+{"note":"From share","merchant":"From Share 07","amount":500.00,"type":"Transfer","expected":"transfer"}
+{"note":"Netflix","merchant":"Debit Card purch COMMENT: NETFLIX.COM ***-***3700 CA","amount":-22.99,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Spotify","merchant":"Debit Card purch COMMENT: SPOTIFY USA NY","amount":-11.99,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Target","merchant":"Debit Card purch COMMENT: TARGET #1899 UT","amount":-35.40,"type":"Debit Card Purchase","expected":"misc-other"}
+{"note":"Amazon","merchant":"Debit Card purch COMMENT: AMZN Mktp US*2A3B4 WA","amount":-45.12,"type":"Debit Card Purchase","expected":"misc-other"}
+{"note":"Chevron fuel","merchant":"Debit Card purch COMMENT: CHEVRON 0091234 UT","amount":-52.10,"type":"Debit Card Purchase","expected":"auto-fuel"}
+{"note":"Maverik fuel","merchant":"Debit Card purch COMMENT: MAVERIK #345 UT","amount":-41.88,"type":"Debit Card Purchase","expected":"auto-fuel"}
+{"note":"Starbucks","merchant":"Debit Card purch COMMENT: STARBUCKS #07654 UT","amount":-6.45,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Smith's grocery","merchant":"Debit Card purch COMMENT: SMITHS FOOD #427 UT","amount":-67.03,"type":"Debit Card Purchase","expected":"groc-other"}
+{"note":"Home Depot","merchant":"Debit Card purch COMMENT: THE HOME DEPOT #4408 UT","amount":-128.77,"type":"Debit Card Purchase","expected":"home-yard-improvements"}
+{"note":"State Farm","merchant":"ACH Withdrawal COMMENT: STATE FARM INSURANCE","amount":-156.00,"type":"Retail ACH","expected":"auto-insurance"}
+{"note":"Select Health","merchant":"ACH Withdrawal COMMENT: SELECT HEALTH PREMIUM","amount":-410.00,"type":"Retail ACH","expected":"ins-health"}
+{"note":"Walgreens","merchant":"Debit Card purch COMMENT: WALGREENS #5567 UT","amount":-23.18,"type":"Debit Card Purchase","expected":"misc-medical"}
+{"note":"Xfinity","merchant":"ACH Withdrawal COMMENT: COMCAST XFINITY","amount":-89.99,"type":"Retail ACH","expected":"util-phone-internet"}
+{"note":"Jiffy Lube","merchant":"Debit Card purch COMMENT: JIFFY LUBE #128 UT","amount":-74.99,"type":"Debit Card Purchase","expected":"auto-maintenance"}
+{"note":"Delta flight","merchant":"Debit Card purch COMMENT: DELTA AIR LINES ATL GA","amount":-318.40,"type":"Debit Card Purchase","expected":"te-travel-outside"}
+{"note":"KinderCare","merchant":"ACH Withdrawal COMMENT: KINDERCARE LEARNING","amount":-820.00,"type":"Retail ACH","expected":"babysitting"}
+{"note":"Crumbl","merchant":"Debit Card purch COMMENT: CRUMBL COOKIES UT","amount":-14.50,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Uber ride","merchant":"Debit Card purch COMMENT: UBER *TRIP CA","amount":-19.30,"type":"Debit Card Purchase","expected":"auto-other"}
+{"note":"Sprouts","merchant":"Debit Card purch COMMENT: SPROUTS FARMERS MKT UT","amount":-58.90,"type":"Debit Card Purchase","expected":"groc-health-food"}
+{"note":"Interest charge","merchant":"INTEREST CHARGE ON PURCHASES","amount":-12.04,"type":"Fee","expected":"interest-fees"}
+{"note":"Tithing","merchant":"ACH Withdrawal COMMENT: CHURCH OF JESUS CHRIST TITHING","amount":-500.00,"type":"Retail ACH","expected":"charitable-tithing"}
+{"note":"Apple iCloud","merchant":"Debit Card purch COMMENT: APPLE.COM/BILL CA","amount":-2.99,"type":"Debit Card Purchase","expected":"misc-other"}
+{"note":"Farm self-employment income","merchant":"Deposit ACH COMMENT: FROM THE FARM LLC","amount":1250.00,"type":"Retail ACH","expected":"income-self-employment"}
+{"note":"Local diner (no brand in dictionary)","merchant":"Debit Card purch COMMENT: SQ *BLUE PLATE DINER UT","amount":-31.20,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Deseret Book is retail, not tithing","merchant":"Debit Card purch COMMENT: DESERET BOOK #12 UT","amount":-29.99,"type":"Debit Card Purchase","expected":"misc-other"}
+{"note":"Dental office (Smiles/PLLC, no 'dental' token)","merchant":"Debit Card purch COMMENT: WASATCH SMILES PLLC UT","amount":-145.00,"type":"Debit Card Purchase","expected":"misc-dental"}
+{"note":"Correct abstention: unknown p2p payment","merchant":"Debit Card purch COMMENT: VENMO PAYMENT NY","amount":-50.00,"type":"Debit Card Purchase","expected":"uncategorized"}
+{"note":"Pizzeria (substring 'pizza' doesn't match 'pizzeria')","merchant":"Debit Card purch COMMENT: TST* THE PIE PIZZERIA UT","amount":-27.85,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Coffee shop","merchant":"Debit Card purch COMMENT: SQ *SISTABREW COFFEE INC UT","amount":-14.97,"type":"Debit Card Purchase","expected":"te-entertainment-local"}
+{"note":"Tithe.ly digital tithing platform","merchant":"Withdrawal ACH TYPE: Tithe.Ly CO: Tithe.Ly","amount":-500.00,"type":"Retail ACH","expected":"charitable-tithing"}
+{"note":"Amazon refund (positive amount keeps its purchase category, nets the spend)","merchant":"Credit Card purch return AMAZON MKTPLACE PMTS AMZN.COM/BILL WA","amount":211.72,"type":"Credit","expected":"misc-other"}

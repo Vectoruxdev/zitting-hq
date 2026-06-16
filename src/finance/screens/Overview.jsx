@@ -37,6 +37,8 @@ function ZHQOverview({ onNavigate }) {
   const cats = D.categories || [];
   const budgets = D.budgets || [];
   const upcoming = D.upcoming || [];
+  const incomeUpcoming = (D.income && D.income.upcoming) || [];
+  const incomeRunway = (D.income && D.income.runway) || null;
   const cf = D.cashFlow || null;
   const moves = D.accountTransfers || [];
   const [unlinking, setUnlinking] = React.useState(null);
@@ -234,6 +236,33 @@ function ZHQOverview({ onNavigate }) {
             </Card>
           ) : null}
         </div>
+      ) : null}
+
+      {/* Income coming up + low-balance warning */}
+      {(incomeUpcoming.length || (incomeRunway && incomeRunway.dipsBelowBuffer)) ? (
+        <Card>
+          <SectionHeader title="Income coming up" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('income')}>Open</Button>} />
+          {incomeRunway && incomeRunway.dipsBelowBuffer ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 0 12px' }}>
+              <Icon name="alert" size={15} style={{ color: 'var(--warning)', flex: 'none', marginTop: 1 }} />
+              <span style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
+                {incomeRunway.worstAccountName || 'An account'} is projected to dip to {incomeRunway.lowLabel}{incomeRunway.lowDateLabel ? ` around ${incomeRunway.lowDateLabel}` : ''} before your next income.
+              </span>
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {incomeUpcoming.slice(0, 4).map((f, i) => (
+              <div key={(f.key || '') + i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: i === Math.min(incomeUpcoming.length, 4) - 1 ? 'none' : '1px solid var(--border-hairline)' }}>
+                <span style={{ width: 32, height: 32, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="trendingUp" size={15} /></span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>{f.dateLabel || 'soon'}{f.memberName ? ` · ${f.memberName}` : ''}</div>
+                </div>
+                <span className="zt-num" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)' }}>{f.amountLabel}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
       ) : null}
 
       {/* Recent transactions */}

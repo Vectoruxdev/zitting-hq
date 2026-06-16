@@ -51,6 +51,37 @@ export function monthlySpendSeries(
 }
 
 /**
+ * Income per month for the last `months` calendar months (oldest first), using
+ * the same registry-aware classification as the dashboard (flowOf().income —
+ * signed, so a reversal nets down). Owners-only data; members are scrubbed
+ * upstream. Mirrors `monthlySpendSeries`.
+ */
+export function monthlyIncomeSeries(
+  txns: SeriesTxn[],
+  now: Date,
+  months = 6,
+  opts?: FlowOpts
+): { labels: string[]; values: number[] } {
+  const labels: string[] = [];
+  const keys: string[] = [];
+  const bucket = new Map<string, number>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    labels.push(MONTHS[d.getMonth()]);
+    keys.push(key);
+    bucket.set(key, 0);
+  }
+  for (const t of txns) {
+    if (!t.dateISO) continue;
+    const key = monthKeyOf(t.dateISO);
+    if (key == null || !bucket.has(key)) continue;
+    bucket.set(key, bucket.get(key)! + flowOf(t, opts).income);
+  }
+  return { labels, values: keys.map((k) => Math.round(bucket.get(k)! * 100) / 100) };
+}
+
+/**
  * Month-end balances for the last `months` calendar months (oldest first),
  * ending at the CURRENT live balance. balance(m) = opening + Σ all txn amounts
  * dated on or before the end of month m; the final point is the live balance.

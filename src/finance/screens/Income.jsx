@@ -41,7 +41,7 @@ function IncomeSourceModal({ open, onClose, prefill }) {
         <Select label="Whose income?" value={memberId} onChange={setMemberId} options={[{ value: '', label: 'Household' }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
         <Select label="Deposits into (optional)" value={acct} onChange={setAcct} options={[{ value: '', label: 'Any account' }, ...accts]} />
         <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-          Every deposit from this payer — past and future — will count as income. Only marked sources drive the transfer forecast and allowance paychecks.
+          Every deposit from this payer — past and future — is labeled as income and credited to this person. Marked sources drive your forecasts, allowances, and the day-before reminders.
         </p>
       </div>
     </Modal>
@@ -127,6 +127,48 @@ function AddIncomePicker({ onClose, onPick }) {
   );
 }
 
+/* Low-balance alert settings — the cash-runway cushion + on/off. */
+function RunwaySettingsModal({ open, onClose, settings }) {
+  const { Modal, TextInput, Toggle, Button } = window.ZittingHQDesignSystem_c9e528;
+  const API = window.ZHQ_API || {};
+  const [enabled, setEnabled] = React.useState(true);
+  const [buffer, setBuffer] = React.useState('300');
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    if (!open) return;
+    setEnabled(settings?.cashRunwayEnabled !== false);
+    setBuffer(String(Math.round(settings?.cashRunwayBuffer ?? 300)));
+  }, [open, settings]);
+  async function save() {
+    if (!API.updateFinanceSettings) return;
+    setBusy(true);
+    try {
+      const amount = Math.max(0, Math.round(parseFloat(buffer) || 0));
+      await API.updateFinanceSettings({ cashRunwayBuffer: amount, cashRunwayEnabled: enabled });
+      window.ZHQ_REFRESH && window.ZHQ_REFRESH();
+      onClose();
+    } finally { setBusy(false); }
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Low-balance alerts" width={420}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy}>{busy ? '…' : 'Save'}</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Warn me before we run low</div>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.5 }}>Each day we check whether an account will dip below your cushion before the next income lands.</div>
+          </div>
+          <Toggle checked={enabled} onChange={setEnabled} />
+        </div>
+        <TextInput label="Safety cushion ($)" value={buffer} onChange={setBuffer} placeholder="300" />
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          We'll warn when a checking or savings account is projected to fall below this amount before your next paycheck lands.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
 function ZHQIncome() {
   const { Card, SectionHeader, Button, Icon, Badge, AreaChart, Sparkline, StatTile, Avatar, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
@@ -135,9 +177,13 @@ function ZHQIncome() {
   const inc = D.income || { sources: [], candidates: [], totalMonthly: 0, totalMonthlyLabel: '$0' };
   const sources = inc.sources || [];
   const candidates = inc.candidates || [];
+  const upcoming = inc.upcoming || [];
+  const runway = inc.runway || { dipsBelowBuffer: false };
+  const byMemberStats = new Map((inc.byMember || []).map((m) => [m.memberId, m]));
   const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
   const [modal, setModal] = React.useState(null); // null | { prefill }
   const [picking, setPicking] = React.useState(false); // "Add income" payer picker
+  const [runwayOpen, setRunwayOpen] = React.useState(false); // low-balance alert settings
   const [busy, setBusy] = React.useState(false);
   const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
   const pickPayer = (p) => {
@@ -145,9 +191,15 @@ function ZHQIncome() {
     setModal({ prefill: { matchKey: p.matchKey, name: p.name, accountId: p.accountId } });
   };
   async function remove(srcId) {
-    if (!window.confirm('Remove this income source? Its deposits will stop counting toward forecasts and allowances.')) return;
+    if (!window.confirm('Remove this income source? Its deposits will stop counting as income (forecasts + allowances), and it won’t be suggested again. You can re-add it anytime.')) return;
     setBusy(true);
-    try { await window.ZHQ_API.deleteIncomeSource(srcId); refresh(); } finally { setBusy(false); }
+    try {
+      // Soft-remove: deactivate (not hard-delete) so it stays suppressed from the
+      // "detected income" suggestions instead of popping back next sync. Drops the
+      // learned auto-categorization memory; re-marking it reactivates the row.
+      await window.ZHQ_API.updateIncomeSource(srcId, { active: false });
+      refresh();
+    } finally { setBusy(false); }
   }
 
   // Group registered sources by person (Household last).
@@ -190,16 +242,70 @@ function ZHQIncome() {
         {D.trend ? <AreaChart data={D.trend.income} labels={D.trend.labels} height={200} /> : null}
       </Card>
 
+      {runway && runway.dipsBelowBuffer ? (
+        <Card padding={16}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <span style={{ width: 34, height: 34, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--warning-soft)', color: 'var(--warning)' }}>
+              <Icon name="alert" size={17} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Low balance ahead</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.5 }}>
+                {runway.worstAccountName || 'An account'} is projected to dip to {runway.lowLabel}{runway.lowDateLabel ? ` around ${runway.lowDateLabel}` : ''} before your next income lands.
+              </div>
+            </div>
+            {isOwner ? <Button variant="ghost" size="sm" onClick={() => setRunwayOpen(true)}>Adjust</Button> : null}
+          </div>
+        </Card>
+      ) : null}
+
+      {upcoming.length ? (
+        <div>
+          <SectionHeader title="Coming up" />
+          <Card padding={6}>
+            {upcoming.slice(0, 6).map((f, i) => (
+              <div key={(f.key || '') + i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 14px', borderBottom: i === Math.min(upcoming.length, 6) - 1 ? 'none' : '1px solid var(--border-hairline)' }}>
+                <span style={{ width: 38, height: 38, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--green-glow)', color: 'var(--accent)' }}>
+                  <Icon name="trendingUp" size={17} />
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    {f.dateLabel || 'soon'}{f.memberName ? ` · ${f.memberName}` : ''}
+                  </div>
+                </div>
+                {f.confidence && f.confidence !== 'high' ? <Badge tone={f.confidence === 'manual' || f.confidence === 'override' ? 'accent' : 'neutral'} size="sm">{f.confidence === 'manual' ? 'expected' : f.confidence === 'override' ? 'adjusted' : f.confidence}</Badge> : null}
+                <span className="zt-num" style={{ flex: 'none', fontSize: 14.5, fontWeight: 600, color: 'var(--accent)' }}>{f.amountLabel || money(f.amount)}</span>
+              </div>
+            ))}
+          </Card>
+          <p style={{ margin: '8px 2px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>Predicted from each source's history. We'll remind you the day before one lands.</p>
+        </div>
+      ) : null}
+
       {sources.length ? (
         <div>
           <SectionHeader title="Your income" />
           {groups.map((gkey) => {
             const g = byMember.get(gkey);
+            const stat = byMemberStats.get(gkey);
+            const hasSeries = stat && stat.series && stat.series.values && stat.series.values.some((v) => v > 0);
             return (
               <div key={gkey} style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 2px 8px' }}>
-                  <Avatar name={g.name} size="xs" />
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>{g.name}</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, margin: '0 2px 8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Avatar name={g.name} size="xs" />
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>{g.name}</span>
+                  </div>
+                  {stat ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      {hasSeries ? <Sparkline data={stat.series.values} width={90} height={26} area /> : null}
+                      <div style={{ textAlign: 'right' }}>
+                        <div className="zt-num" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{stat.totalLabel}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>all time · {stat.monthLabel} this mo</div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 <Card padding={6}>
                   {g.items.map((s, i) => (
@@ -253,8 +359,26 @@ function ZHQIncome() {
         </div>
       ) : null}
 
+      {isOwner ? (
+        <Card padding={16}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 34, height: 34, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--surface-sunken)', color: 'var(--text-tertiary)' }}><Icon name="alert" size={16} /></span>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>Low-balance alerts</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  {inc.settings && inc.settings.cashRunwayEnabled === false ? 'Off' : `On · warns below ${money((inc.settings && inc.settings.cashRunwayBuffer) || 300)}`}
+                </div>
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setRunwayOpen(true)}>Edit</Button>
+          </div>
+        </Card>
+      ) : null}
+
       {picking ? <AddIncomePicker onClose={() => setPicking(false)} onPick={pickPayer} /> : null}
       <IncomeSourceModal open={!!modal} onClose={() => setModal(null)} prefill={modal?.prefill} />
+      <RunwaySettingsModal open={runwayOpen} onClose={() => setRunwayOpen(false)} settings={inc.settings} />
     </div>
   );
 }

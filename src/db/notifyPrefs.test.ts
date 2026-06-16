@@ -24,9 +24,27 @@ describe("prefKeyForType", () => {
     expect(prefKeyForType("large-charge")).toBe("large_charges");
     expect(prefKeyForType("categorize-nudge")).toBe("member_nudges");
     expect(prefKeyForType("member-complete")).toBe("member_complete");
+    expect(prefKeyForType("income-expected")).toBe("income_expected");
+    expect(prefKeyForType("cash-runway")).toBe("cash_runway");
   });
   it("returns null for untunable types (always allowed)", () => {
     expect(prefKeyForType("transfers")).toBeNull();
+  });
+});
+
+describe("income notification events", () => {
+  it("are present in the catalog, owners-audience, and default fully on", () => {
+    const merged = mergePrefs([]);
+    for (const ev of ["income_expected", "cash_runway"]) {
+      const m = merged.find((x) => x.event === ev)!;
+      expect(m).toBeTruthy();
+      expect(m.audience).toBe("owners");
+      expect(m.enabled && m.inApp && m.push).toBe(true);
+    }
+  });
+  it("gate off when the owner disables them", () => {
+    expect(channelsFor("income-expected", [{ event: "income_expected", enabled: false, inApp: true, push: true }]).enabled).toBe(false);
+    expect(channelsFor("cash-runway", [{ event: "cash_runway", enabled: true, inApp: true, push: false }]).push).toBe(false);
   });
 });
 

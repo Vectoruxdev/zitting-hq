@@ -221,7 +221,7 @@ export async function deleteExpectedIncome(id: string) {
   return res;
 }
 /** Owner: mark a payer (merchant key) as a curated income source. */
-export async function markIncomeSource(args: { matchKey: string; name: string; memberId?: string | null; accountId?: string | null }) {
+export async function markIncomeSource(args: { matchKey: string; name: string; memberId?: string | null; accountId?: string | null; categoryId?: string | null }) {
   const u = await ensureOwner();
   const res = await m.markIncomeSource({ ...args, createdBy: u?.memberId ?? null });
   refresh();
@@ -236,6 +236,13 @@ export async function updateIncomeSource(id: string, patch: Parameters<typeof m.
 export async function deleteIncomeSource(id: string) {
   await ensureOwner();
   const res = await m.deleteIncomeSource(id);
+  refresh();
+  return res;
+}
+/** Owner: adjust the cash-runway low-balance cushion / on-off. */
+export async function updateFinanceSettings(patch: { cashRunwayBuffer?: number; cashRunwayEnabled?: boolean }) {
+  await ensureOwner();
+  const res = await m.updateFinanceSettings(patch);
   refresh();
   return res;
 }

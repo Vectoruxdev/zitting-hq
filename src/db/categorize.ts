@@ -47,6 +47,15 @@ export interface ScoreOpts {
 /** Below this, a suggestion should be surfaced for review. */
 export const REVIEW_THRESHOLD = 0.7;
 
+/** Approval gate for newly-imported rows. Only a human-set category ("manual")
+ *  or a detected/linked transfer is auto-approved; everything the engine guessed
+ *  (rule/learned/merchant/keyword/income/none) starts UNapproved so a person
+ *  signs off on auto-categorized spend. Confidence no longer auto-approves — the
+ *  point of approval is a human in the loop, not the model's self-assessment. */
+export function shouldAutoApprove(source: string | null | undefined, isTransfer: boolean): boolean {
+  return source === "manual" || source === "transfer" || isTransfer;
+}
+
 /** Learned memory recency: a correction's weight halves every ~180 days, with a
  *  floor so old-but-consistent history still counts. */
 const MEMORY_HALF_LIFE_MS = 180 * 24 * 60 * 60 * 1000;
@@ -58,13 +67,16 @@ function recencyWeight(lastSeen: number | undefined, now: number | undefined): n
 function kindOf(catKind: Map<string, string> | undefined, id: string): string | undefined {
   return catKind?.get(id);
 }
-/** A candidate category is sign-compatible if it doesn't contradict the amount:
- *  spending (amount<0) can't be an income category; a deposit (amount>0) isn't an
- *  expense. Transfers and unknown kinds always pass. */
+/** A candidate category is sign-compatible if it doesn't contradict the amount.
+ *  Spending (amount<0) can't be an income category — a charge is never a paycheck.
+ *  A deposit (amount>0) IS allowed to take an expense category: that's a refund or
+ *  return, which belongs in the original purchase category so it nets against the
+ *  spend (a $50 Amazon return cancels a $50 Amazon charge in misc-other). Only when
+ *  no merchant/keyword matches does an unexplained deposit fall through to income.
+ *  Transfers and unknown kinds always pass. */
 function signCompatible(kind: string | undefined, amount: number): boolean {
   if (!kind || kind === "transfer") return true;
   if (amount < 0 && kind === "income") return false;
-  if (amount > 0 && kind === "expense") return false;
   return true;
 }
 
@@ -188,6 +200,9 @@ const DICTIONARY: [string, string][] = [
   ["chipotle", "te-entertainment-local"], ["panda express", "te-entertainment-local"], ["subway", "te-entertainment-local"],
   ["dunkin", "te-entertainment-local"], ["in n out", "te-entertainment-local"], ["crumbl", "te-entertainment-local"],
   ["swig", "te-entertainment-local"], ["cafe", "te-entertainment-local"], ["restaurant", "te-entertainment-local"],
+  ["diner", "te-entertainment-local"], ["pizzeria", "te-entertainment-local"], ["grill", "te-entertainment-local"],
+  ["coffee", "te-entertainment-local"], ["bistro", "te-entertainment-local"], ["brew pub", "te-entertainment-local"],
+  ["brewpub", "te-entertainment-local"], ["roasting", "te-entertainment-local"], ["creamery", "te-entertainment-local"],
   ["grubhub", "te-entertainment-local"], ["doordash", "te-entertainment-local"], ["uber eats", "te-entertainment-local"],
   ["kfc", "te-entertainment-local"], ["cafe rio", "te-entertainment-local"],
   ["vasa", "te-entertainment-local"], ["planet fitness", "te-entertainment-local"], ["life time", "te-entertainment-local"],
@@ -218,16 +233,19 @@ const DICTIONARY: [string, string][] = [
   ["old navy", "misc-clothing"], ["nike", "misc-clothing"],
   ["walgreens", "misc-medical"], ["cvs", "misc-medical"], ["intermountain", "misc-medical"],
   ["revere health", "misc-medical"], ["pharmacy", "misc-medical"], ["clinic", "misc-medical"],
-  ["dental", "misc-dental"], ["dentist", "misc-dental"],
+  ["dental", "misc-dental"], ["dentist", "misc-dental"], ["orthodont", "misc-dental"], ["smiles", "misc-dental"],
   ["amazon", "misc-other"], ["target", "misc-other"], ["best buy", "misc-other"], ["etsy", "misc-other"],
-  ["ebay", "misc-other"], ["ulta", "misc-other"], ["sephora", "misc-other"],
+  ["ebay", "misc-other"], ["ulta", "misc-other"], ["sephora", "misc-other"], ["deseret book", "misc-other"],
+  ["tj maxx", "misc-clothing"], ["google store", "misc-other"], ["google tv", "misc-other"], ["klarna", "misc-other"],
+  ["galleria of jewelry", "misc-other"], ["pink stork", "groc-health-food"], ["pinkstork", "groc-health-food"],
   // child care + education
   ["kindercare", "babysitting"], ["daycare", "babysitting"], ["tuition", "misc-education"],
   // income
   ["adp", "income-paycheck"], ["payroll", "income-paycheck"], ["eddyhr", "income-paycheck"],
-  ["paychex", "income-paycheck"], ["gusto", "income-paycheck"],
-  // tithing / charitable
-  ["tithing", "charitable-tithing"], ["church of jesus christ", "charitable-tithing"], ["deseret", "charitable-tithing"],
+  ["paychex", "income-paycheck"], ["gusto", "income-paycheck"], ["from the farm", "income-self-employment"],
+  // tithing / charitable — bare "deseret" removed: Deseret Book/Industries/News are
+  // retail, not tithing; real tithing matches "tithing" or "church of jesus christ".
+  ["tithing", "charitable-tithing"], ["church of jesus christ", "charitable-tithing"], ["tithe", "charitable-tithing"],
 ];
 
 const KEYWORDS: [RegExp, string][] = [
@@ -334,6 +352,10 @@ export function scoreCategory(txn: TxnLike, opts: ScoreOpts = {}): Suggestion {
   const merchantKey = extractMerchant(txn.merchant);
   const exactKey = exactMerchantKey(txn.merchant);
   const raw = (txn.merchant || "").toLowerCase();
+  // Brand-canonical core ("WAL-MART"→"walmart", "AMZN Mktp"→"amazon") so the
+  // dictionary matches the same merchant however the bank spells it, not just
+  // its literal raw form.
+  const core = coreMerchant(txn.merchant);
 
   // 1. Explicit user rules win outright.
   if (opts.rules?.length) {
@@ -357,9 +379,11 @@ export function scoreCategory(txn: TxnLike, opts: ScoreOpts = {}): Suggestion {
     return { categoryId: tok.categoryId, confidence: tok.confidence, source: "learned", merchantKey, member: tok.member, reason: `You've categorized “${merchantKey}” ${tok.n}× — ${Math.round(tok.ratio * 100)}% this way` };
   }
 
-  // 4. Built-in merchant dictionary (sign-guarded).
+  // 4. Built-in merchant dictionary (sign-guarded). Matches the raw description
+  //    or its brand-canonical core, so spelling variants ("WAL-MART", "AMZN")
+  //    still hit their entry.
   for (const [sub, catId] of DICTIONARY) {
-    if (raw.includes(sub) && signCompatible(kindOf(opts.catKind, catId), txn.amount)) {
+    if ((raw.includes(sub) || core.includes(sub)) && signCompatible(kindOf(opts.catKind, catId), txn.amount)) {
       return { categoryId: catId, confidence: 0.8, source: "merchant", merchantKey, reason: `Recognized merchant (“${sub}”)` };
     }
   }

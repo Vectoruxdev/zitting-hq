@@ -72,6 +72,8 @@ export interface MonthStats {
   catTotals: Map<string, number>;
   /** Net spend per attributed member id. */
   memberTotals: Map<string, number>;
+  /** Income per attributed member id (signed; registry-aware). Owners-only. */
+  memberIncome: Map<string, number>;
 }
 
 /** Whether a txn classifies as income under the active semantics. */
@@ -86,12 +88,14 @@ function flowIsIncome(
 export function foldMonthStats(txns: FlowTxn[], opts?: FlowOpts): MonthStats {
   const catTotals = new Map<string, number>();
   const memberTotals = new Map<string, number>();
+  const memberIncome = new Map<string, number>();
   let income = 0;
   let spending = 0;
   for (const t of txns) {
     if (t.isTransfer || t.catKind === "transfer") continue;
     if (flowIsIncome(t, opts)) {
       income += t.amount; // signed — a reversal reduces income
+      if (t.memberId) memberIncome.set(t.memberId, (memberIncome.get(t.memberId) || 0) + t.amount);
       continue;
     }
     // Net spend: a charge adds, a refund subtracts — attributed to its category.
@@ -116,5 +120,5 @@ export function foldMonthStats(txns: FlowTxn[], opts?: FlowOpts): MonthStats {
       catTotals.set(key, (catTotals.get(key) || 0) + net);
     }
   }
-  return { income, spending, catTotals, memberTotals };
+  return { income, spending, catTotals, memberTotals, memberIncome };
 }

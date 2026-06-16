@@ -13,11 +13,11 @@ import { computeMemberProgress } from "./allowance";
 import { computePerfAllowance } from "./perfAllowance";
 import { channelsFor, mergePrefs } from "./notifyPrefs";
 import { findExactDuplicates } from "./dedupe";
-import { dedupeKey, contentDupKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, REVIEW_THRESHOLD, type MemoryMap, type RuleLike } from "./categorize";
+import { dedupeKey, contentDupKey, markDuplicates, extractMerchant, exactMerchantKey, scoreCategory, shouldAutoApprove, type MemoryMap, type RuleLike } from "./categorize";
 import { matchTransfers } from "./transfers";
 import { generateInstances, reconcileInstances } from "./allocate";
 import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./schedule";
-import { forecastIncome, computeCoverage, shortfallAlert, type IncomeSourceInput } from "./forecast";
+import { forecastIncome, computeCoverage, shortfallAlert, incomeLandingOn, projectRunway, runwayAlert, type IncomeSourceInput } from "./forecast";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 import { tallyLearning, mergeTallies, emptyTally, type LearningTally } from "./learnBatch";
 
@@ -476,7 +476,11 @@ export async function commitImport(args: {
     const cat = r.categoryId ? cats.get(r.categoryId) : undefined;
     const mem = r.memberId ? members.get(r.memberId) : undefined;
     const conf = r.categoryConfidence ?? null;
-    const reviewed = r.categorySource === "manual" ? true : (conf ?? 0) >= REVIEW_THRESHOLD;
+    // Approval gate: auto-categorized rows start UNapproved (reviewed=false) so a
+    // human signs off; only manual categories + transfers are auto-approved.
+    // (Confidence still rides along on the row for the UI, but no longer
+    // auto-approves — see shouldAutoApprove in categorize.ts.)
+    const reviewed = shouldAutoApprove(r.categorySource, Boolean(r.isTransfer));
     if (r.categorySource === "manual" && r.categoryId && r.categoryId !== UNCATEGORIZED_ID) {
       learnQueue.push({ merchant: r.merchant, categoryId: r.categoryId, member: mem?.id ?? r.memberId ?? null });
     }
@@ -1322,40 +1326,126 @@ export async function incomeKeysForMember(memberId: string): Promise<Set<string>
   const rows = await activeIncomeSources();
   return new Set(rows.filter((r) => r.memberId === memberId).map((r) => r.matchKey));
 }
-/** Mark a payer (merchant key) as an income source. Upsert on matchKey. */
+/**
+ * Clean up history when a payer becomes income: every PAST deposit from this
+ * merchant key is relabeled to a clean income category and attributed to the
+ * earner, and learned memory is seeded so FUTURE imports auto-land as income.
+ * Sign-guarded (amount>0) and collision-safe (a deposit the user deliberately
+ * filed under an EXPENSE category is left alone). Returns how many it touched.
+ */
+async function backfillIncomeCategory(matchKey: string, memberId: string | null, categoryId: string) {
+  const database = requireDb();
+  const rows = await database
+    .select({
+      id: s.transactions.id,
+      merchant: s.transactions.merchant,
+      amount: s.transactions.amount,
+      categoryId: s.transactions.categoryId,
+      categorySource: s.transactions.categorySource,
+    })
+    .from(s.transactions)
+    .where(eq(s.transactions.isTransfer, false));
+  const kinds = await kindMap();
+  const ids: number[] = [];
+  let skipped = 0;
+  for (const r of rows) {
+    if (Number(r.amount ?? 0) <= 0) continue; // sign guard — never relabel a negative row that shares the key
+    if (extractMerchant(r.merchant) !== matchKey) continue;
+    // Respect a deliberate manual EXPENSE categorization that collides on the broad key.
+    if (r.categorySource === "manual" && r.categoryId && kinds.get(r.categoryId) === "expense") {
+      skipped++;
+      continue;
+    }
+    ids.push(r.id);
+  }
+  // Seed learned memory once (authoritative) so future deposits from this payer
+  // categorize as income without per-row learning churn over the backfill.
+  await setMerchantCategory(matchKey, categoryId, memberId);
+  if (!ids.length) return { backfilled: 0, skipped };
+  const patch: TxnPatch = memberId ? { categoryId, memberId } : { categoryId };
+  await bulkUpdateTransactions(ids, patch, { learn: false }); // memory already seeded above
+  // The income boolean isn't part of TxnPatch — set it directly so these count.
+  await database.update(s.transactions).set({ income: true }).where(inArray(s.transactions.id, ids));
+  return { backfilled: ids.length, skipped };
+}
+
+/** Mark a payer (merchant key) as an income source. Upsert on matchKey, then
+ *  clean up history + seed future categorization (see backfillIncomeCategory). */
 export async function markIncomeSource(args: {
   matchKey: string;
   name: string;
   memberId?: string | null;
   accountId?: string | null;
+  categoryId?: string | null; // clean income category for the backfill (default income-paycheck)
   createdBy?: string | null;
 }) {
   const database = requireDb();
   const [existing] = await database.select({ id: s.incomeSources.id }).from(s.incomeSources).where(eq(s.incomeSources.matchKey, args.matchKey));
+  let id: string;
   if (existing) {
     await database
       .update(s.incomeSources)
       .set({ name: args.name, memberId: args.memberId ?? null, accountId: args.accountId ?? null, active: true })
       .where(eq(s.incomeSources.id, existing.id));
-    return { ok: true as const, id: existing.id };
+    id = existing.id;
+  } else {
+    id = crypto.randomUUID();
+    await database.insert(s.incomeSources).values({
+      id,
+      matchKey: args.matchKey,
+      name: args.name,
+      memberId: args.memberId ?? null,
+      accountId: args.accountId ?? null,
+      createdBy: args.createdBy ?? null,
+    });
   }
-  const id = crypto.randomUUID();
-  await database.insert(s.incomeSources).values({
-    id,
-    matchKey: args.matchKey,
-    name: args.name,
-    memberId: args.memberId ?? null,
-    accountId: args.accountId ?? null,
-    createdBy: args.createdBy ?? null,
-  });
-  return { ok: true as const, id };
+  const fill = await backfillIncomeCategory(args.matchKey, args.memberId ?? null, args.categoryId ?? "income-paycheck").catch(() => ({ backfilled: 0, skipped: 0 }));
+  return { ok: true as const, id, ...fill };
 }
 export async function updateIncomeSource(id: string, patch: { name?: string; memberId?: string | null; accountId?: string | null; active?: boolean }) {
-  await requireDb().update(s.incomeSources).set(patch).where(eq(s.incomeSources.id, id));
+  const database = requireDb();
+  await database.update(s.incomeSources).set(patch).where(eq(s.incomeSources.id, id));
+  // Deactivating a source stops future deposits from auto-counting as income.
+  if (patch.active === false) {
+    const [row] = await database.select({ matchKey: s.incomeSources.matchKey }).from(s.incomeSources).where(eq(s.incomeSources.id, id));
+    if (row?.matchKey) await forgetMerchant(row.matchKey).catch(() => {});
+  }
   return { ok: true as const };
 }
 export async function deleteIncomeSource(id: string) {
-  await requireDb().delete(s.incomeSources).where(eq(s.incomeSources.id, id));
+  const database = requireDb();
+  // Non-destructive undo: drop the seeded memory so future deposits stop
+  // auto-categorizing as income, but leave past transaction categories as they
+  // are (their prior category can't be reliably reconstructed; registry-active
+  // filtering already removes them from income aggregates once unregistered).
+  const [row] = await database.select({ matchKey: s.incomeSources.matchKey }).from(s.incomeSources).where(eq(s.incomeSources.id, id));
+  await database.delete(s.incomeSources).where(eq(s.incomeSources.id, id));
+  if (row?.matchKey) await forgetMerchant(row.matchKey).catch(() => {});
+  return { ok: true as const };
+}
+
+// ---- household finance settings (cash-runway warning) ----
+/** Read the singleton finance-settings row (defensive defaults pre-migration). */
+export async function getFinanceSettings() {
+  const [row] = await requireDb()
+    .select()
+    .from(s.financeSettings)
+    .where(eq(s.financeSettings.id, "household"))
+    .catch(() => [] as (typeof s.financeSettings.$inferSelect)[]);
+  return {
+    cashRunwayBuffer: row ? Number(row.cashRunwayBuffer ?? 300) : 300,
+    cashRunwayEnabled: row ? row.cashRunwayEnabled : true,
+  };
+}
+/** Owner: update the cash-runway cushion / on-off (upsert the singleton). */
+export async function updateFinanceSettings(patch: { cashRunwayBuffer?: number; cashRunwayEnabled?: boolean }) {
+  const database = requireDb();
+  const values: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.cashRunwayBuffer !== undefined) values.cashRunwayBuffer = String(patch.cashRunwayBuffer);
+  if (patch.cashRunwayEnabled !== undefined) values.cashRunwayEnabled = patch.cashRunwayEnabled;
+  const [existing] = await database.select({ id: s.financeSettings.id }).from(s.financeSettings).where(eq(s.financeSettings.id, "household")).catch(() => []);
+  if (existing) await database.update(s.financeSettings).set(values).where(eq(s.financeSettings.id, "household"));
+  else await database.insert(s.financeSettings).values({ id: "household", ...values });
   return { ok: true as const };
 }
 
@@ -2718,6 +2808,170 @@ export async function notifyTransferShortfall(todayISO: string) {
     entityType: "route",
     entityRef: "transfers",
     dedupeKey: `transfers:short:${todayISO}`,
+  });
+  return { ok: true as const, notified: !("skipped" in res && res.skipped) };
+}
+
+/**
+ * Heads-up the day BEFORE a registered income source is expected to land
+ * (owners). Forecasts each curated payer from its history and fires for any
+ * landing tomorrow (variance-aware via incomeLandingOn). Idempotent per
+ * source+landing-date, so cron retries never double-post.
+ */
+export async function notifyIncomeExpected(todayISO: string) {
+  const database = requireDb();
+  const addDays = (iso: string, d: number) => {
+    const dt = new Date(iso + "T00:00:00");
+    dt.setDate(dt.getDate() + d);
+    return dt.toISOString().slice(0, 10);
+  };
+  const tomorrow = addDays(todayISO, 1);
+
+  const registry = await activeIncomeSources();
+  if (!registry.length) return { ok: true as const, notified: false };
+  const regByKey = new Map(registry.map((r) => [r.matchKey, r]));
+  const txnRows = await database
+    .select({ accountId: s.transactions.accountId, amount: s.transactions.amount, merchant: s.transactions.merchant, date: s.transactions.date, income: s.transactions.income, isTransfer: s.transactions.isTransfer })
+    .from(s.transactions);
+  const srcMap = new Map<string, IncomeSourceInput>();
+  for (const t of txnRows) {
+    if (!t.income || t.isTransfer) continue;
+    const iso = t.date as string | null;
+    if (!iso) continue;
+    const key = extractMerchant(t.merchant);
+    const reg = regByKey.get(key);
+    if (!reg) continue;
+    const e = srcMap.get(key) || { key, name: reg.name, accountId: reg.accountId ?? t.accountId, points: [] };
+    e.points.push({ dateISO: iso, amount: Number(t.amount ?? 0) });
+    e.accountId = t.accountId ?? e.accountId;
+    srcMap.set(key, e);
+  }
+  const landing = incomeLandingOn(forecastIncome([...srcMap.values()], todayISO, 3), tomorrow);
+  if (!landing.length) return { ok: true as const, notified: false };
+
+  const usd = (v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  let notified = 0;
+  for (const f of landing) {
+    const name = regByKey.get(f.key)?.name ?? f.name;
+    const res = await createNotification({
+      type: "income-expected",
+      tone: "accent",
+      icon: "trendingUp",
+      audience: "owners",
+      title: `${name} lands tomorrow — about ${usd(f.amount)}`,
+      body: `${name} is expected to deposit about ${usd(f.amount)} tomorrow${f.confidence === "low" ? " (rough estimate from limited history)" : ""}.`,
+      linkTo: "income",
+      entityType: "route",
+      entityRef: "income",
+      dedupeKey: `income-expected:${f.key}:${f.dateISO}`,
+    });
+    if (!("skipped" in res && res.skipped)) notified++;
+  }
+  return { ok: true as const, notified: notified > 0, count: notified };
+}
+
+/**
+ * Warn (owners) when a household account is projected to dip below the cash
+ * cushion before the next income lands — the proactive counterpart to the
+ * display-only runway. Outflows = pending transfers + recurring bills (predicted
+ * by reusing the income forecaster on expense history, per account); income =
+ * registry forecast. Idempotent per worst-account+day; gated by the household
+ * setting (finance_settings). Distinct from notifyTransferShortfall, which only
+ * watches queued transfers due in the next 2 days.
+ */
+export async function notifyCashRunway(todayISO: string) {
+  const database = requireDb();
+  const settings = await getFinanceSettings();
+  if (!settings.cashRunwayEnabled) return { ok: true as const, notified: false };
+  const buffer = settings.cashRunwayBuffer;
+  const HORIZON = 21;
+
+  // Household cash accounts + live balance (available preferred; else opening+net).
+  const acctRows = await database
+    .select({ id: s.accounts.id, name: s.accounts.name, mask: s.accounts.mask, balance: s.accounts.balance, type: s.accounts.type, space: s.accounts.space })
+    .from(s.accounts);
+  const household = acctRows.filter((a) => a.space !== "business" && a.type !== "credit");
+  if (!household.length) return { ok: true as const, notified: false };
+  const householdIds = new Set(household.map((a) => a.id));
+  const availRows = await database
+    .select({ id: s.accounts.id, available: s.accounts.availableBalance })
+    .from(s.accounts)
+    .catch(() => [] as { id: string; available: string | null }[]);
+  const availById = new Map(availRows.map((r) => [r.id, r.available]));
+  const txnRows = await database
+    .select({ accountId: s.transactions.accountId, amount: s.transactions.amount, merchant: s.transactions.merchant, date: s.transactions.date, income: s.transactions.income, isTransfer: s.transactions.isTransfer })
+    .from(s.transactions);
+  const netByAcct = new Map<string, number>();
+  for (const t of txnRows) {
+    if (!t.accountId) continue;
+    netByAcct.set(t.accountId, (netByAcct.get(t.accountId) || 0) + Number(t.amount ?? 0));
+  }
+  const accounts = household.map((a) => {
+    const avail = availById.get(a.id);
+    return { accountId: a.id, balance: avail != null ? Number(avail) : Number(a.balance ?? 0) + (netByAcct.get(a.id) || 0) };
+  });
+  const nameById: Record<string, string> = {};
+  for (const a of household) nameById[a.id] = a.mask ? `${a.name} ••${a.mask}` : a.name;
+
+  // Outflows: pending transfers (dated) leaving household accounts.
+  const pending = await database
+    .select({ amount: s.transferInstances.amount, fromAccountId: s.transferInstances.fromAccountId, plannedDate: s.transferInstances.plannedDate })
+    .from(s.transferInstances)
+    .where(eq(s.transferInstances.status, "pending"))
+    .catch(() => [] as { amount: string | null; fromAccountId: string | null; plannedDate: unknown }[]);
+  const outflows: { accountId: string | null; dateISO: string; amount: number }[] = [];
+  for (const p of pending) {
+    if (!p.fromAccountId || !householdIds.has(p.fromAccountId)) continue;
+    outflows.push({ accountId: p.fromAccountId, dateISO: p.plannedDate ? String(p.plannedDate).slice(0, 10) : todayISO, amount: Number(p.amount ?? 0) });
+  }
+  // + predicted recurring bills: reuse the forecaster on expense history per (account, payer).
+  const billSrc = new Map<string, IncomeSourceInput>();
+  for (const t of txnRows) {
+    if (t.income || t.isTransfer) continue;
+    const amt = Number(t.amount ?? 0);
+    if (amt >= 0) continue; // outflows only
+    const iso = t.date as string | null;
+    if (!iso || !t.accountId || !householdIds.has(t.accountId)) continue;
+    const key = `${t.accountId}|${extractMerchant(t.merchant)}`;
+    const e = billSrc.get(key) || { key, name: extractMerchant(t.merchant), accountId: t.accountId, points: [] };
+    e.points.push({ dateISO: iso, amount: -amt });
+    billSrc.set(key, e);
+  }
+  for (const f of forecastIncome([...billSrc.values()], todayISO, HORIZON)) {
+    outflows.push({ accountId: f.accountId, dateISO: f.dateISO, amount: f.amount });
+  }
+
+  // Expected income (registry forecast) within the window.
+  const regByKey = new Map((await activeIncomeSources()).map((r) => [r.matchKey, r]));
+  const incSrc = new Map<string, IncomeSourceInput>();
+  for (const t of txnRows) {
+    if (!t.income || t.isTransfer) continue;
+    const iso = t.date as string | null;
+    if (!iso) continue;
+    const reg = regByKey.get(extractMerchant(t.merchant));
+    if (!reg) continue;
+    const e = incSrc.get(reg.matchKey) || { key: reg.matchKey, name: reg.name, accountId: reg.accountId ?? t.accountId, points: [] };
+    e.points.push({ dateISO: iso, amount: Number(t.amount ?? 0) });
+    e.accountId = t.accountId ?? e.accountId;
+    incSrc.set(reg.matchKey, e);
+  }
+  const income = forecastIncome([...incSrc.values()], todayISO, HORIZON).map((f) => ({ dateISO: f.dateISO, amount: f.amount, accountId: f.accountId }));
+
+  const runway = projectRunway({ accounts, outflows, income, todayISO, horizonDays: HORIZON, buffer });
+  const alert = runwayAlert(runway, { accountNames: nameById });
+  if (!alert) return { ok: true as const, notified: false };
+
+  const res = await createNotification({
+    type: "cash-runway",
+    tone: "negative",
+    icon: "alert",
+    audience: "owners",
+    title: alert.title,
+    body: alert.body,
+    linkTo: "transfers",
+    entityType: "route",
+    entityRef: "transfers",
+    dedupeKey: `cash-runway:${runway.worstAccountId}:${todayISO}`,
   });
   return { ok: true as const, notified: !("skipped" in res && res.skipped) };
 }

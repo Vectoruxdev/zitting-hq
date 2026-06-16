@@ -142,7 +142,7 @@ function ZHQNotificationDetail({ notif, onClose, onNavigate, memberView }) {
   } else {
     // route / none — a single CTA derived from the route.
     const route = ent.route || n.linkTo || 'overview';
-    const label = route === 'transfers' ? 'Review transfers' : route === 'transactions' ? (isMember ? 'Review now' : 'Open transactions') : 'Open';
+    const label = route === 'transfers' ? 'Review transfers' : route === 'transactions' ? (isMember ? 'Review now' : 'Open transactions') : route === 'income' ? 'Open income' : 'Open';
     bodyEl = <Button variant="secondary" size="md" style={{ width: '100%' }} onClick={() => go(route)}>{label} →</Button>;
   }
 

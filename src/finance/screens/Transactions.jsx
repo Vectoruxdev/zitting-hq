@@ -133,7 +133,7 @@ function IncomeTrend({ history }) {
   );
 }
 
-function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTransfer, onUnlink }) {
+function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTransfer, onUnlink, onApprove }) {
   const { Icon, IconButton, Tag, Avatar, Badge, Toggle, Button } = window.ZittingHQDesignSystem_c9e528;
   const [splitOpen, setSplitOpen] = React.useState(false);
   return (
@@ -145,7 +145,8 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
           <IconButton icon="x" label="Close" onClick={onClose} />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          {txn.reviewed ? <Badge tone="positive" size="sm" dot>Approved</Badge> : <Badge tone="warning" size="sm" dot>Needs approval</Badge>}
           {txn.income ? <Badge tone="positive" size="sm" dot>Income</Badge> : null}
           {txn.pending ? <Badge status="pending" size="sm" dot /> : null}
           {txn.isTransfer ? <Badge tone="neutral" size="sm">Transfer</Badge> : null}
@@ -160,6 +161,12 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
         <div className="zt-num" style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.03em', color: txn.income ? 'var(--positive)' : 'var(--text-primary)', marginTop: 8 }}>
           {txn.income ? '+' : '−'}${Math.abs(txn.amt).toFixed(2)}
         </div>
+
+        {!txn.reviewed && onApprove ? (
+          <Button variant="primary" size="md" full iconLeft={<Icon name="check" size={16} />} onClick={() => onApprove(txn)} style={{ marginTop: 16 }}>
+            Approve {txn.source && txn.source !== 'none' ? `· ${txn.cat}` : 'category'}
+          </Button>
+        ) : null}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '20px 0' }}>
           {[['Date', txn.date], ['Account', txn.account], ['Category', 'cat'], ['Attributed to', 'who']].map(([k, kind]) => (
@@ -282,7 +289,7 @@ function ZHQTxnDrawer({ txn, onClose, onPickCategory, onPickPerson, onToggleTran
 }
 
 function ZHQTransactions({ onNavigate }) {
-  const { Card, Icon, Button, Tag, Avatar, DataTable, AmountCell, SegmentedControl, Checkbox, Modal } = window.ZittingHQDesignSystem_c9e528;
+  const { Card, Icon, Button, Tag, Avatar, DataTable, AmountCell, SegmentedControl, Checkbox, Modal, Badge } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
   const API = window.ZHQ_API || {};
   const cats = D.allCategories || [];
@@ -302,7 +309,10 @@ function ZHQTransactions({ onNavigate }) {
     () => [...(D.txns || [])].sort((a, b) => String(b.isoDate || '').localeCompare(String(a.isoDate || '')) || b.id - a.id),
     [D.txns]
   );
-  const scoped = scope === 'Review' ? all.filter((t) => !t.reviewed)
+  // "Pending" = auto-categorized rows awaiting human approval (!reviewed);
+  // "Approved" = signed off (reviewed). Reuses the existing `reviewed` flag.
+  const scoped = scope === 'Pending' ? all.filter((t) => !t.reviewed)
+    : scope === 'Approved' ? all.filter((t) => t.reviewed)
     : scope === 'Flagged' ? all.filter((t) => t.flagged)
     : scope === 'Income' ? all.filter((t) => t.income) : all;
   // Search across everything a person might remember about a charge:
@@ -366,12 +376,12 @@ function ZHQTransactions({ onNavigate }) {
           ) : null}
         </div>
         {reviewCount > 0 ? (
-          <button onClick={() => setScope('Review')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', background: scope === 'Review' ? 'var(--surface-raised)' : 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-pill)', color: 'var(--warning)', font: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            {reviewCount} to review
+          <button onClick={() => setScope('Pending')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', background: scope === 'Pending' ? 'var(--surface-raised)' : 'var(--warning-soft)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-pill)', color: 'var(--warning)', font: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {reviewCount} to approve
           </button>
         ) : null}
         <div style={{ flex: 1 }} />
-        <SegmentedControl options={['All', 'Review', 'Income', 'Flagged']} value={scope} onChange={setScope} size="sm" />
+        <SegmentedControl options={['All', 'Pending', 'Approved', 'Income', 'Flagged']} value={scope} onChange={setScope} size="sm" />
         <Button variant="primary" size="sm" iconLeft={<Icon name="arrowDown" size={15} />} onClick={() => onNavigate && onNavigate('import')}>Import</Button>
       </div>
 
@@ -382,7 +392,7 @@ function ZHQTransactions({ onNavigate }) {
           <span style={{ flex: 1 }} />
           <Button variant="secondary" size="sm" onClick={() => setPicker({ kind: 'category', ids })} disabled={busy}>Set category</Button>
           <Button variant="secondary" size="sm" onClick={() => setPicker({ kind: 'person', ids })} disabled={busy}>Set person</Button>
-          <Button variant="secondary" size="sm" onClick={() => confirmIds(ids)} disabled={busy}>Confirm</Button>
+          <Button variant="secondary" size="sm" onClick={() => confirmIds(ids)} disabled={busy}>Approve</Button>
           <Button variant="secondary" size="sm" onClick={() => markTransfer(ids)} disabled={busy}>Mark transfer</Button>
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
         </div>
@@ -415,7 +425,7 @@ function ZHQTransactions({ onNavigate }) {
                   <span onClick={(e) => { e.stopPropagation(); setPicker({ kind: 'category', ids: [r.id] }); }}>
                     <Tag color={r.color} editable size="sm">{r.cat}</Tag>
                   </span>
-                  {!r.reviewed ? <span style={{ width: 6, height: 6, borderRadius: 999, flex: 'none', background: (r.confidence || 0) >= 0.7 ? 'var(--accent)' : 'var(--warning)' }} /> : null}
+                  {!r.reviewed ? <Badge tone="warning" size="sm" dot>Approve</Badge> : null}
                   <span className="zt-num" style={{ fontSize: 11, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.date} · {r.account}</span>
                 </div>
               </div>
@@ -444,7 +454,7 @@ function ZHQTransactions({ onNavigate }) {
                 <span onClick={(e) => { e.stopPropagation(); setPicker({ kind: 'category', ids: [r.id] }); }} style={{ cursor: 'pointer' }}>
                   <Tag color={r.color} editable size="sm">{r.cat}</Tag>
                 </span>
-                {!r.reviewed ? <span title={`${Math.round((r.confidence || 0) * 100)}% confident · ${r.source || 'auto'}`} style={{ width: 6, height: 6, borderRadius: 999, flex: 'none', background: (r.confidence || 0) >= 0.7 ? 'var(--accent)' : 'var(--warning)' }} /> : null}
+                {!r.reviewed ? <span title={`Needs approval · ${Math.round((r.confidence || 0) * 100)}% confident · ${r.source || 'auto'}`} style={{ display: 'inline-flex', flex: 'none' }}><Badge tone="warning" size="sm" dot>Needs approval</Badge></span> : null}
                 {r.categorizedBy ? <span title={`Categorized by ${r.categorizedBy}${r.categorizedAt ? ` · ${r.categorizedAt}` : ''}`} style={{ display: 'inline-flex', flex: 'none' }}><Avatar name={r.categorizedBy} size="xs" /></span> : null}
               </span>
             ) },
@@ -467,6 +477,7 @@ function ZHQTransactions({ onNavigate }) {
           onPickPerson={(pids) => setPicker({ kind: 'person', ids: pids })}
           onToggleTransfer={(t) => { toggleTransfer(t); setSel(null); }}
           onUnlink={(t) => { unlinkTransfer(t); setSel(null); }}
+          onApprove={(t) => { confirmIds([t.id]); setSel(null); }}
         />
       ) : null}
 

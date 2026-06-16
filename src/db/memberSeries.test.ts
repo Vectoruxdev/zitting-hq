@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { monthlySpendSeries, balanceSeries, topSpendCategories } from "./memberSeries";
+import { monthlySpendSeries, monthlyIncomeSeries, balanceSeries, topSpendCategories } from "./memberSeries";
 
 const NOW = new Date(2026, 5, 10); // Jun 10, 2026
 
@@ -55,6 +55,37 @@ describe("monthlySpendSeries", () => {
       { registryActive: true }
     );
     expect(r.values[5]).toBe(100); // only the real charge — deposits excluded, not netted negative
+  });
+});
+
+describe("monthlyIncomeSeries", () => {
+  it("buckets signed income into the last 6 calendar months, oldest first", () => {
+    const r = monthlyIncomeSeries(
+      [
+        txn("2026-01-15", 4000, { income: true }),
+        txn("2026-03-02", 1500, { income: true }),
+        txn("2026-03-10", -200, { income: true }), // reversal nets the month down
+        txn("2026-06-04", 2000, { income: true }),
+        txn("2026-06-04", -90, { catKind: "expense", categoryId: "groceries" }), // spend, not income
+        txn("2025-12-31", 999, { income: true }), // before the window — ignored
+      ],
+      NOW
+    );
+    expect(r.labels).toEqual(["Jan", "Feb", "Mar", "Apr", "May", "Jun"]);
+    expect(r.values).toEqual([4000, 0, 1300, 0, 0, 2000]);
+  });
+
+  it("registry-aware: an unregistered deposit doesn't count as income", () => {
+    const r = monthlyIncomeSeries(
+      [
+        txn("2026-06-04", 4000, { income: true, registeredPayer: true, catKind: "income" }),
+        txn("2026-06-05", 900, { income: true, registeredPayer: false, catKind: null }),
+      ],
+      NOW,
+      6,
+      { registryActive: true }
+    );
+    expect(r.values[5]).toBe(4000);
   });
 });
 

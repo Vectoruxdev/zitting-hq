@@ -219,3 +219,140 @@ export function shortfallAlert(
     body: `Upcoming transfers need ${usd(cov.upcomingTotal)} but cash${where} is projected ${usd(cov.shortAfterForecast)} short even after expected income. Top up before they're due.`,
   };
 }
+
+// ---- day-before income reminder ----------------------------------------------
+
+const MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthDayLabel = (iso: string): string => {
+  const d = toUTC(iso);
+  return `${MONTHS_ABBR[d.getUTCMonth()]} ${d.getUTCDate()}`;
+};
+
+/**
+ * Forecasts landing on `targetISO` — within a variance-aware grace window so a
+ * paycheck that wobbles a day or two still triggers the "lands tomorrow"
+ * reminder. Per-forecast grace defaults to its own `varianceDays` (capped at 2);
+ * pass `graceDays` to force a fixed window. Pure (ISO string math).
+ */
+export function incomeLandingOn(
+  forecasts: IncomeForecast[],
+  targetISO: string,
+  opts: { graceDays?: number } = {}
+): IncomeForecast[] {
+  return forecasts.filter((f) => {
+    const grace = opts.graceDays ?? Math.min(2, Math.max(0, f.varianceDays || 0));
+    return f.dateISO >= addDaysISO(targetISO, -grace) && f.dateISO <= addDaysISO(targetISO, grace);
+  });
+}
+
+// ---- cash-runway projection --------------------------------------------------
+
+export interface RunwayAccount {
+  accountId: string;
+  balance: number; // live balance today
+}
+export interface RunwayOutflow {
+  accountId: string | null;
+  dateISO: string;
+  amount: number; // positive = money leaving the account
+}
+export interface RunwayAccountResult {
+  accountId: string;
+  lowISO: string | null; // when the projected minimum hits (null unless it dips below buffer)
+  low: number; // projected minimum balance over the window
+  dipsBelowBuffer: boolean;
+}
+export interface RunwayResult {
+  byAccount: RunwayAccountResult[];
+  worstAccountId: string | null; // largest shortfall below the buffer
+  buffer: number;
+}
+
+/**
+ * Project each account's balance forward over `horizonDays`, applying dated
+ * outflows (bills, pending transfers) and dated income (forecast/manual), and
+ * report the minimum balance reached. An account `dipsBelowBuffer` when that
+ * minimum falls under the safety cushion before income recovers it. Pure:
+ * callers inject today + the event arrays (no Date.now / DB). Past-dated events
+ * are clamped to today (a still-pending overdue transfer still drains cash).
+ */
+export function projectRunway(args: {
+  accounts: RunwayAccount[];
+  outflows: RunwayOutflow[];
+  income: CoverageIncome[];
+  todayISO: string;
+  horizonDays?: number;
+  buffer?: number;
+}): RunwayResult {
+  const horizonEnd = addDaysISO(args.todayISO, args.horizonDays ?? 21);
+  const buffer = args.buffer ?? 0;
+  const clamp = (iso: string) => (iso < args.todayISO ? args.todayISO : iso);
+
+  const events = new Map<string, { dateISO: string; delta: number }[]>();
+  const add = (acctId: string | null | undefined, dateISO: string | null | undefined, delta: number) => {
+    if (!acctId || !dateISO) return;
+    const d = clamp(dateISO);
+    if (d > horizonEnd) return;
+    const arr = events.get(acctId) || [];
+    arr.push({ dateISO: d, delta });
+    events.set(acctId, arr);
+  };
+  for (const o of args.outflows) add(o.accountId, o.dateISO, -Math.abs(o.amount));
+  for (const inc of args.income) add(inc.accountId, inc.dateISO, Math.abs(inc.amount));
+
+  const byAccount: RunwayAccountResult[] = [];
+  for (const acct of args.accounts) {
+    const evs = (events.get(acct.accountId) || []).sort((a, b) =>
+      a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0
+    );
+    let running = round2(acct.balance);
+    let low = running;
+    let lowISO = args.todayISO;
+    let lowFromEvent = false; // an account merely sitting low today isn't a runway risk
+    for (const e of evs) {
+      running = round2(running + e.delta);
+      if (running < low) {
+        low = running;
+        lowISO = e.dateISO;
+        lowFromEvent = true;
+      }
+    }
+    // Only warn when an upcoming outflow drives the balance under the cushion —
+    // not when it just happens to start the window below it (that's "low now",
+    // a different signal, and would be noisy for accounts kept intentionally lean).
+    const dipsBelowBuffer = lowFromEvent && low < buffer;
+    byAccount.push({ accountId: acct.accountId, lowISO: dipsBelowBuffer ? lowISO : null, low, dipsBelowBuffer });
+  }
+
+  let worstAccountId: string | null = null;
+  let worstGap = 0;
+  for (const a of byAccount) {
+    if (a.dipsBelowBuffer && buffer - a.low > worstGap) {
+      worstGap = buffer - a.low;
+      worstAccountId = a.accountId;
+    }
+  }
+  return { byAccount, worstAccountId, buffer };
+}
+
+/**
+ * Advance-warning copy for a projected low balance (pure). Returns null unless
+ * some account dips below the buffer before income recovers it. `accountNames`
+ * labels the worst account (resolved by the caller).
+ */
+export function runwayAlert(
+  result: RunwayResult,
+  opts: { accountNames?: Record<string, string> } = {}
+): { title: string; body: string } | null {
+  if (!result.worstAccountId) return null;
+  const acct = result.byAccount.find((a) => a.accountId === result.worstAccountId);
+  if (!acct || !acct.dipsBelowBuffer) return null;
+  const usd = (v: number) =>
+    "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const name = opts.accountNames?.[result.worstAccountId] ?? "An account";
+  const when = acct.lowISO ? ` around ${monthDayLabel(acct.lowISO)}` : "";
+  return {
+    title: `Low balance ahead — ${name} dips to ${usd(acct.low)}`,
+    body: `${name} is projected to fall to ${usd(acct.low)}${when}, below your ${usd(result.buffer)} cushion, before the next income lands. Move money in or hold off before then.`,
+  };
+}

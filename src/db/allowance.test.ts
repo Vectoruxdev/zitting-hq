@@ -49,6 +49,17 @@ describe("computeMemberProgress", () => {
     expect(r.allowanceUnlocked).toBe(true);
   });
 
+  // Cross-feature coupling (approval workflow): auto-categorized rows now import
+  // UNapproved (reviewed=false, see shouldAutoApprove in categorize.ts), so the
+  // approval gate IS the allowance gate — a member must approve last month's
+  // auto-categorized spend before this month's allowance unlocks.
+  it("keeps the allowance locked while prior-month auto-categorized spend is unapproved", () => {
+    const autoCategorizedButUnapproved = t("a", "2026-05-18", false);
+    const r = computeMemberProgress([autoCategorizedButUnapproved, t("a", "2026-05-25", true)], ["a"], NOW);
+    expect(r.prevMonthRemaining).toBe(1);
+    expect(r.allowanceUnlocked).toBe(false);
+  });
+
   it("a member with NO managed accounts is caught up and unlocked", () => {
     const r = computeMemberProgress([t("a", "2026-05-20", false)], [], NOW);
     expect(r.allCaughtUp).toBe(true);

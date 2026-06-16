@@ -17,7 +17,7 @@ import { isEmailConfigured } from "@/lib/email";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
 import { computePerfAllowance, sumPaycheckIncome } from "./perfAllowance";
-import { forecastIncome, computeCoverage, type IncomeSourceInput } from "./forecast";
+import { forecastIncome, computeCoverage, projectRunway, type IncomeSourceInput } from "./forecast";
 import { extractMerchant } from "./categorize";
 import { mergePrefs } from "./notifyPrefs";
 import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
@@ -26,7 +26,7 @@ import { projectGoal, canViewGoal } from "./savings";
 import { scrubForMemberView } from "./memberScrub";
 import { budgetSpent } from "./budgetMath";
 import { flowOf, foldMonthStats, type FlowTxn } from "./monthStats";
-import { monthlySpendSeries, balanceSeries, topSpendCategories } from "./memberSeries";
+import { monthlySpendSeries, monthlyIncomeSeries, balanceSeries, topSpendCategories } from "./memberSeries";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
@@ -80,7 +80,7 @@ function emptyData(): FinanceData {
   d.budgets = [];
   d.rules = [];
   d.incomeStreams = [];
-  d.income = { sources: [], candidates: [], allPayers: [], totalMonthly: 0, totalMonthlyLabel: "$0" };
+  d.income = { sources: [], candidates: [], allPayers: [], totalMonthly: 0, totalMonthlyLabel: "$0", byMember: [], series: [], upcoming: [], runway: { dipsBelowBuffer: false }, settings: { cashRunwayBuffer: 300, cashRunwayEnabled: true } };
   d.bills = [];
   d.goals = [];
   d.savingsStats = { totalSaved: 0, totalSavedDisplay: "$0", monthlyContrib: 0, monthlyContribDisplay: "$0", activeCount: 0, onTrackCount: 0 };
@@ -299,6 +299,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Curated income registry (migration 0009) — the source of truth for "what
     // counts as income." Only marked payers drive forecasting + allowances.
     const incomeSourceRows = await db.select().from(s.incomeSources).catch(() => [] as (typeof s.incomeSources.$inferSelect)[]);
+    // Household finance settings (cash-runway cushion); defensive default pre-migration.
+    const [financeSettingsRow] = await db.select().from(s.financeSettings).where(eq(s.financeSettings.id, "household")).catch(() => [] as (typeof s.financeSettings.$inferSelect)[]);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
@@ -758,6 +760,11 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     data.transfersPending = duePending.length;
     data.transfersPendingTotal = money2(pendingTotal);
 
+    // Predicted income rows, lifted so the Income tab ("Coming up") can reuse the
+    // same forecast the coverage cockpit builds (owners-only; scrubbed for members).
+    type UpcomingIncome = { key: string; name: string; accountId: string | null; dateISO: string; dateLabel: string | null; amount: number; amountLabel: string; confidence: string; source: string; memberId: string | null; memberName: string | null };
+    let upcomingIncome: UpcomingIncome[] = [];
+
     // --- transfer coverage cockpit (cash vs. due-soon transfers + paycheck forecast) ---
     {
       const HORIZON = 30;
@@ -791,6 +798,24 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           .filter((r) => r.status === "pending")
           .map((r) => ({ id: r.id, key: r.sourceKey ?? r.id, name: r.label, accountId: r.accountId, dateISO: r.expectedDate as string, dateLabel: labelFor(r.expectedDate as string), amount: n(r.amount), amountLabel: money2(n(r.amount)), confidence: "manual" as const, samples: 0, source: (r.sourceKey ? "override" : "manual") as "override" | "manual" })),
       ].sort((a, b) => (a.dateISO < b.dateISO ? -1 : 1));
+
+      // Lift for the Income tab, tagging each forecast with its source's owner.
+      upcomingIncome = forecastDisplay.map((f) => {
+        const owner = f.key ? incomeRegistry.get(String(f.key))?.memberId ?? null : null;
+        return {
+          key: String(f.key),
+          name: f.name,
+          accountId: f.accountId,
+          dateISO: f.dateISO,
+          dateLabel: f.dateLabel,
+          amount: f.amount,
+          amountLabel: f.amountLabel,
+          confidence: f.confidence,
+          source: f.source,
+          memberId: owner,
+          memberName: owner ? memberById.get(owner)?.name ?? null : null,
+        };
+      });
 
       // Pending transfers → coverage transfers; cash = source accounts' available (or live) balance.
       const covTransfers = instanceRows
@@ -1146,6 +1171,11 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       }
       const registered = incomeSourceRows.filter((r) => r.active);
       const regKeys = new Set(registered.map((r) => r.matchKey));
+      // Suppress re-suggesting ANY payer the household has marked before —
+      // including ones explicitly turned OFF (active=false) — so a deposit the
+      // owner has said "isn't income" (e.g. money moved between accounts) doesn't
+      // keep coming back as an income candidate every sync.
+      const knownKeys = new Set(incomeSourceRows.map((r) => r.matchKey));
       const sources = registered.map((r) => {
         const d = detectedByKey.get(r.matchKey) as { monthly?: number; cadence?: string; last?: string; next?: string; status?: string; spark?: number[] } | undefined;
         const acctId = r.accountId ?? acctByKey.get(r.matchKey) ?? null;
@@ -1168,7 +1198,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         };
       });
       const candidates = (data.incomeStreams as { id: string; name: string; sub: string | null; monthly: number; cadence: string; next: string | null }[])
-        .filter((d) => !regKeys.has(d.id))
+        .filter((d) => !knownKeys.has(d.id))
         .map((d) => ({ matchKey: d.id, name: d.name, sub: d.sub, monthly: d.monthly, monthlyLabel: money0(d.monthly), cadence: d.cadence, next: d.next, accountId: acctByKey.get(d.id) ?? null }));
       // EVERY payer that has ever deposited money (grouped by merchant key),
       // not just cadence-detected ones — so a real paycheck (e.g. ADP) the
@@ -1261,6 +1291,118 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const memberTotals = monthStats.memberTotals;
     const monthSpending = monthStats.spending;
     const monthIncome = monthStats.income;
+
+    // --- per-person income analytics + upcoming + runway (owners-only; members
+    //     are scrubbed in memberScrub). "Whose income" is the registry source's
+    //     owner (curated), summed registry-aware + signed like the dashboard. ---
+    {
+      const inc = data.income as {
+        sources: { memberId: string | null; memberName: string | null; monthly: number; matchKey: string }[];
+        byMember?: unknown; series?: unknown; upcoming?: unknown; runway?: unknown; settings?: unknown;
+      };
+      const activeSources = incomeSourceRows.filter((r) => r.active);
+      const ownerByKey = new Map(activeSources.map((r) => [r.matchKey, r.memberId] as const));
+      const keysByMember = new Map<string, Set<string>>();
+      for (const r of activeSources) {
+        if (!r.memberId) continue;
+        (keysByMember.get(r.memberId) ?? keysByMember.set(r.memberId, new Set()).get(r.memberId)!).add(r.matchKey);
+      }
+      // This-month + all-time income per member, attributed by source ownership.
+      const monthByMember = new Map<string, number>();
+      const allTimeByMember = new Map<string, number>();
+      for (const t of txnRows) {
+        if (!t.income || t.isTransfer) continue;
+        const owner = ownerByKey.get(extractMerchant(t.merchant));
+        if (!owner) continue; // household-owned or unregistered → not a person total
+        const amt = n(t.amount);
+        allTimeByMember.set(owner, (allTimeByMember.get(owner) || 0) + amt);
+        const dt = parseDate(t.date as string | null);
+        if (dt && monthKey(dt) === targetKey) monthByMember.set(owner, (monthByMember.get(owner) || 0) + amt);
+      }
+      const seriesForMember = (memberId: string) => {
+        const keys = keysByMember.get(memberId) ?? new Set<string>();
+        const txns = txnRows
+          .filter((t) => keys.has(extractMerchant(t.merchant)))
+          .map((t) => ({
+            dateISO: (t.date as string | null) ?? null,
+            amount: n(t.amount),
+            income: t.income,
+            isTransfer: t.isTransfer,
+            catKind: t.categoryId ? catById.get(t.categoryId)?.kind ?? null : null,
+            registeredPayer: true,
+          }));
+        return monthlyIncomeSeries(txns, now, 6, flowOpts);
+      };
+      const memberIds = [...new Set(activeSources.map((r) => r.memberId).filter((m): m is string => !!m))];
+      inc.byMember = memberIds
+        .map((mid) => {
+          const month = Math.round((monthByMember.get(mid) || 0) * 100) / 100;
+          const total = Math.round((allTimeByMember.get(mid) || 0) * 100) / 100;
+          return {
+            memberId: mid,
+            memberName: memberById.get(mid)?.name ?? null,
+            month,
+            monthLabel: money0(month),
+            total,
+            totalLabel: money0(total),
+            sources: inc.sources.filter((srow) => srow.memberId === mid),
+            series: seriesForMember(mid),
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+      inc.upcoming = upcomingIncome;
+      inc.settings = {
+        cashRunwayBuffer: financeSettingsRow ? Number(financeSettingsRow.cashRunwayBuffer ?? 300) : 300,
+        cashRunwayEnabled: financeSettingsRow ? financeSettingsRow.cashRunwayEnabled : true,
+      };
+
+      // Lightweight cash-runway summary (same projector the notifier uses): does a
+      // household cash account dip below the cushion before the next income lands?
+      const buffer = financeSettingsRow ? Number(financeSettingsRow.cashRunwayBuffer ?? 300) : 300;
+      const runwayAccounts = accountRows
+        .filter((a) => a.space !== "business" && (a.type === "checking" || a.type === "savings"))
+        .map((a) => ({ accountId: a.id, balance: a.availableBalance != null ? n(a.availableBalance) : liveBalance(a) }));
+      const runwayOutflows: { accountId: string | null; dateISO: string; amount: number }[] = [];
+      for (const r of instanceRows) {
+        if (r.status !== "pending" || !r.fromAccountId) continue;
+        runwayOutflows.push({ accountId: r.fromAccountId, dateISO: (r.plannedDate as string | null)?.slice(0, 10) ?? new Date().toISOString().slice(0, 10), amount: n(r.amount) });
+      }
+      const billSrc = new Map<string, IncomeSourceInput>();
+      const householdAcctIds = new Set(runwayAccounts.map((a) => a.accountId));
+      for (const t of txnRows) {
+        if (t.income || t.isTransfer) continue;
+        const amt = n(t.amount);
+        if (amt >= 0 || !t.accountId || !householdAcctIds.has(t.accountId)) continue;
+        const iso = t.date as string | null;
+        if (!iso) continue;
+        const k = `${t.accountId}|${extractMerchant(t.merchant)}`;
+        const e = billSrc.get(k) || { key: k, name: extractMerchant(t.merchant), accountId: t.accountId, points: [] };
+        e.points.push({ dateISO: iso, amount: -amt });
+        billSrc.set(k, e);
+      }
+      const todayRunwayISO = new Date().toISOString().slice(0, 10);
+      for (const f of forecastIncome([...billSrc.values()], todayRunwayISO, 21)) runwayOutflows.push({ accountId: f.accountId, dateISO: f.dateISO, amount: f.amount });
+      const runway = projectRunway({
+        accounts: runwayAccounts,
+        outflows: runwayOutflows,
+        income: upcomingIncome.map((f) => ({ dateISO: f.dateISO, amount: f.amount, accountId: f.accountId })),
+        todayISO: todayRunwayISO,
+        horizonDays: 21,
+        buffer,
+      });
+      const worst = runway.byAccount.find((a) => a.accountId === runway.worstAccountId);
+      inc.runway = worst && worst.dipsBelowBuffer
+        ? {
+            dipsBelowBuffer: true,
+            worstAccountId: runway.worstAccountId,
+            worstAccountName: runway.worstAccountId ? accountLabel(acctById.get(runway.worstAccountId)) : null,
+            low: worst.low,
+            lowLabel: money0(worst.low),
+            lowISO: worst.lowISO,
+            lowDateLabel: (() => { const d = parseDate(worst.lowISO); return d ? dayLabel(d) : null; })(),
+          }
+        : { dipsBelowBuffer: false };
+    }
 
     // Cash-flow reconciliation for the target month (checking + savings only),
     // so the dashboard's numbers visibly add up: every cash-account transaction

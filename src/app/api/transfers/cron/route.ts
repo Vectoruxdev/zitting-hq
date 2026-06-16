@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as s from "@/db/schema";
-import { runScheduledTransfers, runMonthlyAllowances, reconcilePendingTransfers, createNotification, notifyTransferShortfall } from "@/db/mutations";
+import { runScheduledTransfers, runMonthlyAllowances, reconcilePendingTransfers, createNotification, notifyTransferShortfall, notifyIncomeExpected, notifyCashRunway } from "@/db/mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +80,11 @@ export async function GET(req: Request) {
     // Advance warning: transfers due in the next 2 days whose source is
     // projected short even after expected income (idempotent per day).
     const shortfall = await notifyTransferShortfall(today).catch(() => ({ ok: false as const, notified: false }));
+    // Heads-up: registered income expected to land tomorrow (idempotent per source+date).
+    const incomeExpected = await notifyIncomeExpected(today).catch(() => ({ ok: false as const, notified: false }));
+    // Low-balance forecast: a household account projected to dip below its cushion
+    // before the next income lands (idempotent per worst-account+day).
+    const runway = await notifyCashRunway(today).catch(() => ({ ok: false as const, notified: false }));
 
     return NextResponse.json({
       ok: true,
@@ -88,6 +93,8 @@ export async function GET(req: Request) {
       reconciled: reconciled.matched,
       notified,
       shortfallWarned: shortfall.notified,
+      incomeExpectedWarned: incomeExpected.notified,
+      runwayWarned: runway.notified,
     });
   } catch (e) {
     console.error("[transfers cron] failed", e);

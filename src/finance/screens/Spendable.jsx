@@ -43,7 +43,7 @@ function MemberCelebration({ celebration, onClose }) {
       ))}
       <div className="zhq-celeb-card" style={{ position: 'relative', maxWidth: 320, margin: '0 26px', background: 'var(--surface-card)', border: '1px solid var(--green-tint)', borderRadius: 'var(--radius-lg)', padding: '30px 26px', textAlign: 'center', boxShadow: '0 0 60px -12px rgba(63,208,127,0.45), var(--shadow-pop)' }}>
         <div style={{ fontSize: 46, lineHeight: 1, marginBottom: 14 }}>{CELEBRATION_EMOJI[celebration.tone] || '🎉'}</div>
-        <div className="zt-eyebrow" style={{ color: 'var(--accent)', marginBottom: 10 }}>All reviewed</div>
+        <div className="zt-eyebrow" style={{ color: 'var(--accent)', marginBottom: 10 }}>All approved</div>
         <div style={{ fontSize: 17.5, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.45 }}>{celebration.text}</div>
         <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 16 }}>Tap anywhere to keep going</div>
       </div>
@@ -105,8 +105,8 @@ function MemberCategoryPicker({ onPick, onClose }) {
   );
 }
 
-// One transaction row. `review` mode shows Transfer + Confirm actions; browse
-// mode shows a reviewed checkmark. The category chip is always tappable.
+// One transaction row. `review` mode shows Transfer + Approve actions; browse
+// mode shows an approved checkmark. The category chip is always tappable.
 function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onReceipt }) {
   const { Icon, Button, Tag } = window.ZittingHQDesignSystem_c9e528;
   return (
@@ -131,12 +131,12 @@ function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onRec
         {review && !t.reviewed ? (
           <>
             <Button variant="ghost" size="md" onClick={onTransfer} disabled={busy}>Transfer</Button>
-            <Button variant="primary" size="md" onClick={onConfirm} disabled={busy}>Confirm</Button>
+            <Button variant="primary" size="md" onClick={onConfirm} disabled={busy}>Approve</Button>
           </>
         ) : t.reviewed ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, color: 'var(--accent)', fontWeight: 600 }}><Icon name="check" size={14} /> Reviewed</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, color: 'var(--accent)', fontWeight: 600 }}><Icon name="check" size={14} /> Approved</span>
         ) : (
-          <Button variant="primary" size="md" onClick={onConfirm} disabled={busy}>Confirm</Button>
+          <Button variant="primary" size="md" onClick={onConfirm} disabled={busy}>Approve</Button>
         )}
       </div>
     </div>
@@ -426,6 +426,7 @@ function ZHQSpendable() {
   const [reviewMode, setReviewMode] = React.useState('merchant'); // 'merchant' | 'single'
   const [busy, setBusy] = React.useState(null); // txn id (or 'bulk') mid-action
   const [acctFilter, setAcctFilter] = React.useState('all'); // Activity account filter
+  const [actStatus, setActStatus] = React.useState('all'); // Activity approval filter: all | pending | approved
   const [bulkUndo, setBulkUndo] = React.useState(() => (typeof window !== 'undefined' ? window.__ZHQ_BULK_UNDO || null : null));
 
   // Optimistic overlay: txnId -> what was just applied locally ({ categoryId,
@@ -657,13 +658,15 @@ function ZHQSpendable() {
   const unlocked = H ? H.allowanceUnlocked : true;
   const perf = (H && H.performance) || null;
 
-  const filteredActivity = acctFilter === 'all' ? activity : activity.filter((t) => t.accountId === acctFilter);
+  const filteredActivity = activity
+    .filter((t) => acctFilter === 'all' || t.accountId === acctFilter)
+    .filter((t) => actStatus === 'all' || (actStatus === 'pending' ? !t.reviewed : t.reviewed));
 
   const tabs = [
     { key: 'home', icon: 'wallet', label: 'Home' },
     { key: 'activity', icon: 'receipt', label: 'Activity' },
     // Badge tracks the optimistic overlay so it ticks down with every tap.
-    { key: 'categorize', icon: 'list', label: 'Review', badge: Math.max(0, (H ? H.totalRemaining : 0) - (rawQueue.length - queue.length)) },
+    { key: 'categorize', icon: 'list', label: 'Approve', badge: Math.max(0, (H ? H.totalRemaining : 0) - (rawQueue.length - queue.length)) },
   ];
 
   const sectionTitle = (txt) => (
@@ -730,13 +733,13 @@ function ZHQSpendable() {
                       ) : (
                         <div>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, color: 'var(--warning)', fontWeight: 600 }}>
-                            <Icon name="clock" size={16} /> Locked — {H.prevMonthRemaining} left to review in {H.prevMonthLabel}
+                            <Icon name="clock" size={16} /> Locked — {H.prevMonthRemaining} left to approve in {H.prevMonthLabel}
                           </span>
                           <div style={{ marginTop: 12 }}>
                             <Button variant="primary" size="md" style={{ width: '100%' }} onClick={() => setTab('categorize')}>Finish {H.prevMonthLabel} →</Button>
                           </div>
                           <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-                            Your allowance unlocks once you've reviewed everything from the month before.
+                            Your allowance unlocks once you've approved everything from the month before.
                           </p>
                         </div>
                       )}
@@ -771,7 +774,7 @@ function ZHQSpendable() {
                 <button onClick={() => setTab('categorize')} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: 'var(--surface-card)', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                   <span style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--green-glow)', color: 'var(--accent)' }}><Icon name="list" size={18} /></span>
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>{H.totalRemaining} to review</span>
+                    <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)' }}>{H.totalRemaining} to approve</span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Takes about a minute — keeps your numbers honest.</span>
                   </span>
                   <Icon name="chevronRight" size={17} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
@@ -932,9 +935,9 @@ function ZHQSpendable() {
                       </div>
                       <ProgressBar value={a.reviewed} max={Math.max(a.total, 1)} height={7} />
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{a.reviewed}/{a.total} reviewed in {H.monthLabel}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{a.reviewed}/{a.total} approved in {H.monthLabel}</span>
                         {a.done ? <Badge tone="positive" size="sm">Done</Badge>
-                          : a.remaining > 0 ? <span className="zt-num" style={{ fontSize: 12.5, color: 'var(--warning)', fontWeight: 600 }}>{a.remaining} to review</span>
+                          : a.remaining > 0 ? <span className="zt-num" style={{ fontSize: 12.5, color: 'var(--warning)', fontWeight: 600 }}>{a.remaining} to approve</span>
                           : null}
                       </div>
                     </button>
@@ -994,8 +997,14 @@ function ZHQSpendable() {
                   ))}
                 </div>
               ) : null}
+              {/* approval status filter */}
+              <div className="zhq-hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 12 }}>
+                {[{ k: 'all', label: 'All' }, { k: 'pending', label: 'Needs approval' }, { k: 'approved', label: 'Approved' }].map((s) => (
+                  <button key={s.k} onClick={() => setActStatus(s.k)} style={{ flex: 'none', padding: '9px 15px', borderRadius: 999, border: '1px solid var(--border-hairline)', background: actStatus === s.k ? 'var(--accent)' : 'var(--surface-card)', color: actStatus === s.k ? 'var(--text-on-accent)' : 'var(--text-secondary)', font: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>{s.label}</button>
+                ))}
+              </div>
               {filteredActivity.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '50px 10px', color: 'var(--text-tertiary)', fontSize: 14 }}>No transactions yet on this account.</div>
+                <div style={{ textAlign: 'center', padding: '50px 10px', color: 'var(--text-tertiary)', fontSize: 14 }}>{actStatus === 'pending' ? 'Nothing needs your approval right now.' : actStatus === 'approved' ? 'Nothing approved yet.' : 'No transactions yet on this account.'}</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {filteredActivity.map((t) => (
@@ -1033,7 +1042,7 @@ function ZHQSpendable() {
                 <div style={{ textAlign: 'center', padding: '50px 10px' }}>
                   <span style={{ display: 'inline-flex', width: 60, height: 60, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--green-glow)', color: 'var(--accent)', marginBottom: 16 }}><Icon name="check" size={28} /></span>
                   <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>All caught up</div>
-                  <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 6 }}>You've reviewed everything for {H.monthLabel}.</div>
+                  <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 6 }}>You've approved everything for {H.monthLabel}.</div>
                 </div>
               ) : (
                 <>
@@ -1050,7 +1059,7 @@ function ZHQSpendable() {
                     <>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                         <div style={{ flex: 1, fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                          <b style={{ color: 'var(--text-primary)' }}>{bulkGroups.length}</b> merchant{bulkGroups.length === 1 ? '' : 's'} to review. Set a whole merchant at once.
+                          <b style={{ color: 'var(--text-primary)' }}>{bulkGroups.length}</b> merchant{bulkGroups.length === 1 ? '' : 's'} to approve. Set a whole merchant at once.
                         </div>
                         {bulkGroups.filter((g) => g.suggestion && g.suggestion.confidence >= 0.7).length ? (
                           <Button variant="primary" size="sm" disabled={busy === 'bulk'} onClick={acceptAllGroups}>Accept all</Button>
@@ -1108,7 +1117,7 @@ function ZHQSpendable() {
                   ) : (
                     <>
                       <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-                        <b style={{ color: 'var(--text-primary)' }}>{queue.length}</b> transaction{queue.length === 1 ? '' : 's'} to review. Tap the category to change it, then Confirm.
+                        <b style={{ color: 'var(--text-primary)' }}>{queue.length}</b> transaction{queue.length === 1 ? '' : 's'} to approve. Tap the category to change it, then Approve.
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {queue.map((t) => (

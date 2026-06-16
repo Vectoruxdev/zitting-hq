@@ -36,7 +36,7 @@ const SCRUB: Record<string, () => unknown> = {
   transfersPending: () => 0,
   transfersPendingTotal: () => "$0",
   transferReadiness: () => null,
-  income: () => ({ sources: [], candidates: [], totalMonthly: 0, totalMonthlyLabel: "$0" }),
+  income: () => ({ sources: [], candidates: [], allPayers: [], totalMonthly: 0, totalMonthlyLabel: "$0", byMember: [], series: [], upcoming: [], runway: { dipsBelowBuffer: false }, settings: { cashRunwayBuffer: 0, cashRunwayEnabled: false } }),
   incomeStreams: () => [],
   bills: () => [],
   budgets: () => [],

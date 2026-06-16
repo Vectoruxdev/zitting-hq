@@ -53,3 +53,6 @@ next-env.d.ts
 
 # Claude Code personal settings (per-user allow-list)
 .claude/settings.local.json
+
+# Eval gold set generated from real bank data — never commit
+src/db/fixtures/*.local.jsonl

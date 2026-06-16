@@ -135,6 +135,19 @@ const baseHandler = createMcpHandler(
       guard(async () => ok((await getFinanceData()).incomeStreams || []))
     );
     server.registerTool(
+      "income_by_member",
+      {
+        description:
+          "Income attributed to each person over time, from the curated income registry (owners-only data). Returns per-member this-month + all-time totals with a 6-month series and that person's marked sources, plus upcoming predicted deposits. Use to answer 'how much income did <person> bring in'.",
+        inputSchema: {},
+      },
+      guard(async () => {
+        const d = await getFinanceData();
+        const income = d.income as { byMember?: unknown[]; upcoming?: unknown[] } | undefined;
+        return ok({ month: d.statsMonth, byMember: income?.byMember || [], upcoming: income?.upcoming || [] });
+      })
+    );
+    server.registerTool(
       "list_allowance_rules",
       {
         description:

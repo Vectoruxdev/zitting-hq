@@ -650,6 +650,18 @@ export const digestSettings = pgTable("digest_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+/**
+ * Single-row household finance config (id always "household"). Currently holds
+ * the cash-runway low-balance warning: the safety cushion an account is warned
+ * about dropping below before the next income lands, and a master on/off.
+ */
+export const financeSettings = pgTable("finance_settings", {
+  id: text("id").primaryKey().default("household"),
+  cashRunwayBuffer: numeric("cash_runway_buffer", { precision: 14, scale: 2 }).notNull().default("300"),
+  cashRunwayEnabled: boolean("cash_runway_enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 /** Idempotency + audit: one row per (recipient, period, kind) actually sent. */
 export const digestLog = pgTable(
   "digest_log",
