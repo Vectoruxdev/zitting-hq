@@ -89,7 +89,9 @@ function ZHQNotifications({ onNavigate }) {
   const [busy, setBusy] = React.useState(false);
   const notifications = D.notifications || [];
   const notifPrefs = D.notifPrefs || [];
-  const unread = notifications.filter((n) => n.unread).length;
+  // Only real (numeric-id) alerts count — derived/synthetic alerts (string ids)
+  // can't be marked read, so excluding them lets the badge reach zero.
+  const unread = notifications.filter((n) => n.unread && typeof n.id === 'number').length;
 
   const setPref = (event, patch) => {
     if (!API.setNotificationPref) return;
@@ -127,6 +129,18 @@ function ZHQNotifications({ onNavigate }) {
     if (dest && onNavigate) onNavigate(dest);
   };
 
+  // Opening the Alerts feed clears the counter — the standard "open the center →
+  // badge resets" behavior. Fires once when the feed is shown (mount or switch
+  // to the feed tab); the refresh it triggers leaves `tab` unchanged, so it
+  // won't loop. Per-item read is still handled by the detail overlay.
+  React.useEffect(() => {
+    if (tab !== 'feed' || !API || !API.markNotificationsRead) return;
+    const hasUnread = (D.notifications || []).some((n) => n.unread && typeof n.id === 'number');
+    if (!hasUnread) return;
+    API.markNotificationsRead().then(() => window.ZHQ_REFRESH && window.ZHQ_REFRESH()).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -138,7 +152,11 @@ function ZHQNotifications({ onNavigate }) {
         <>
         {window.ZHQPushPrompt ? <window.ZHQPushPrompt /> : null}
         {!notifications.length ? (
-          <EmptyState icon="bell" title="No alerts" body="You're all caught up. Alerts about large charges, new subscriptions, and overspending will show up here." />
+          <div style={{ textAlign: 'center', padding: '56px 20px' }}>
+            <span style={{ display: 'inline-flex', width: 64, height: 64, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--green-glow)', marginBottom: 16, fontSize: 30 }} role="img" aria-label="celebration">🎉</span>
+            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>Congratulations!</div>
+            <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 6, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.5 }}>You&rsquo;ve viewed all of your notifications.</div>
+          </div>
         ) : (
         <Card padding={6}>
           {notifications.map((n, i) => (

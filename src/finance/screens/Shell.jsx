@@ -65,7 +65,10 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
 
 function ZHQTopbar({ title, onNavigate }) {
   const { Icon, IconButton, SegmentedControl } = window.ZittingHQDesignSystem_c9e528;
-  const unread = ((window.ZHQ_DATA && window.ZHQ_DATA.notifications) || []).filter((n) => n.unread).length;
+  // Count only real (DB-backed, numeric-id) unread alerts. Derived/synthetic
+  // alerts use string ids and can't be marked read, so excluding them lets the
+  // badge reach zero once everything's been viewed.
+  const unread = ((window.ZHQ_DATA && window.ZHQ_DATA.notifications) || []).filter((n) => n.unread && typeof n.id === 'number').length;
   const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'dark');
   const toggleTheme = () => {
     const t = theme === 'light' ? 'dark' : 'light';

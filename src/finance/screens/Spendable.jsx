@@ -600,8 +600,22 @@ function ZHQSpendable() {
   }, []);
   // Member notifications (already audience+account scoped server-side).
   const memberNotifs = (D.notifications) || [];
-  const memberUnread = memberNotifs.filter((n) => n && n.unread).length;
+  // Only real (numeric-id) alerts count toward the badge — robust against any
+  // future derived/string-id alert that can't be marked read.
+  const memberUnread = memberNotifs.filter((n) => n && n.unread && typeof n.id === 'number').length;
   const [notifOpen, setNotifOpen] = React.useState(false);
+  // Opening the bell clears the counter — standard "open the center → badge
+  // resets" behavior. Fires once per open (deps = [notifOpen]); the refresh it
+  // triggers leaves notifOpen true, so it won't loop. Read history still lists.
+  React.useEffect(() => {
+    if (!notifOpen) return;
+    const API = window.ZHQ_API || {};
+    if (!API.markNotificationsRead) return;
+    const hasUnread = ((window.ZHQ_DATA && window.ZHQ_DATA.notifications) || []).some((n) => n && n.unread && typeof n.id === 'number');
+    if (!hasUnread) return;
+    API.markNotificationsRead().then(() => window.ZHQ_REFRESH && window.ZHQ_REFRESH()).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifOpen]);
 
   // Pull-to-refresh: members have no other way to pull fresh data (sync is
   // owner-only + the daily cron), and native pull-to-refresh doesn't fire on an
@@ -1228,7 +1242,11 @@ function ZHQSpendable() {
                 {n.unread ? <span style={{ flex: 'none', width: 8, height: 8, borderRadius: 999, background: 'var(--accent)', marginTop: 4 }} /> : null}
               </button>
             )) : (
-              <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13.5 }}>You're all caught up — no notifications.</div>
+              <div style={{ textAlign: 'center', padding: '40px 16px' }}>
+                <span style={{ display: 'inline-flex', width: 60, height: 60, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--green-glow)', marginBottom: 14, fontSize: 28 }} role="img" aria-label="celebration">🎉</span>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Congratulations!</div>
+                <div style={{ fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>You&rsquo;ve viewed all of your notifications.</div>
+              </div>
             )}
           </div>
         </Modal>

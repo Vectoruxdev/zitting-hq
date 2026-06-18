@@ -959,9 +959,13 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         entityId,
       };
     });
-    // Surface pending transfers as a derived (unstored) alert so the bell badges
-    // and the feed shows what needs moving — without a stale stored row.
-    // Owners/partners only — members don't manage household transfers.
+    // Surface pending transfers as a derived (unstored) alert so the feed shows
+    // what needs moving — without a stale stored row. Owners/partners only.
+    // NOTE: unread:false on purpose — this is a STANDING status (it regenerates
+    // every load and has a string id, so it can never be marked read). Counting
+    // it as unread would pin the bell badge ≥1 forever and stop "open → 0" from
+    // working. It still shows in the feed as a reminder; the actionable nudge
+    // also lives on the dashboard tile + Transfers tab.
     if (data.transfersPending > 0 && !isMemberView) {
       data.notifications = [
         {
@@ -972,7 +976,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
           title: `${data.transfersPending} transfer${data.transfersPending === 1 ? "" : "s"} to make`,
           body: `${data.transfersPendingTotal} ready to move across your accounts.`,
           time: "Now",
-          unread: true,
+          unread: false,
           linkTo: "transfers",
           entityType: "route",
           entityId: "transfers",
