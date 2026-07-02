@@ -334,8 +334,15 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       set.add(am.accountId);
       accountsByMember.set(am.memberId, set);
     }
-    const isMemberView = viewer?.role === "member" && !!viewer.memberId;
-    const visibleAcctIds = isMemberView ? accountsByMember.get(viewer!.memberId!) ?? new Set<string>() : null;
+    // Privacy predicate is ROLE-based, not memberId-based: an authenticated
+    // user whose email matches no roster row still lands here as role "member"
+    // with memberId=null, and must get an EMPTY scrubbed payload — never the
+    // full household data. (No viewer at all = trusted server/MCP context.)
+    const isPrivileged = viewer?.role === "owner" || viewer?.role === "partner";
+    const isMemberView = !!viewer && !isPrivileged;
+    const visibleAcctIds = isMemberView
+      ? (viewer!.memberId ? accountsByMember.get(viewer!.memberId) ?? new Set<string>() : new Set<string>())
+      : null;
     const canSeeAccount = (id: string | null | undefined) => !visibleAcctIds || (id != null && visibleAcctIds.has(id));
 
     // --- taxonomy + roster (for Import / Categories / pickers) ---

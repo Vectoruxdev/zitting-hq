@@ -12,6 +12,8 @@ const PUBLIC_PATHS = [
   "/auth",
   "/api/plaid/webhook",
   "/api/plaid/cron-sync",
+  "/api/transfers/cron", // daily transfers job (CRON_SECRET-guarded)
+  "/api/digest/cron", // email digests (CRON_SECRET-guarded)
   "/api/push/vapid", // public VAPID key (safe to expose)
   "/api/mcp", // remote MCP server — guarded by its own MCP_TOKEN, not a session
   "/api/sse", // MCP SSE transport (legacy clients)
