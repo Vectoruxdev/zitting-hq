@@ -105,6 +105,9 @@ if (typeof window !== "undefined") {
       localStorage.setItem("zhq-theme", t);
       if (t === "light") document.documentElement.setAttribute("data-theme", "light");
       else document.documentElement.removeAttribute("data-theme");
+      // Keep the browser chrome (notch/status bar) matched to the theme.
+      const m = document.querySelector('meta[name="theme-color"]');
+      if (m) m.setAttribute("content", t === "light" ? "#FFFFFF" : "#0E0E10");
     };
   }
 }
@@ -143,6 +146,11 @@ export default function FinanceApp({
   const [dataVersion, setDataVersion] = React.useState(0);
   // The notification whose detail overlay is open (id, string id, or full row).
   const [openNotif, setOpenNotif] = React.useState<number | string | Record<string, unknown> | null>(null);
+  // Global error surface: most screens call server actions with try/finally
+  // and no catch, so a thrown action (auth guard, DB blip, deployment skew
+  // from auto-deploy + a long-lived tab) used to fail SILENTLY. One
+  // unhandledrejection listener turns all of those into a visible toast.
+  const [appError, setAppError] = React.useState<string | null>(null);
 
   if (typeof window !== "undefined") {
     w.ZHQ_REFRESH = () => startRefresh(() => router.refresh());
@@ -183,6 +191,29 @@ export default function FinanceApp({
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
   }, []);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const msg = String((e.reason && ((e.reason as Error).message || e.reason)) || "");
+      // Next.js control-flow sentinels ride on rejections — never toast those.
+      if (/NEXT_REDIRECT|AbortError/i.test(msg)) return;
+      const skew = /Server Action|Failed to fetch|fetch failed|Load failed/i.test(msg);
+      setAppError(
+        skew
+          ? "Zitting HQ was updated since this page loaded — refresh to continue."
+          : "That didn’t save. Try again, or refresh the page."
+      );
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
+
+  React.useEffect(() => {
+    if (!appError) return;
+    const t = setTimeout(() => setAppError(null), 8000);
+    return () => clearTimeout(t);
+  }, [appError]);
 
   React.useEffect(() => {
     if (typeof window !== "undefined") {
@@ -278,6 +309,47 @@ export default function FinanceApp({
 
   const splash = booting && BootSplash ? <BootSplash fading={bootFade} /> : null;
 
+  // Failure surfaces shared by every branch below. The banner distinguishes
+  // "the DB read failed" from "you have no data" (previously identical: a
+  // convincing all-$0 dashboard). The toast voices swallowed action errors.
+  const loadErrorBanner = data?.loadError ? (
+    <div
+      style={{
+        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 110,
+        display: "flex", gap: 12, alignItems: "center",
+        background: "var(--surface-card)", border: "1px solid var(--amber-500, #f5a623)",
+        color: "var(--text-primary)", borderRadius: 10, padding: "10px 14px",
+        boxShadow: "0 8px 30px rgba(0,0,0,.35)", fontSize: 13.5, maxWidth: "min(92vw, 560px)",
+      }}
+    >
+      <span>Couldn’t load your data just now — this is a connection blip, not missing money.</span>
+      <Button size="sm" variant="secondary" onClick={() => w.ZHQ_REFRESH && w.ZHQ_REFRESH()}>
+        Retry
+      </Button>
+    </div>
+  ) : null;
+  const errorToast = appError ? (
+    <div
+      role="alert"
+      onClick={() => setAppError(null)}
+      style={{
+        position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 110,
+        background: "var(--surface-card)", border: "1px solid rgba(255,255,255,.14)",
+        color: "var(--text-primary)", borderRadius: 10, padding: "10px 16px",
+        boxShadow: "0 8px 30px rgba(0,0,0,.35)", fontSize: 13.5, cursor: "pointer",
+        maxWidth: "min(92vw, 440px)",
+      }}
+    >
+      {appError}
+    </div>
+  ) : null;
+  const alerts = (
+    <>
+      {loadErrorBanner}
+      {errorToast}
+    </>
+  );
+
   if (isMember || route === "member") {
     return (
       <>
@@ -300,6 +372,7 @@ export default function FinanceApp({
           ) : null}
         </div>
         {notifOverlay}
+        {alerts}
       </>
     );
   }
@@ -318,6 +391,7 @@ export default function FinanceApp({
           {Onboarding ? <Onboarding onDone={() => navigate("overview")} /> : null}
         </div>
         {notifOverlay}
+        {alerts}
       </>
     );
   }
@@ -335,6 +409,7 @@ export default function FinanceApp({
         </div>
       </ShellC>
       {notifOverlay}
+      {alerts}
     </>
   );
 }

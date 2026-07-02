@@ -24,7 +24,15 @@ const globalForDb = globalThis as unknown as {
 };
 
 const client = connectionString
-  ? (globalForDb.__zhqClient ??= postgres(connectionString, { prepare: false }))
+  ? (globalForDb.__zhqClient ??= postgres(connectionString, {
+      prepare: false,
+      // Serverless: keep the per-instance pool tiny and fail fast instead of
+      // hanging a request when the Supabase pooler is saturated — a hung read
+      // here is what used to render the whole dashboard as $0.
+      max: 4,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    }))
   : null;
 
 export const db = client ? drizzle(client, { schema }) : null;

@@ -43,6 +43,16 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Family HQ" />
         <meta name="theme-color" content="#0E0E10" />
+        {/* Theme bootstrap: apply the saved light/dark choice BEFORE first
+            paint, on EVERY page (previously only the /finance client chunk set
+            data-theme, so family pages were dark-locked and /finance flashed
+            dark for light-theme users). Last in <head> so the theme-color
+            meta above exists when it runs; head scripts still run pre-paint. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem("zhq-theme")==="light"){document.documentElement.setAttribute("data-theme","light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#FFFFFF")}}catch(e){}`,
+          }}
+        />
       </head>
       <body className="min-h-full">{children}</body>
     </html>

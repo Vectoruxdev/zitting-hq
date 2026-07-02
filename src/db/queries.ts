@@ -66,7 +66,12 @@ function relTime(dt: Date, now: Date): string {
   return dayLabel(dt);
 }
 
-export type FinanceData = typeof MOCK_FINANCE_DATA;
+export type FinanceData = typeof MOCK_FINANCE_DATA & {
+  /** Set when the DB read failed entirely — the payload is empty because of
+   *  an ERROR, not because there is no data. The shell renders a retry
+   *  banner instead of letting a transient blip look like an empty account. */
+  loadError?: boolean;
+};
 
 /** A valid-but-empty dataset (no demo data). Used on any deployed environment
  *  when the DB is unconfigured or a read fails — so the curated mock never
@@ -1898,8 +1903,12 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     return data;
   } catch (err) {
     // Most likely cause: the live DB is behind the code's schema (run the
-    // latest migration SQL). Show EMPTY states rather than the demo mock.
+    // latest migration SQL). Show EMPTY states rather than the demo mock —
+    // but FLAG the failure so the UI can say "couldn't load" instead of
+    // rendering a convincing all-$0 dashboard.
     console.error("[getFinanceData] DB read failed — showing empty data. Run supabase-sync.sql?", err);
-    return isDbConfigured ? emptyData() : fallbackData();
+    const failed = isDbConfigured ? emptyData() : fallbackData();
+    if (isDbConfigured) failed.loadError = true;
+    return failed;
   }
 }
