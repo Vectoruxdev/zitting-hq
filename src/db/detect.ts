@@ -32,12 +32,15 @@ export interface DetectedBill {
   delta?: string;
 }
 
+// perMonth = occurrences per calendar month (long-run). Biweekly is 26
+// checks/year = 2.1667/mo — NOT "twice monthly" (24/yr); the difference is a
+// whole extra paycheck twice a year, and 3-check months are normal.
 const CADENCES = [
-  { freq: "Weekly", days: 7, lo: 5, hi: 10 },
-  { freq: "Biweekly", days: 14, lo: 11, hi: 18 },
-  { freq: "Monthly", days: 30, lo: 24, hi: 38 },
-  { freq: "Quarterly", days: 91, lo: 80, hi: 100 },
-  { freq: "Yearly", days: 365, lo: 330, hi: 400 },
+  { freq: "Weekly", days: 7, lo: 5, hi: 10, perMonth: 52 / 12 },
+  { freq: "Biweekly", days: 14, lo: 11, hi: 18, perMonth: 26 / 12 },
+  { freq: "Monthly", days: 30, lo: 24, hi: 38, perMonth: 1 },
+  { freq: "Quarterly", days: 91, lo: 80, hi: 100, perMonth: 1 / 3 },
+  { freq: "Yearly", days: 365, lo: 330, hi: 400, perMonth: 1 / 12 },
 ];
 
 const titleize = (s: string) =>
@@ -133,7 +136,7 @@ export interface DetectedStream {
 
 const CADENCE_LABEL: Record<string, string> = {
   Weekly: "Weekly",
-  Biweekly: "Twice monthly",
+  Biweekly: "Every 2 weeks",
   Monthly: "Monthly",
   Quarterly: "Quarterly",
   Yearly: "Yearly",
@@ -166,7 +169,11 @@ export function detectIncomeStreams(txns: DetectTxn[], now: Date = new Date()): 
 
     const lastTime = times[times.length - 1];
     const lastAmt = Math.abs(sorted[sorted.length - 1].amount);
-    const monthly = Math.round(lastAmt * (30 / cad.days));
+    // Average the last 3 deposits (matches forecast.ts) and annualize by the
+    // true cadence — one commission-spike check shouldn't define "monthly."
+    const recentAmts = sorted.slice(-3);
+    const avgAmt = recentAmts.reduce((sum, t) => sum + Math.abs(t.amount), 0) / recentAmts.length;
+    const monthly = Math.round(avgAmt * cad.perMonth);
     const lastDate = new Date(lastTime);
     const nextTime = lastTime + cad.days * DAY;
     const nextDate = new Date(nextTime);

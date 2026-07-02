@@ -601,6 +601,8 @@ export async function commitImport(args: {
       }
     }
   }
+  // Settle "income expected" entries the landed deposits fulfil (best-effort).
+  await reconcileExpectedIncome(incomeRows).catch(() => {});
   const reconciled = await reconcilePendingTransfers();
 
   return {
@@ -1156,6 +1158,14 @@ export async function generateTransfersForIncome(incomeTxnId: number) {
   if (already.length) return { ok: true as const, created: 0 };
 
   const merchantKey = extractMerchant(txn.merchant);
+  // Registry gate: when the income_sources registry is in use, ONLY registered
+  // payers trigger the waterfall — a refund/reimbursement/Zelle deposit must
+  // never queue tithing/bills/budget transfers. (Empty registry = legacy
+  // behavior: any income-flagged deposit fires, matching the read side.)
+  const registered = await activeIncomeSources();
+  if (registered.length && !registered.some((src) => src.matchKey === merchantKey)) {
+    return { ok: true as const, created: 0 };
+  }
   const ruleRows = await database.select().from(s.allocationRules);
   const rules = ruleRows
     .filter((r) => r.enabled && r.trigger === "on_income" && r.toAccountId)
@@ -1728,6 +1738,48 @@ export async function addExpectedIncome(args: {
 export async function deleteExpectedIncome(id: string) {
   await requireDb().delete(s.expectedIncome).where(eq(s.expectedIncome.id, id));
   return { ok: true as const };
+}
+
+/**
+ * Settle expected-income rows against deposits that actually landed: for each
+ * newly imported income row, the nearest still-pending expected_income entry
+ * for the same payer key (±7 days) flips to status='received'. This is what
+ * lets the cockpit answer "has income come in?" — and it un-suppresses the
+ * auto-forecast that a pending manual override otherwise replaces forever.
+ * Best-effort: a pre-migration DB (no table) just skips.
+ */
+export async function reconcileExpectedIncome(
+  incomeRows: { id: number; amount: unknown; date: unknown; merchant: string }[]
+) {
+  const database = requireDb();
+  const pending = await database
+    .select()
+    .from(s.expectedIncome)
+    .where(eq(s.expectedIncome.status, "pending"))
+    .catch(() => [] as (typeof s.expectedIncome.$inferSelect)[]);
+  if (!pending.length) return { ok: true as const, received: 0 };
+  const MS_DAY = 86400e3;
+  let received = 0;
+  for (const row of incomeRows) {
+    const key = extractMerchant(row.merchant);
+    const dateISO = row.date as string | null;
+    if (!dateISO || !key) continue;
+    const landed = new Date(dateISO + "T00:00:00").getTime();
+    const match = pending
+      .filter((e) => e.status === "pending" && e.sourceKey && e.sourceKey === key)
+      .map((e) => ({ e, dist: Math.abs(new Date(e.expectedDate + "T00:00:00").getTime() - landed) }))
+      .filter((c) => c.dist <= 7 * MS_DAY)
+      .sort((a, b) => a.dist - b.dist)[0];
+    if (match) {
+      await database
+        .update(s.expectedIncome)
+        .set({ status: "received" })
+        .where(eq(s.expectedIncome.id, match.e.id));
+      match.e.status = "received"; // don't double-settle within this batch
+      received++;
+    }
+  }
+  return { ok: true as const, received };
 }
 
 // Local copies matching computeMemberProgress's month bucketing (year-month0).

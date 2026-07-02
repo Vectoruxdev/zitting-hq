@@ -800,14 +800,22 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         sourceMap.set(key, e);
       }
       const autoForecasts = forecastIncome([...sourceMap.values()], todayISO, 45);
-      // Manual rows override a source's auto-forecast (by key); one-offs add on top.
-      const overriddenKeys = new Set(expectedIncomeRows.filter((r) => r.sourceKey && r.status === "pending").map((r) => r.sourceKey));
+      // Manual rows override a source's auto-forecast (by key); one-offs add on
+      // top. A pending row whose date is >7 days past is STALE (the deposit
+      // never landed or arrived unrecognized) — it stops suppressing the
+      // auto-forecast and drops from the list instead of lingering forever.
+      const staleCutoff = new Date(new Date(todayISO + "T00:00:00Z").getTime() - 7 * 86400e3)
+        .toISOString()
+        .slice(0, 10);
+      const liveExpected = expectedIncomeRows.filter(
+        (r) => r.status === "pending" && (r.expectedDate as string) >= staleCutoff
+      );
+      const overriddenKeys = new Set(liveExpected.filter((r) => r.sourceKey).map((r) => r.sourceKey));
       const forecastDisplay = [
         ...autoForecasts
           .filter((f) => !overriddenKeys.has(f.key))
           .map((f) => ({ id: null as string | null, key: f.key, name: f.name, accountId: f.accountId, dateISO: f.dateISO, dateLabel: labelFor(f.dateISO), amount: f.amount, amountLabel: money2(f.amount), confidence: f.confidence, samples: f.samples, source: "auto" as const })),
-        ...expectedIncomeRows
-          .filter((r) => r.status === "pending")
+        ...liveExpected
           .map((r) => ({ id: r.id, key: r.sourceKey ?? r.id, name: r.label, accountId: r.accountId, dateISO: r.expectedDate as string, dateLabel: labelFor(r.expectedDate as string), amount: n(r.amount), amountLabel: money2(n(r.amount)), confidence: "manual" as const, samples: 0, source: (r.sourceKey ? "override" : "manual") as "override" | "manual" })),
       ].sort((a, b) => (a.dateISO < b.dateISO ? -1 : 1));
 
