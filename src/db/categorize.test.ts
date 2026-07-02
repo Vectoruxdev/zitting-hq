@@ -49,6 +49,33 @@ describe("extractMerchant", () => {
     expect(extractMerchant("Debit Card Withdrawal Spotify")).toContain("spotify");
     expect(extractMerchant("POS Debit Walmart UT")).toBe("walmart"); // two prefixes stripped
   });
+  it("strips MACU credit-card wrappers so the real merchant is the key", () => {
+    // Historically learned as "loan advance" → 41 purchases filed as finance charges.
+    expect(extractMerchant("Loan Advance Cre GOOGLE *Peacock TV")).toContain("google");
+    expect(extractMerchant("Loan Advance Cre BEES MARKETPLACE")).toContain("bees");
+    expect(extractMerchant("Loan Advance Cre TITHE.LY* THE WORK")).toBe("tithe ly");
+    expect(extractMerchant("CC *0414: Credit Card purch AMAZON")).toBe("amazon");
+    expect(extractMerchant("Loan Advance Credit SISTABREW COFFEE")).toContain("sistabrew");
+  });
+  it("keys legacy payroll formats onto the registered income-source keys", () => {
+    // Pre-June import era — all collapsed to junk key "salary regular" before.
+    expect(extractMerchant("Salary/Regular Income from ADP")).toBe("adp tech");
+    expect(extractMerchant("Salary/Regular Income from Eddy")).toBe("eddyhr payroll");
+    // Raw Plaid era of the same payers (must land on the same keys).
+    expect(extractMerchant("Ach Deposit Company: Adp Tech Svc Rkh Entry: Payroll *****XX14")).toBe("adp tech");
+    // The IRS refund must NOT merge into a payroll key.
+    expect(extractMerchant("Salary/Regular Income from IRS")).toBe("irs");
+  });
+  it("keys Cash App by counterparty, not by the processor", () => {
+    expect(extractMerchant("Deposit Debit CA Cash App*Jaelynn Musser Oakland CA Date XX 4829 Card 1149")).toBe(
+      "jaelynn musser"
+    );
+    expect(extractMerchant("Debit Deposit Cash App*Jaelynn Musser 4829")).toBe("jaelynn musser");
+    expect(extractMerchant("DC *************149: Debit Withdrawal CASH APP*SALLY ZITTING 4829")).toBe(
+      "sally zitting"
+    );
+    expect(extractMerchant("Purch Comment: Cash App*Katelynn Zitti")).toBe("katelynn zitti");
+  });
 });
 
 describe("cleanDescription", () => {

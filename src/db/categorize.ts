@@ -85,8 +85,22 @@ function signCompatible(kind: string | undefined, amount: number): boolean {
 // ---------------------------------------------------------------------------
 
 const NOISE_PREFIX =
-  /^(debit( card)?( purch(ase)?| withdrawal)?|credit( card)?|card purchase|ach withdrawal|ach deposit|deposit ach|withdrawal transfer to|home banking|withdrawal|deposit|pos|purchase|online|recurring|payment|external|web|transfer to|transfer from|to|from)\b/;
-const STOPWORDS = new Set(["the", "of", "llc", "inc", "co", "corp", "company", "the", "and", "type", "comment", "ach", "ppd", "web"]);
+  /^(debit( card)?( purch(ase)?| withdrawal)?|credit( card)?|card purchase|ach withdrawal|ach deposit|deposit ach|withdrawal transfer to|home banking|withdrawal|deposit|pos|purch(ase)?|online|recurring|payment|external|web|transfer to|transfer from|to|from)\b/;
+const STOPWORDS = new Set(["the", "of", "llc", "inc", "co", "corp", "company", "the", "and", "type", "comment", "ach", "ppd", "web", "date", "card", "entry"]);
+
+/**
+ * MACU wraps the real merchant in bank-descriptor prefixes the generic noise
+ * pass can't see. Stripped FIRST, before any other cleanup:
+ *   "Loan Advance Cre GOOGLE *Peacock TV"       → credit-card purchase
+ *   "CC *0414: Credit Card purch AMAZON"        → credit-card purchase
+ *   "DC *…149: Debit Withdrawal CASH APP*…"     → debit-card purchase
+ *   "Salary/Regular Income from ADP"            → payroll deposit
+ * Without this, memory learns junk keys ("loan advance", "salary regular")
+ * that swallow dozens of unrelated merchants and hide payroll from the
+ * income registry.
+ */
+const BANK_PREFIX =
+  /^(?:loan advance cre(?:dit)?\b|cc [^:]*:|dc [^:]*:|salary\/?\s?regular income from\b)\s*/;
 
 /** Loose normalizer (lower, strip punctuation, collapse) — used for dedupe + rule "contains". */
 export function normalizeMerchant(s: string): string {
@@ -100,13 +114,15 @@ export function normalizeMerchant(s: string): string {
  */
 export function cleanDescription(desc: string): string {
   let s = (desc || "").toLowerCase();
+  // Bank-descriptor wrappers hide the real merchant — strip before anything.
+  s = s.replace(BANK_PREFIX, "").trim();
   // MACU ACH puts the company after "co:"; card purchases after "comment:".
   const coIdx = s.indexOf(" co:");
   const cIdx = s.indexOf("comment:");
   if (coIdx >= 0) s = s.slice(coIdx + 4);
   else if (cIdx >= 0) s = s.slice(cIdx + 8);
   // cut trailing bank noise segments
-  s = s.split(/ - | type:| entry class| ach trace| trace number| name:| id:/)[0];
+  s = s.split(/ - | type:| entry:| entry class| ach trace| trace number| name:| id:/)[0];
   // strip a leading noise phrase (possibly twice: "debit card purch comment ...")
   s = s.replace(/comment:/g, " ");
   for (let i = 0; i < 2; i++) s = s.replace(NOISE_PREFIX, " ").trim();
@@ -135,6 +151,10 @@ const PROCESSOR_PREFIX = /^(sq|tst|sp|paypal|pp|ppd|pos|dnh)\s+/;
  */
 export function canonicalizeBrand(clean: string): string {
   let s = clean.replace(PROCESSOR_PREFIX, "");
+  // Cash App is a processor, not a merchant: key by the counterparty so
+  // "CASH APP*JAELYNN MUSSER" and "CASH APP*SALLY ZITTING" learn separately
+  // (a stray leading state token like "ca " sneaks in on some formats).
+  s = s.replace(/^(?:[a-z]{2} )?cash ?app\b\s*/, "");
   s = s
     .replace(/\bamzn\b/g, "amazon")
     .replace(/\bamazon mktp\b/g, "amazon")
@@ -142,7 +162,13 @@ export function canonicalizeBrand(clean: string): string {
     .replace(/\bwal mart\b/g, "walmart")
     .replace(/\bwm supercenter\b/g, "walmart")
     .replace(/\bchick fil a?\b/g, "chick fil a")
-    .replace(/\bmcdonald s?\b/g, "mcdonalds");
+    .replace(/\bmcdonald s?\b/g, "mcdonalds")
+    // Payroll payers: the pre-June import era wrote "Salary/Regular Income
+    // from ADP|Eddy" (BANK_PREFIX strips the wrapper, leaving the bare payer).
+    // Merge onto the same keys the raw Plaid strings produce so the
+    // income_sources registry matches ALL eras of the same paycheck.
+    .replace(/^adp$/g, "adp tech")
+    .replace(/^eddy$/g, "eddyhr payroll");
   return s.replace(/\s+/g, " ").trim();
 }
 
@@ -177,7 +203,7 @@ export function exactMerchantKey(desc: string): string {
 /** Internal transfer heuristic (MACU patterns). */
 export function looksLikeTransfer(merchant: string, type?: string): boolean {
   if (type && /transfer/i.test(type)) return true;
-  return /\b(transfer to|transfer from|to share|from share|webxfr|web xfr)\b/i.test(merchant || "");
+  return /\b(transfer to|transfer from|trans to|trans from|to share|from share|webxfr|web xfr)\b/i.test(merchant || "");
 }
 
 // ---------------------------------------------------------------------------

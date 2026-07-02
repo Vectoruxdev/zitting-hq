@@ -21,15 +21,24 @@ describe("tallyLearning", () => {
   });
 
   it("keeps distinct exact keys separate while the shared token key accumulates", () => {
-    const t = tallyLearning([row("CASH APP *JOHN SMITH"), row("CASH APP *MARI PIANO")], "kids");
-    const token = extractMerchant("CASH APP *JOHN SMITH");
-    expect(extractMerchant("CASH APP *MARI PIANO")).toBe(token); // shared broad key
-    expect(find(t.learns, token, "kids")?.delta).toBe(2);
-    const exactA = exactMerchantKey("CASH APP *JOHN SMITH");
-    const exactB = exactMerchantKey("CASH APP *MARI PIANO");
+    const t = tallyLearning([row("HOME DEPOT GARDEN CENTER"), row("HOME DEPOT TOOL RENTAL")], "groceries");
+    const token = extractMerchant("HOME DEPOT GARDEN CENTER");
+    expect(extractMerchant("HOME DEPOT TOOL RENTAL")).toBe(token); // shared broad key
+    expect(find(t.learns, token, "groceries")?.delta).toBe(2);
+    const exactA = exactMerchantKey("HOME DEPOT GARDEN CENTER");
+    const exactB = exactMerchantKey("HOME DEPOT TOOL RENTAL");
     expect(exactA).not.toBe(exactB);
-    expect(find(t.learns, exactA, "kids")?.delta).toBe(1);
-    expect(find(t.learns, exactB, "kids")?.delta).toBe(1);
+    expect(find(t.learns, exactA, "groceries")?.delta).toBe(1);
+    expect(find(t.learns, exactB, "groceries")?.delta).toBe(1);
+  });
+
+  it("keys Cash App rows by counterparty so different people never share a key", () => {
+    const t = tallyLearning([row("CASH APP *JOHN SMITH"), row("CASH APP *MARI PIANO")], "kids");
+    const tokenA = extractMerchant("CASH APP *JOHN SMITH");
+    const tokenB = extractMerchant("CASH APP *MARI PIANO");
+    expect(tokenA).not.toBe(tokenB);
+    expect(find(t.learns, tokenA, "kids")?.delta).toBe(1);
+    expect(find(t.learns, tokenB, "kids")?.delta).toBe(1);
   });
 
   it("penalizes the replaced category only when it was a real, different one", () => {

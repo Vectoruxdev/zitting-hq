@@ -274,10 +274,20 @@ async function syncItemInner(itemId: string) {
   // What actually landed per account (post-dedup) → drives notifications.
   const freshByAccount = new Map<string, InsertedRow[]>();
   if (toInsert.length) {
+    // Plaid's merchant enrichment misreads MACU share-transfer memos as retail
+    // brands ("Trans To ZITTING,JARED" → "Jared The Galleria Of Jewelry",
+    // share deposits → "Costco"). When the raw bank text says transfer and the
+    // enriched name doesn't, trust the raw text — otherwise transfers leak
+    // into spending categories under bogus merchants.
+    const pickMerchant = (t: { name?: string | null; merchant_name?: string | null }) =>
+      t.name && looksLikeTransfer(t.name) && t.merchant_name && !looksLikeTransfer(t.merchant_name)
+        ? t.name
+        : t.merchant_name || t.name;
+
     // Auto-categorize with our engine (same as CSV import).
     const sugg = await suggestCategories(
       toInsert.map((t) => ({
-        merchant: t.merchant_name || t.name,
+        merchant: pickMerchant(t) || "",
         amount: -t.amount, // Plaid: +out / −in → our signed convention
         accountId: ourByPlaid.get(t.account_id) ?? null,
         isTransfer: false,
@@ -288,7 +298,7 @@ async function syncItemInner(itemId: string) {
     toInsert.forEach((t, i) => {
       const accountId = ourByPlaid.get(t.account_id)!;
       const ourAmount = -t.amount;
-      const merchant = t.merchant_name || t.name || "(no description)";
+      const merchant = pickMerchant(t) || "(no description)";
       // Keep the full raw bank text when it's richer than the cleaned merchant
       // name (Plaid's `name` vs `merchant_name`) — surfaced in the detail drawer
       // to help identify ambiguous charges.
