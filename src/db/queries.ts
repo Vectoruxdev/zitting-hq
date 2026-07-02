@@ -71,6 +71,8 @@ export type FinanceData = typeof MOCK_FINANCE_DATA & {
    *  an ERROR, not because there is no data. The shell renders a retry
    *  banner instead of letting a transient blip look like an empty account. */
   loadError?: boolean;
+  /** Money-flow cockpit payload (owner only; scrubbed for members). */
+  moneyFlow?: Record<string, unknown> | null;
 };
 
 /** A valid-but-empty dataset (no demo data). Used on any deployed environment
@@ -114,6 +116,7 @@ function emptyData(): FinanceData {
   d.allowanceRules = [];
   d.incomeHistory = {};
   d.transferReadiness = null;
+  d.moneyFlow = null;
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
   d.permissions = null;
   return d;
@@ -907,6 +910,155 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         message,
       };
     }
+
+    // --- Money-flow cockpit: "a paycheck landed — did everything happen?" ---
+    // The owner's five questions in one payload: has income come in, what did
+    // its waterfall queue (tithing/bills/budget) and did each leg complete,
+    // were the girls sent their spending money this month, and how much should
+    // the bills/budget accounts be holding right now.
+    {
+      const todayISO2 = new Date().toISOString().slice(0, 10);
+      const thisMonth = todayISO2.slice(0, 7);
+      const registryKeys = new Set(incomeSourceRows.filter((r) => r.active).map((r) => r.matchKey));
+      const ruleNameById = new Map(ruleRows.map((r) => [r.id, r.name] as const));
+      const labelOn = (iso: string | null) => {
+        const d = parseDate(iso);
+        return d ? dayLabel(d) : null;
+      };
+
+      // Last registered paycheck + its waterfall legs.
+      const paychecks = txnRows
+        .filter(
+          (t) =>
+            t.income && !t.isTransfer && t.date && registryKeys.size > 0 && registryKeys.has(extractMerchant(t.merchant))
+        )
+        .sort((a, b) => ((a.date as string) < (b.date as string) ? 1 : -1));
+      const lastPay = paychecks[0] ?? null;
+      const paySrc = lastPay ? incomeSourceRows.find((r) => r.matchKey === extractMerchant(lastPay.merchant)) : null;
+      const paySplits = lastPay
+        ? instanceRows
+            .filter((r) => r.triggerIncomeTxnId === lastPay.id)
+            .map((r) => ({
+              id: r.id,
+              name: (r.ruleId && ruleNameById.get(r.ruleId)) || "Transfer",
+              to: r.toAccountId ? accountLabel(acctById.get(r.toAccountId)) : "—",
+              amount: n(r.amount),
+              amountLabel: money2(n(r.amount)),
+              status: r.status as string, // pending | auto | done | skipped
+            }))
+        : [];
+
+      // Allowances: sent this month? Rule-generated instances first, then a
+      // direct-deposit fallback (a transfer of exactly the allowance amount
+      // into the member's account this month — how it was done by hand).
+      const allowances = allowanceRuleRows
+        .filter((r) => r.enabled && r.period === "monthly")
+        .map((rule) => {
+          const inst = instanceRows.find(
+            (i) =>
+              typeof i.triggeredBy === "string" &&
+              i.triggeredBy.startsWith(`allowance:${rule.id}:`) &&
+              ((i.plannedDate as string | null) ?? "").slice(0, 7) === thisMonth
+          );
+          const min = Number(rule.minAmount ?? 0);
+          const direct = txnRows.find(
+            (t) =>
+              t.accountId === rule.toAccountId &&
+              t.isTransfer &&
+              ((t.date as string | null) ?? "").slice(0, 7) === thisMonth &&
+              n(t.amount) > 0 &&
+              Math.abs(n(t.amount) - min) < 0.01
+          );
+          const sent = (inst && inst.status !== "pending" && inst.status !== "skipped") || Boolean(direct);
+          const sentISO = direct
+            ? (direct.date as string)
+            : inst && inst.status !== "pending"
+              ? ((inst.plannedDate as string | null) ?? null)
+              : null;
+          return {
+            memberId: rule.memberId,
+            name: memberById.get(rule.memberId)?.name ?? "Member",
+            amount: min,
+            amountLabel: money0(min),
+            status: sent ? "sent" : inst ? "suggested" : "not_sent",
+            sentDateLabel: labelOn(sentISO),
+          };
+        });
+
+      // Recommended balances: for the bills/budget accounts, target = that
+      // account's own forecast recurring outflows over the next 31 days + the
+      // household cushion. (Role comes from accounts.role once migrated; the
+      // name match keeps this working before then.)
+      const roleOf = (a: (typeof accountRows)[number]) => {
+        const withRole = a as { role?: string | null };
+        if (withRole.role) return withRole.role;
+        if (/^bills\b/i.test(a.name)) return "bills";
+        if (/^budget$/i.test(a.name)) return "budget";
+        return null;
+      };
+      const cushion = financeSettingsRow ? Number(financeSettingsRow.cashRunwayBuffer ?? 300) : 300;
+      const recommended: Array<{
+        accountId: string; role: string; name: string;
+        current: number; currentLabel: string;
+        target: number; targetLabel: string;
+        delta: number; deltaLabel: string;
+        verdict: "ok" | "top_up";
+      }> = [];
+      for (const a of accountRows) {
+        const role = roleOf(a);
+        if (role !== "bills" && role !== "budget") continue;
+        const perMerchant = new Map<string, IncomeSourceInput>();
+        for (const t of txnRows) {
+          if (t.accountId !== a.id || t.income || t.isTransfer) continue;
+          const amt = n(t.amount);
+          const iso = t.date as string | null;
+          if (amt >= 0 || !iso) continue;
+          const k = extractMerchant(t.merchant);
+          const e = perMerchant.get(k) || { key: k, name: k, accountId: a.id, points: [] };
+          e.points.push({ dateISO: iso, amount: -amt });
+          perMerchant.set(k, e);
+        }
+        const upcoming31 = forecastIncome([...perMerchant.values()], todayISO2, 31).reduce((sum, f) => sum + f.amount, 0);
+        const availRaw = (a as { availableBalance?: string | null }).availableBalance;
+        const avail = availRaw != null ? n(availRaw) : liveBalance(a);
+        const target = Math.round(upcoming31 + cushion);
+        const delta = Math.round(target - avail);
+        recommended.push({
+          accountId: a.id,
+          role,
+          name: accountLabel(a),
+          current: avail,
+          currentLabel: money0(avail),
+          target,
+          targetLabel: money0(target),
+          delta,
+          deltaLabel: money0(Math.abs(delta)),
+          verdict: delta > 0 ? "top_up" : "ok",
+        });
+      }
+
+      data.moneyFlow =
+        lastPay || allowances.length || recommended.length
+          ? {
+              monthLabel: new Date(todayISO2 + "T00:00:00").toLocaleDateString("en-US", { month: "long" }),
+              lastPaycheck: lastPay
+                ? {
+                    txnId: lastPay.id,
+                    name: paySrc?.name ?? extractMerchant(lastPay.merchant),
+                    memberName: paySrc?.memberId ? (memberById.get(paySrc.memberId)?.name ?? null) : null,
+                    dateISO: lastPay.date as string,
+                    dateLabel: labelOn(lastPay.date as string),
+                    amount: n(lastPay.amount),
+                    amountLabel: money2(n(lastPay.amount)),
+                    splits: paySplits,
+                  }
+                : null,
+              allowances,
+              recommended,
+            }
+          : null;
+    }
+
     // Resolve notification entity refs (read-time). Transactions are stored by
     // their stable externalId (dedupeHash); map to the serial id + account so a
     // click can open the live row and the member guard can check access.

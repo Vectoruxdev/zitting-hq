@@ -41,6 +41,7 @@ function ZHQOverview({ onNavigate }) {
   const incomeRunway = (D.income && D.income.runway) || null;
   const cf = D.cashFlow || null;
   const moves = D.accountTransfers || [];
+  const mf = D.moneyFlow || null;
   const [unlinking, setUnlinking] = React.useState(null);
 
   async function unlinkMove(id) {
@@ -118,6 +119,98 @@ function ZHQOverview({ onNavigate }) {
           </Card>
         ))}
       </div>
+
+      {/* Money flow — the owner's checklist: income landed → waterfall queued →
+          each leg reconciled → spending money sent → bills/budget hold enough */}
+      {mf ? (
+        <Card style={{ boxShadow: 'var(--shadow-md)' }}>
+          <SectionHeader eyebrow={`${mf.monthLabel} · money flow`} title="When money comes in"
+            action={<Button variant="secondary" size="sm" onClick={() => onNavigate('transfers')}>Open transfers</Button>} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'clamp(12px, 2vw, 20px)' }}>
+
+            {/* 1 · the latest registered paycheck and where it was split */}
+            <div style={{ minWidth: 0 }}>
+              <div className="zt-eyebrow" style={{ marginBottom: 9 }}>Latest paycheck</div>
+              {mf.lastPaycheck ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--green-tint)', color: 'var(--accent)' }}>
+                      <Icon name="dollar" size={15} />
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {mf.lastPaycheck.memberName ? `${mf.lastPaycheck.memberName} · ` : ''}{mf.lastPaycheck.dateLabel}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>landed in main checking</div>
+                    </div>
+                    <span className="zt-num" style={{ fontSize: 15, fontWeight: 600, color: 'var(--accent)', flexShrink: 0 }}>{mf.lastPaycheck.amountLabel}</span>
+                  </div>
+                  {(mf.lastPaycheck.splits || []).length ? (
+                    (mf.lastPaycheck.splits || []).map((sp) => (
+                      <div key={sp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                        <Icon name={sp.status === 'pending' ? 'clock' : 'check'} size={14}
+                          style={{ color: sp.status === 'pending' ? 'var(--amber-500)' : 'var(--accent)', flexShrink: 0 }} />
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sp.name}</span>
+                        <span className="zt-num" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>{sp.amountLabel}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 2px' }}>
+                      No splits queued for this one — the next paycheck will use your allocation rules.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>No registered paychecks yet — mark your payers on the Income tab.</div>
+              )}
+            </div>
+
+            {/* 2 · has everyone been sent their spending money this month? */}
+            <div style={{ minWidth: 0 }}>
+              <div className="zt-eyebrow" style={{ marginBottom: 9 }}>Spending money · {mf.monthLabel}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(mf.allowances || []).length ? (mf.allowances || []).map((al) => (
+                  <div key={al.memberId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                    <Icon name={al.status === 'sent' ? 'check' : al.status === 'suggested' ? 'clock' : 'alert'} size={14}
+                      style={{ color: al.status === 'sent' ? 'var(--accent)' : 'var(--amber-500)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{al.name}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                      {al.status === 'sent' ? `sent${al.sentDateLabel ? ` ${al.sentDateLabel}` : ''}` : al.status === 'suggested' ? 'queued' : 'not sent yet'}
+                    </span>
+                    <span className="zt-num" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>{al.amountLabel}</span>
+                  </div>
+                )) : (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>No allowance rules yet — set them up in Settings → Access.</div>
+                )}
+              </div>
+            </div>
+
+            {/* 3 · are the bills/budget accounts holding enough for the next month? */}
+            <div style={{ minWidth: 0 }}>
+              <div className="zt-eyebrow" style={{ marginBottom: 9 }}>Account targets · next 31 days</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(mf.recommended || []).length ? (mf.recommended || []).map((rec) => (
+                  <div key={rec.accountId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                    <Icon name="bank" size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rec.name}</div>
+                      <div className="zt-num" style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>{rec.currentLabel} of {rec.targetLabel} target</div>
+                    </div>
+                    <Tag size="sm" color={rec.verdict === 'ok' ? 'var(--accent)' : 'var(--amber-500)'} style={{ flexShrink: 0 }}>
+                      {rec.verdict === 'ok' ? 'covered' : `top up ${rec.deltaLabel}`}
+                    </Tag>
+                  </div>
+                )) : (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>Targets appear once your bills/budget accounts have some history.</div>
+                )}
+              </div>
+              <p style={{ margin: '10px 0 0', fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.45 }}>
+                Target = that account’s usual recurring outflows for the next 31 days plus your cash cushion.
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Cash-flow reconciliation — makes the month's numbers visibly add up */}
       {cf ? (

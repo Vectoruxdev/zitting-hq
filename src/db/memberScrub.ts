@@ -49,6 +49,7 @@ const SCRUB: Record<string, () => unknown> = {
   notifRules: () => [],
   receiptItems: () => [],
   receipts: () => [],
+  moneyFlow: () => null,
 };
 
 export const MEMBER_SCRUBBED_KEYS = Object.keys(SCRUB);
