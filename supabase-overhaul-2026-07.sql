@@ -130,12 +130,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_notif_dedupe
 
 -- ---------- 4) transfer_instances: period key + idempotency ---------------
 ALTER TABLE transfer_instances ADD COLUMN IF NOT EXISTS period_key text;
--- one generated instance per (rule, income txn) and per triggered_by tag
+-- One generated instance per (rule, income txn): the waterfall's real
+-- idempotency key. NOTE deliberately NOT a plain unique index on
+-- triggered_by — every leg of one paycheck's waterfall shares the same
+-- 'income:<txnId>' tag, so that would break multi-rule generation.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ti_rule_income
   ON transfer_instances (rule_id, trigger_income_txn_id)
   WHERE trigger_income_txn_id IS NOT NULL AND rule_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ti_triggered_by
-  ON transfer_instances (triggered_by) WHERE triggered_by IS NOT NULL;
+DROP INDEX IF EXISTS uq_ti_triggered_by;
+-- Allowance/scheduled tags ARE one-per-tag ('allowance:<rule>:<period>:<member>',
+-- 'scheduled:<rule>:<runDate>') — enforce uniqueness just for those.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ti_triggered_by_tagged
+  ON transfer_instances (triggered_by)
+  WHERE triggered_by LIKE 'allowance:%' OR triggered_by LIKE 'scheduled:%';
 
 -- ---------- 5) income_sources: gross pay + aliases -------------------------
 -- gross_per_period: paystub gross per deposit (preferred when set).
@@ -146,9 +153,11 @@ ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS gross_per_period numeric(14,
 ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS gross_ratio numeric(8,4);
 ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS tithe_enabled boolean NOT NULL DEFAULT true;
 
+-- (source_id is TEXT — income_sources.id is a text column holding uuids;
+--  a uuid-typed FK column is an incompatible-types error in Postgres.)
 CREATE TABLE IF NOT EXISTS income_source_aliases (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_id  uuid NOT NULL REFERENCES income_sources(id) ON DELETE CASCADE,
+  source_id  text NOT NULL REFERENCES income_sources(id) ON DELETE CASCADE,
   match_key  text NOT NULL UNIQUE
 );
 
