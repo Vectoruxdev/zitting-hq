@@ -54,6 +54,8 @@ export function ProgressBar({
           width: pct + '%',
           background: fill,
           borderRadius: rounded ? 999 : 4,
+          // Fills glide to their new width on data changes instead of jumping.
+          transition: animate ? 'width var(--dur-slow) var(--ease-out), background var(--dur-base) var(--ease-out)' : undefined,
         }}
       />
       {over ? (

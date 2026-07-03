@@ -38,7 +38,7 @@ function ZHQTransactionsHub({ onNavigate, tab, onTabChange }) {
         value={active}
         onChange={onTabChange}
       />
-      <div key={active}>
+      <div key={active} className="zt-enter">
         {active === 'tidy' ? React.createElement(w.ZHQBulk)
           : active === 'import' ? React.createElement(w.ZHQImport, { onNavigate })
           : React.createElement(w.ZHQTransactions, { onNavigate })}
@@ -62,7 +62,7 @@ function ZHQTransfersHub({ onNavigate, tab, onTabChange }) {
         value={active}
         onChange={onTabChange}
       />
-      <div key={active}>
+      <div key={active} className="zt-enter">
         {active === 'rules'
           ? React.createElement(w.ZHQAllocations, { onNavigate })
           : React.createElement(w.ZHQTransfers, { onNavigate })}
@@ -86,7 +86,7 @@ function ZHQIncomeBillsHub({ onNavigate, tab, onTabChange }) {
         value={active}
         onChange={onTabChange}
       />
-      <div key={active}>
+      <div key={active} className="zt-enter">
         {active === 'bills'
           ? React.createElement(w.ZHQBills)
           : active === 'giving'
@@ -157,7 +157,7 @@ function ZHQSettingsHub({ onNavigate, tab, onTabChange }) {
         value={active}
         onChange={onTabChange}
       />
-      <div key={active}>{body}</div>
+      <div key={active} className="zt-enter">{body}</div>
     </div>
   );
 }

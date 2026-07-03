@@ -40,6 +40,26 @@ export function AreaChart({
   style,
 }) {
   const uid = React.useMemo(() => 'ac' + Math.random().toString(36).slice(2, 8), []);
+  // Draw-in via the Web Animations API: the path is fully visible at rest, so
+  // a throttled/unsupported animation timeline can never leave the chart blank
+  // (same principle as the .zt-enter transform-only rule).
+  const lineRef = React.useRef(null);
+  const dataKey = data.join(",");
+  React.useEffect(() => {
+    const el = lineRef.current;
+    if (!animate || !el || typeof el.getTotalLength !== 'function' || typeof el.animate !== 'function') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    try {
+      const len = el.getTotalLength();
+      el.animate(
+        [
+          { strokeDasharray: `${len} ${len}`, strokeDashoffset: len },
+          { strokeDasharray: `${len} ${len}`, strokeDashoffset: 0 },
+        ],
+        { duration: 900, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      );
+    } catch { /* jsdom / old engines — chart simply appears */ }
+  }, [animate, dataKey]);
   const all = compare ? data.concat(compare) : data;
   if (!all.length) return <svg width={width} height={height} style={style} />;
   const min = Math.min(...all);
@@ -83,7 +103,7 @@ export function AreaChart({
         <circle cx={last[0]} cy={last[1]} r="3.5" fill={color} />
         <circle cx={last[0]} cy={last[1]} r="6.5" fill={color} opacity="0.18" />
       </g>
-      <path d={line} stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+      <path ref={lineRef} d={line} stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
 
       {labels.length ? labels.map((l, i) => {
         const x = pad.left + (labels.length === 1 ? plotW / 2 : (i / (labels.length - 1)) * plotW);

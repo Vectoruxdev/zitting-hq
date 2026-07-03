@@ -19,6 +19,24 @@ export function DonutChart({
   animate = true,
   style,
 }) {
+  // Sweep-in via WAAPI (arcs are fully visible at rest — a throttled timeline
+  // can never leave the donut empty).
+  const arcsRef = React.useRef(null);
+  const segKey = segments.map((x) => x.value || 0).join(',');
+  React.useEffect(() => {
+    const el = arcsRef.current;
+    if (!animate || !el || typeof el.animate !== 'function') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    try {
+      el.animate(
+        [
+          { opacity: 0, transform: 'rotate(-14deg)' },
+          { opacity: 1, transform: 'rotate(0deg)' },
+        ],
+        { duration: 550, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      );
+    } catch { /* donut simply appears */ }
+  }, [animate, segKey]);
   const total = segments.reduce((s, x) => s + (x.value || 0), 0) || 1;
   const r = (size - thickness) / 2;
   const cx = size / 2, cy = size / 2;
@@ -50,7 +68,7 @@ export function DonutChart({
     <div style={{ position: 'relative', width: size, height: size, ...style }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-sunken)" strokeWidth={thickness} />
-        {arcs}
+        <g ref={arcsRef} style={{ transformOrigin: '50% 50%' }}>{arcs}</g>
       </svg>
       {(centerTop || centervalue || centerSub) ? (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>

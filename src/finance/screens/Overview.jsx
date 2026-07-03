@@ -112,7 +112,7 @@ function ZHQOverview({ onNavigate }) {
 
       {/* Stat tiles */}
       {/* minmax 150 (not 170): two tiles per row on a 375px phone instead of a tall single-column stack */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'clamp(10px, 2vw, 14px)' }}>
+      <div className="zt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'clamp(10px, 2vw, 14px)' }}>
         {tiles.map((t, i) => (
           <Card key={i} interactive={!!t.nav} onClick={t.nav ? () => onNavigate(t.nav) : undefined} style={t.accent ? { boxShadow: 'var(--shadow-md)', border: '1px solid var(--green-tint)' } : undefined}>
             <StatTile label={t.label} value={t.value} sub={t.sub} accent={t.accent} icon={t.icon} />

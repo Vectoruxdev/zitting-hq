@@ -313,3 +313,14 @@ a.hq-card:hover {
 /* Pull-to-refresh spinner (member view) */
 @keyframes zhq-spin { to { transform: rotate(360deg); } }
 .zhq-spin { animation: zhq-spin 0.8s linear infinite; }
+
+/* Keyboard focus — a visible ring for tab navigation everywhere, invisible
+   for mouse/touch (:focus-visible). --ring-focus was a defined-but-unused
+   token; inline-styled components can't express pseudo-classes, so this
+   global rule is how the whole app gets focus states. :where() keeps
+   specificity at zero so any component style can still override. */
+:where(button, [role='button'], a, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+  border-radius: var(--radius-sm, 8px);
+}

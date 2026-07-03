@@ -21,6 +21,23 @@ function buildPath(data, w, h, pad = 2) {
  */
 export function Sparkline({ data = [], width = 88, height = 26, color, area = false, strokeWidth = 1.6, animate = true, style }) {
   const gid = React.useMemo(() => 'spk' + Math.random().toString(36).slice(2, 8), []);
+  const lineRef = React.useRef(null);
+  const dataKey = (data || []).join(',');
+  React.useEffect(() => {
+    const el = lineRef.current;
+    if (!animate || !el || typeof el.getTotalLength !== 'function' || typeof el.animate !== 'function') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    try {
+      const len = el.getTotalLength();
+      el.animate(
+        [
+          { strokeDasharray: `${len} ${len}`, strokeDashoffset: len },
+          { strokeDasharray: `${len} ${len}`, strokeDashoffset: 0 },
+        ],
+        { duration: 600, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      );
+    } catch { /* line simply appears */ }
+  }, [animate, dataKey]);
 
   if (!data || data.length < 2) return <svg width={width} height={height} style={style} />;
   const up = data[data.length - 1] >= data[0];
@@ -40,7 +57,7 @@ export function Sparkline({ data = [], width = 88, height = 26, color, area = fa
           <path d={areaPath} fill={`url(#${gid})`} />
         </React.Fragment>
       ) : null}
-      <path d={line} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <path ref={lineRef} d={line} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
