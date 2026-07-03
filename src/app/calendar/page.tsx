@@ -25,7 +25,9 @@ export default async function CalendarPage() {
   const feedErrors: { name: string; error: string }[] = [];
   for (const feed of cfg.feeds.filter((f) => f.enabled)) {
     try {
-      const res = await fetch(feed.url, { next: { revalidate: 900 } });
+      // Hard timeout — a feed host that hangs (never responds, never errors)
+      // would otherwise pin this page on its loading state forever.
+      const res = await fetch(feed.url, { next: { revalidate: 900 }, signal: AbortSignal.timeout(6000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       const events: IcsEvent[] = expandIcs(text, todayISO, windowEnd);

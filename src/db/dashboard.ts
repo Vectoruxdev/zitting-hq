@@ -86,17 +86,35 @@ export interface DashboardData {
 
 const FEED_COLORS = ["var(--accent)", "var(--indigo-500)", "var(--amber-500)", "var(--data-2, #7c8cf8)", "var(--gray-500)"];
 
+/** Resolve `p`, or the section's empty state after `ms` — a hung section
+ *  (e.g. an external calendar feed that never responds) must degrade to its
+ *  empty card, never hold the whole home page on the loading skeleton. */
+function sectionWithTimeout<T>(p: Promise<T>, ms: number, fallback: () => T, label: string): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      console.error(`[dashboard] ${label} section timed out after ${ms}ms — rendering its empty state`);
+      resolve(fallback());
+    }, ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      () => { clearTimeout(t); resolve(fallback()); }
+    );
+  });
+}
+
 export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   const todayISO = familyTodayISO();
 
   // The four sections are independent — run them concurrently (the pooled
   // postgres client handles a few parallel streams fine; the heavy sequential
-  // discipline lives INSIDE getFinanceData, unchanged).
+  // discipline lives INSIDE getFinanceData, unchanged). Each is fenced by a
+  // watchdog: one slow/hung section renders as its empty card instead of
+  // pinning the entire page to the skeleton.
   const [finance, meals, groceries, calendar] = await Promise.all([
-    financeSection(viewer),
-    mealsSection(todayISO),
-    groceriesSection(),
-    calendarSection(todayISO),
+    sectionWithTimeout(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance"),
+    sectionWithTimeout(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals"),
+    sectionWithTimeout(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
+    sectionWithTimeout(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar"),
   ]);
 
   // Today's glance — calendar events whose chip is "Today" + tonight's dinner.
@@ -221,7 +239,10 @@ async function calendarSection(todayISO: string): Promise<DashboardData["calenda
     const perFeed = await Promise.all(
       enabled.map(async (feed: any) => {
         try {
-          const res = await fetch(feed.url, { next: { revalidate: 900 } });
+          // Hard timeout: an ICS host that accepts the connection but never
+          // responds would otherwise hang this render forever (the catch only
+          // sees rejections — a hang never rejects).
+          const res = await fetch(feed.url, { next: { revalidate: 900 }, signal: AbortSignal.timeout(4000) });
           if (!res.ok) return [];
           const color = feed.color || FEED_COLORS[(feed.id - 1) % FEED_COLORS.length];
           return expandIcs(await res.text(), todayISO, windowEnd).map((ev) => ({

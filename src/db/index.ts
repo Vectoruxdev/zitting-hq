@@ -26,10 +26,12 @@ const globalForDb = globalThis as unknown as {
 const client = connectionString
   ? (globalForDb.__zhqClient ??= postgres(connectionString, {
       prepare: false,
-      // Serverless: keep the per-instance pool tiny and fail fast instead of
+      // Serverless: keep the per-instance pool small and fail fast instead of
       // hanging a request when the Supabase pooler is saturated — a hung read
-      // here is what used to render the whole dashboard as $0.
-      max: 4,
+      // here is what used to render the whole dashboard as $0. Fluid Compute
+      // shares one instance (and this pool) across concurrent requests, and a
+      // home-page render runs four sections concurrently — 6 keeps headroom.
+      max: 6,
       idle_timeout: 20,
       connect_timeout: 10,
     }))
