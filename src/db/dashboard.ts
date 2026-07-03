@@ -111,10 +111,10 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   // watchdog: one slow/hung section renders as its empty card instead of
   // pinning the entire page to the skeleton.
   const [finance, meals, groceries, calendar] = await Promise.all([
-    sectionWithTimeout(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance"),
-    sectionWithTimeout(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals"),
-    sectionWithTimeout(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
-    sectionWithTimeout(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar"),
+    sectionWithTimeout<DashboardData["finance"]>(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance"),
+    sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals"),
+    sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
+    sectionWithTimeout<DashboardData["calendar"]>(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar"),
   ]);
 
   // Today's glance — calendar events whose chip is "Today" + tonight's dinner.
