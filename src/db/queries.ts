@@ -12,7 +12,7 @@
  * when no DB is configured, we fall back to the full curated mock so the app
  * (and pre-migration deploys) never break.
  */
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { isEmailConfigured } from "@/lib/email";
 import { detectRecurring, detectIncomeStreams } from "./detect";
 import { computeMemberProgress } from "./allowance";
@@ -22,6 +22,7 @@ import { extractMerchant } from "./categorize";
 import { mergePrefs } from "./notifyPrefs";
 import { buildMerchantGroups, dominantCategory } from "./bulkGroups";
 import { scoreCategory, type MemoryMap, type RuleLike } from "./categorize";
+import { computeGivingLedger, type GivingSourceCfg } from "./giving";
 import { projectGoal, canViewGoal } from "./savings";
 import { scrubForMemberView } from "./memberScrub";
 import { budgetSpent } from "./budgetMath";
@@ -73,6 +74,8 @@ export type FinanceData = typeof MOCK_FINANCE_DATA & {
   loadError?: boolean;
   /** Money-flow cockpit payload (owner only; scrubbed for members). */
   moneyFlow?: Record<string, unknown> | null;
+  /** Giving/tithing ledger (owner only; scrubbed for members). */
+  giving?: Record<string, unknown> | null;
 };
 
 /** A valid-but-empty dataset (no demo data). Used on any deployed environment
@@ -117,6 +120,7 @@ function emptyData(): FinanceData {
   d.incomeHistory = {};
   d.transferReadiness = null;
   d.moneyFlow = null;
+  d.giving = null;
   d.ask = { prompts: ["How much did we spend on dining?", "Where can we cut $300/month?"], messages: [] };
   d.permissions = null;
   return d;
@@ -1057,6 +1061,177 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
               recommended,
             }
           : null;
+    }
+
+    // --- Giving / tithing ledger -----------------------------------------
+    // Owed (15% of derived gross) vs accrued (into the charity account) vs
+    // settled (charitable-category outflows). Gross config lives in columns
+    // added by supabase-overhaul-2026-07.sql — every read here degrades
+    // gracefully to the observed household defaults until that runs.
+    {
+      const todayISO3 = new Date().toISOString().slice(0, 10);
+      // Rates + default gross ratio (defensive: pre-migration → defaults).
+      let tithingRate = 0.1;
+      let charityRate = 0.05;
+      let defaultGrossRatio = 2.0202;
+      let givingMigrated = false;
+      try {
+        const rows = (await db.execute(
+          sql`select tithing_rate, charity_rate, default_gross_ratio from finance_settings where id = 'household'`
+        )) as unknown as Record<string, unknown>[];
+        if (rows[0]) {
+          tithingRate = Number(rows[0].tithing_rate ?? 0.1);
+          charityRate = Number(rows[0].charity_rate ?? 0.05);
+          defaultGrossRatio = Number(rows[0].default_gross_ratio ?? 2.0202);
+          givingMigrated = true;
+        }
+      } catch {
+        /* columns not migrated yet — defaults hold */
+      }
+      // Per-source gross config (defensive).
+      const grossBySource = new Map<string, { grossPerPeriod: number | null; grossRatio: number | null; titheEnabled: boolean }>();
+      try {
+        const rows = (await db.execute(
+          sql`select id, gross_per_period, gross_ratio, tithe_enabled from income_sources`
+        )) as unknown as Record<string, unknown>[];
+        for (const r of rows) {
+          grossBySource.set(String(r.id), {
+            grossPerPeriod: r.gross_per_period == null ? null : Number(r.gross_per_period),
+            grossRatio: r.gross_ratio == null ? null : Number(r.gross_ratio),
+            titheEnabled: r.tithe_enabled == null ? true : Boolean(r.tithe_enabled),
+          });
+        }
+      } catch {
+        /* columns not migrated yet */
+      }
+      // Recurring giving commitments (foundation, Christmas lights, building).
+      let commitments: Array<Record<string, unknown>> = [];
+      try {
+        commitments = (await db.execute(
+          sql`select id, name, amount, cadence, month_hint, category_id, active, notes from giving_commitments where active = true order by name`
+        )) as unknown as Array<Record<string, unknown>>;
+      } catch {
+        /* table not migrated yet */
+      }
+
+      const charityAcct =
+        accountRows.find((a) => (a as { role?: string | null }).role === "charity") ||
+        accountRows.find((a) => /charity/i.test(a.name));
+      const charitableCatIds = new Set(catRows.filter((c) => c.groupId === "charitable").map((c) => c.id));
+      const registrySet = new Set(incomeSourceRows.filter((r) => r.active).map((r) => r.matchKey));
+
+      const givingSources: GivingSourceCfg[] = incomeSourceRows
+        .filter((r) => r.active)
+        .map((r) => {
+          const g = grossBySource.get(r.id);
+          return {
+            matchKey: r.matchKey,
+            name: r.name,
+            titheEnabled: g?.titheEnabled ?? true,
+            grossPerPeriod: g?.grossPerPeriod ?? null,
+            grossRatio: g?.grossRatio ?? null,
+          };
+        });
+
+      const ledger = computeGivingLedger({
+        incomeTxns: txnRows
+          .filter((t) => t.income && !t.isTransfer && t.date && registrySet.has(extractMerchant(t.merchant)))
+          .map((t) => ({ dateISO: t.date as string, amount: n(t.amount), matchKey: extractMerchant(t.merchant) })),
+        allTxns: txnRows
+          .filter((t) => t.date)
+          .map((t) => ({
+            dateISO: t.date as string,
+            amount: n(t.amount),
+            isTransfer: t.isTransfer,
+            categoryId: t.categoryId,
+            accountId: t.accountId,
+          })),
+        sources: givingSources,
+        cfg: {
+          tithingRate,
+          charityRate,
+          defaultGrossRatio,
+          charityAccountId: charityAcct?.id ?? null,
+          charitableCategoryIds: charitableCatIds,
+        },
+        nowISO: todayISO3,
+        monthsBack: 6,
+      });
+
+      const charityBalance = charityAcct
+        ? ((charityAcct as { availableBalance?: string | null }).availableBalance != null
+            ? n((charityAcct as { availableBalance?: string | null }).availableBalance)
+            : liveBalance(charityAcct))
+        : 0;
+      const monthName = (mo: string) => {
+        const d = new Date(mo + "-01T00:00:00");
+        return isNaN(d.getTime()) ? mo : d.toLocaleDateString("en-US", { month: "short" });
+      };
+      data.giving = {
+        migrated: givingMigrated,
+        rates: {
+          tithing: tithingRate,
+          charity: charityRate,
+          defaultGrossRatio,
+          netToGrossPct: Math.round((1 / defaultGrossRatio) * 1000) / 10, // e.g. 49.5
+        },
+        charityAccountId: charityAcct?.id ?? null,
+        charityAccountName: charityAcct ? accountLabel(charityAcct) : null,
+        charityBalance,
+        charityBalanceLabel: money0(charityBalance),
+        months: ledger.months.map((m) => ({
+          ...m,
+          label: monthName(m.month),
+          grossLabel: money0(m.grossIncome),
+          owedLabel: money0(m.owed),
+          accruedLabel: money0(m.accrued),
+          settledLabel: money0(m.settled),
+        })),
+        totals: {
+          owed: ledger.totals.owed,
+          owedLabel: money0(ledger.totals.owed),
+          accrued: ledger.totals.accrued,
+          accruedLabel: money0(ledger.totals.accrued),
+          settled: ledger.totals.settled,
+          settledLabel: money0(ledger.totals.settled),
+        },
+        outstanding: ledger.outstanding,
+        outstandingLabel: money0(Math.max(0, ledger.outstanding)),
+        sources: incomeSourceRows
+          .filter((r) => r.active)
+          .map((r) => {
+            const g = grossBySource.get(r.id);
+            const lastNet = txnRows
+              .filter((t) => t.income && !t.isTransfer && t.date && extractMerchant(t.merchant) === r.matchKey)
+              .sort((a, b) => ((a.date as string) < (b.date as string) ? 1 : -1))[0];
+            const net = lastNet ? n(lastNet.amount) : 0;
+            const ratio = g?.grossRatio ?? defaultGrossRatio;
+            const implied = g?.grossPerPeriod ?? (net > 0 ? Math.round(net * ratio) : null);
+            return {
+              id: r.id,
+              name: r.name,
+              matchKey: r.matchKey,
+              memberName: r.memberId ? (memberById.get(r.memberId)?.name ?? null) : null,
+              titheEnabled: g?.titheEnabled ?? true,
+              grossPerPeriod: g?.grossPerPeriod ?? null,
+              grossRatio: g?.grossRatio ?? null,
+              lastNet: net,
+              lastNetLabel: money2(net),
+              impliedGross: implied,
+              impliedGrossLabel: implied != null ? money0(implied) : null,
+            };
+          }),
+        commitments: commitments.map((c) => ({
+          id: String(c.id),
+          name: String(c.name),
+          amount: Number(c.amount ?? 0),
+          amountLabel: money0(Number(c.amount ?? 0)),
+          cadence: String(c.cadence ?? "monthly"),
+          monthHint: c.month_hint == null ? null : Number(c.month_hint),
+          categoryId: c.category_id == null ? null : String(c.category_id),
+          notes: c.notes == null ? null : String(c.notes),
+        })),
+      };
     }
 
     // Resolve notification entity refs (read-time). Transactions are stored by

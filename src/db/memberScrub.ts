@@ -50,6 +50,7 @@ const SCRUB: Record<string, () => unknown> = {
   receiptItems: () => [],
   receipts: () => [],
   moneyFlow: () => null,
+  giving: () => null,
 };
 
 export const MEMBER_SCRUBBED_KEYS = Object.keys(SCRUB);

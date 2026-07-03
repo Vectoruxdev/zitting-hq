@@ -35,6 +35,7 @@ import "./screens/Transactions.jsx";
 import "./screens/Budgets.jsx";
 import "./screens/Income.jsx";
 import "./screens/Bills.jsx";
+import "./screens/Giving.jsx";
 import "./screens/Transfers.jsx";
 import "./screens/Allocations.jsx";
 import "./screens/Savings.jsx";
@@ -63,6 +64,7 @@ const ALIASES: Record<string, { route: string; tab: string }> = {
   import: { route: "transactions", tab: "import" },
   allocations: { route: "transfers", tab: "rules" },
   bills: { route: "income", tab: "bills" },
+  giving: { route: "income", tab: "giving" },
   categories: { route: "settings", tab: "categories" },
   learned: { route: "settings", tab: "learned" },
   receipts: { route: "settings", tab: "receipts" },

@@ -81,12 +81,17 @@ function ZHQIncomeBillsHub({ onNavigate, tab, onTabChange }) {
         options={[
           { value: 'income', label: 'Income' },
           { value: 'bills', label: 'Bills & recurring' },
+          { value: 'giving', label: 'Giving' },
         ]}
         value={active}
         onChange={onTabChange}
       />
       <div key={active}>
-        {active === 'bills' ? React.createElement(w.ZHQBills) : React.createElement(w.ZHQIncome)}
+        {active === 'bills'
+          ? React.createElement(w.ZHQBills)
+          : active === 'giving'
+            ? React.createElement(w.ZHQGiving)
+            : React.createElement(w.ZHQIncome)}
       </div>
     </div>
   );

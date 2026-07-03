@@ -6,7 +6,7 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, gte, inArray, or, isNull, lt, like } from "drizzle-orm";
+import { and, eq, gte, inArray, or, isNull, lt, like, sql } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
@@ -1737,6 +1737,72 @@ export async function addExpectedIncome(args: {
 }
 export async function deleteExpectedIncome(id: string) {
   await requireDb().delete(s.expectedIncome).where(eq(s.expectedIncome.id, id));
+  return { ok: true as const };
+}
+
+// --- Giving / tithing configuration ----------------------------------------
+// These write columns/tables added by supabase-overhaul-2026-07.sql. On a
+// pre-migration DB they throw — the client toast says so instead of silently
+// no-opping.
+
+export async function saveGivingSettings(patch: {
+  tithingRate?: number;
+  charityRate?: number;
+  defaultGrossRatio?: number;
+}) {
+  const database = requireDb();
+  await database.execute(sql`
+    update finance_settings set
+      tithing_rate = coalesce(${patch.tithingRate ?? null}::numeric, tithing_rate),
+      charity_rate = coalesce(${patch.charityRate ?? null}::numeric, charity_rate),
+      default_gross_ratio = coalesce(${patch.defaultGrossRatio ?? null}::numeric, default_gross_ratio),
+      updated_at = now()
+    where id = 'household'`);
+  return { ok: true as const };
+}
+
+/** Per-source gross config: paystub gross per deposit, or a net→gross ratio,
+ *  and whether the source accrues tithing at all. The UI sends all three. */
+export async function saveIncomeSourceGross(args: {
+  id: string;
+  grossPerPeriod: number | null;
+  grossRatio: number | null;
+  titheEnabled: boolean;
+}) {
+  const database = requireDb();
+  await database.execute(sql`
+    update income_sources set
+      gross_per_period = ${args.grossPerPeriod}::numeric,
+      gross_ratio = ${args.grossRatio}::numeric,
+      tithe_enabled = ${args.titheEnabled}
+    where id = ${args.id}`);
+  return { ok: true as const };
+}
+
+export async function saveGivingCommitment(args: {
+  id?: string | null;
+  name: string;
+  amount: number;
+  cadence: string; // monthly | yearly | seasonal
+  monthHint?: number | null;
+  categoryId?: string | null;
+  notes?: string | null;
+}) {
+  const database = requireDb();
+  const id = args.id || crypto.randomUUID();
+  await database.execute(sql`
+    insert into giving_commitments (id, name, amount, cadence, month_hint, category_id, notes, active)
+    values (${id}, ${args.name}, ${args.amount}::numeric, ${args.cadence}, ${args.monthHint ?? null},
+            ${args.categoryId ?? null}, ${args.notes ?? null}, true)
+    on conflict (id) do update set
+      name = excluded.name, amount = excluded.amount, cadence = excluded.cadence,
+      month_hint = excluded.month_hint, category_id = excluded.category_id, notes = excluded.notes`);
+  return { ok: true as const, id };
+}
+
+export async function deleteGivingCommitment(id: string) {
+  const database = requireDb();
+  await database.execute(sql`update giving_commitments set active = false where id = ${id}`);
   return { ok: true as const };
 }
 

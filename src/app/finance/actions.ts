@@ -246,6 +246,45 @@ export async function updateFinanceSettings(patch: { cashRunwayBuffer?: number; 
   refresh();
   return res;
 }
+/** Giving/tithing rates + the household default net→gross ratio. */
+export async function saveGivingSettings(patch: { tithingRate?: number; charityRate?: number; defaultGrossRatio?: number }) {
+  await ensureOwner();
+  const res = await m.saveGivingSettings(patch);
+  refresh();
+  return res;
+}
+/** Per-income-source gross config (paystub gross / ratio / tithe on-off). */
+export async function saveIncomeSourceGross(args: {
+  id: string;
+  grossPerPeriod: number | null;
+  grossRatio: number | null;
+  titheEnabled: boolean;
+}) {
+  await ensureOwner();
+  const res = await m.saveIncomeSourceGross(args);
+  refresh();
+  return res;
+}
+export async function saveGivingCommitment(args: {
+  id?: string | null;
+  name: string;
+  amount: number;
+  cadence: string;
+  monthHint?: number | null;
+  categoryId?: string | null;
+  notes?: string | null;
+}) {
+  await ensureOwner();
+  const res = await m.saveGivingCommitment(args);
+  refresh();
+  return res;
+}
+export async function deleteGivingCommitment(id: string) {
+  await ensureOwner();
+  const res = await m.deleteGivingCommitment(id);
+  refresh();
+  return res;
+}
 /** Move an account to/from the household (business accounts are hidden + sync-skipped). */
 export async function setAccountSpace(id: string, space: "household" | "business") {
   await ensureOwner();

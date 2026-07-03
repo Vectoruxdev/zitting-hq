@@ -95,7 +95,7 @@ describe("scrubForMemberView", () => {
     // Derived-only keys are added by getFinanceData rather than the mock.
     const derivedOnly = new Set(["statsMonth", "cashFlow", "accountTransfers", "transferReadiness",
       "income", "members", "catRules", "importBatches", "allowanceRules", "scheduledCount", "accountsFlat", "incomeHistory",
-      "moneyFlow"]);
+      "moneyFlow", "giving"]);
     for (const key of MEMBER_SCRUBBED_KEYS) {
       if (derivedOnly.has(key)) continue;
       expect(MOCK_FINANCE_DATA, `mock is missing scrubbed key "${key}"`).toHaveProperty(key);
