@@ -98,7 +98,16 @@ begin;
   DELETE FROM transaction_splits WHERE transaction_id IN
     (SELECT id FROM transactions WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71');
   DELETE FROM transactions WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
-  DELETE FROM import_batches WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
+  -- The MOVED rows (ids 821–860, now on VISA PLATINUM) still reference this
+  -- account's import batches — REPOINT the batches to the surviving account
+  -- instead of deleting them (keeps import lineage, satisfies the FK).
+  UPDATE import_batches
+     SET account_id = 'e7cf01fe-b750-426d-b526-e1ac6af731af'
+   WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
+  DELETE FROM column_mapping_templates WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
+  DELETE FROM plaid_accounts WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
+  UPDATE savings_goals SET account_id = NULL, account_label = NULL WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
+  UPDATE savings_contributions SET account_id = NULL WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
   DELETE FROM account_members WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
   DELETE FROM income_sources WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
   DELETE FROM expected_income WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71';
