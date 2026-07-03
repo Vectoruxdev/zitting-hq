@@ -174,6 +174,11 @@ export default function FinanceApp({
         u.searchParams.delete("notif");
         window.history.replaceState({}, "", u.pathname + u.search + u.hash);
       }
+      // ?as=<memberId> — the owner asked to preview a specific member's view
+      // (Access → Preview). The payload's memberHome is already built for that
+      // member server-side; land directly on the member canvas. The param is
+      // kept in the URL so a refresh stays on the same preview.
+      if (u.searchParams.get("as")) setRoute("member");
     } catch {
       /* no-op */
     }
@@ -365,7 +370,20 @@ export default function FinanceApp({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => navigate("overview")}
+                onClick={() => {
+                  // Leaving the preview: drop ?as= so a refresh stays on the
+                  // owner dashboard instead of re-entering the member view.
+                  try {
+                    const u = new URL(window.location.href);
+                    if (u.searchParams.get("as")) {
+                      u.searchParams.delete("as");
+                      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+                    }
+                  } catch {
+                    /* no-op */
+                  }
+                  navigate("overview");
+                }}
                 iconLeft={<Icon name="chevronLeft" size={15} />}
               >
                 Owner view

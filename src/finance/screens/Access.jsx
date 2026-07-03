@@ -314,6 +314,17 @@ function ZHQAccess() {
                   <Select value={m.celebrationStyle || 'spicy'} onChange={(v) => changeCelebration(m, v)} options={[{ value: 'spicy', label: '🌶️ Spicy' }, { value: 'clean', label: '🎉 Clean' }, { value: 'off', label: 'Confetti only' }]} style={{ width: 142 }} />
                 </span>
               ) : null}
+              {isOwner && m.role === 'member' ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<Icon name="eye" size={14} />}
+                  onClick={() => { window.location.href = '/finance?as=' + encodeURIComponent(m.id); }}
+                  title={`See the app exactly as ${m.name} sees it`}
+                >
+                  Preview
+                </Button>
+              ) : null}
               {isOwner && m.email && me.email !== m.email ? <Button variant="secondary" size="sm" iconLeft={<Icon name="bell" size={14} />} onClick={() => sendInvite(m.email)} disabled={busy}>Send invite</Button> : null}
               {isOwner && me.email !== m.email ? (
                 <button onClick={() => remove(m)} disabled={busy} title="Remove" className="zhq-rowbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 }}><Icon name="x" size={16} /></button>

@@ -294,6 +294,25 @@ async function syncItemInner(itemId: string) {
       }))
     );
 
+    // Person attribution: a rule/memory suggestion wins; otherwise a
+    // transaction on an account with exactly ONE assigned manager belongs to
+    // that member (Jae's card spend is Jaelynn's, Katelynn's is Katelynn's).
+    // Shared accounts (2 managers) stay unattributed = Household.
+    const acctMemberRows = await db!
+      .select()
+      .from(s.accountMembers)
+      .catch(() => [] as (typeof s.accountMembers.$inferSelect)[]);
+    const managersByAcct = new Map<string, string[]>();
+    for (const am of acctMemberRows) {
+      const arr = managersByAcct.get(am.accountId) || [];
+      arr.push(am.memberId);
+      managersByAcct.set(am.accountId, arr);
+    }
+    const soloManager = (accountId: string) => {
+      const arr = managersByAcct.get(accountId);
+      return arr && arr.length === 1 ? arr[0] : null;
+    };
+
     const byAccount = new Map<string, ImportRowLite[]>();
     toInsert.forEach((t, i) => {
       const accountId = ourByPlaid.get(t.account_id)!;
@@ -317,6 +336,7 @@ async function syncItemInner(itemId: string) {
         categorySource: sg?.source ?? null,
         categoryConfidence: sg?.confidence ?? null,
         isTransfer,
+        memberId: sg?.member ?? soloManager(accountId),
       });
       byAccount.set(accountId, arr);
     });
@@ -590,4 +610,5 @@ interface ImportRowLite {
   categorySource: string | null;
   categoryConfidence: number | null;
   isTransfer: boolean;
+  memberId: string | null;
 }

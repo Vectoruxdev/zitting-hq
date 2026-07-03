@@ -182,6 +182,22 @@ CREATE INDEX IF NOT EXISTS idx_receipt_lines_canonical ON receipt_lines (canonic
 -- ---------- 10) plaid sync lock --------------------------------------------
 ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS syncing_at timestamptz;
 
+-- ---------- 11) person attribution backfill ---------------------------------
+-- A transaction on an account with exactly ONE assigned manager belongs to
+-- that member (Jae's card spend is Jaelynn's). Sync now sets this going
+-- forward; this backfills history so member spending stats include it.
+-- Shared accounts (2 managers) stay unattributed (= Household).
+UPDATE transactions t
+   SET member_id = solo.member_id
+  FROM (
+    SELECT account_id, min(member_id) AS member_id
+    FROM account_members
+    GROUP BY account_id
+    HAVING count(*) = 1
+  ) solo
+ WHERE t.account_id = solo.account_id
+   AND t.member_id IS NULL;
+
 -- ---------- verification ----------------------------------------------------
 SELECT 'manual visa remaining txns' AS check, count(*)::text AS value FROM transactions WHERE account_id = '3ba3ba9f-01dc-49e1-9285-03d907684e71'
 UNION ALL

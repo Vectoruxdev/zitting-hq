@@ -35,6 +35,9 @@ import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
 export interface Viewer {
   memberId: string | null;
   role: "owner" | "partner" | "member";
+  /** Owner/partner only: build memberHome for THIS member (the "view as
+   *  member" preview picker, ?as=<memberId>). Ignored for real members. */
+  previewMemberId?: string | null;
 }
 
 const n = (v: unknown) => (v == null ? 0 : Number(v));
@@ -2220,12 +2223,16 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       };
     };
     // Whose home to show: the viewer's own. For an OWNER previewing via
-    // "View as member" (owners have no member identity of their own), fall back
-    // to the first real member so the preview lands on an actual person instead
-    // of hanging on "Loading…".
+    // "View as member": the explicitly requested member (?as=<id> → the
+    // Access screen's Preview buttons), else the first real member so the
+    // preview lands on an actual person instead of hanging on "Loading…".
     let homeMemberId: string | null = viewer?.memberId ?? null;
     if (!homeMemberId && viewer?.role === "owner") {
-      const preview = memberRows.find((m) => m.role === "member") || memberRows.find((m) => m.role !== "owner");
+      const requested = viewer.previewMemberId
+        ? memberRows.find((m) => m.id === viewer.previewMemberId)
+        : undefined;
+      const preview =
+        requested || memberRows.find((m) => m.role === "member") || memberRows.find((m) => m.role !== "owner");
       homeMemberId = preview?.id ?? null;
     }
     data.memberHome = homeMemberId ? buildMemberHome(homeMemberId) : null;
