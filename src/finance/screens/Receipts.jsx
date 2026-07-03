@@ -1,5 +1,6 @@
 import React from 'react';
 import { downscaleReceiptPhoto } from './shared/imageDownscale';
+import { searchLineItems, topItems } from './shared/receiptSearch';
 /* Receipts — uploaded receipt images, matched to transactions. Reads
    D.receipts (server-derived); images live in a private storage bucket and
    thumbnails load via the receiptSignedUrl action (short-lived URLs).
@@ -202,6 +203,92 @@ function ZHQCaptureFlow({ children }) {
   );
 }
 
+/* Household-wide item search — "how much did we spend on eggs this year?"
+   Same engine as the member hub, but over EVERY family receipt. Answers are a
+   floor: only scanned purchases count. */
+function ItemSearchCard({ receipts }) {
+  const { Card, SectionHeader, Icon, SegmentedControl, TextInput } = window.ZittingHQDesignSystem_c9e528;
+  const [q, setQ] = React.useState('');
+  const [period, setPeriod] = React.useState('This year');
+  const filtered = React.useMemo(() => {
+    if (period === 'All time') return receipts;
+    const now = new Date();
+    const cutoff =
+      period === 'This year'
+        ? `${now.getFullYear()}-01-01`
+        : new Date(now.getTime() - 365 * 86400e3).toISOString().slice(0, 10);
+    return (receipts || []).filter((r) => (r.dateISO || '') >= cutoff);
+  }, [receipts, period]);
+  const res = React.useMemo(() => searchLineItems(filtered, q), [filtered, q]);
+  const tops = React.useMemo(() => topItems(filtered, 8), [filtered]);
+  const money = (v) => `$${v.toFixed(2)}`;
+  return (
+    <Card>
+      <SectionHeader eyebrow="Every family receipt" title="What did we buy?" />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <TextInput placeholder="Search an item — eggs, milk, diapers…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <SegmentedControl options={['This year', '12 months', 'All time']} value={period} onChange={setPeriod} />
+      </div>
+      {q.trim() ? (
+        res.occ.length ? (
+          <div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 12 }}>
+              <div>
+                <div className="zt-eyebrow" style={{ marginBottom: 4 }}>Bought</div>
+                <div className="zt-num" style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{res.qty}×</div>
+              </div>
+              <div>
+                <div className="zt-eyebrow" style={{ marginBottom: 4 }}>Spent</div>
+                <div className="zt-num" style={{ fontSize: 22, fontWeight: 600, color: 'var(--accent)' }}>{money(res.spend)}</div>
+              </div>
+              <div>
+                <div className="zt-eyebrow" style={{ marginBottom: 4 }}>Receipts</div>
+                <div className="zt-num" style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{res.receipts}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+              {res.occ.slice(0, 20).map((o, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.name}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', flexShrink: 0 }}>{o.merchant} · {o.date}</span>
+                  <span className="zt-num" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>{o.price != null ? money(o.price) : '—'}</span>
+                </div>
+              ))}
+            </div>
+            <p style={{ margin: '10px 0 0', fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+              Counts only scanned receipts — the real total may be higher.
+            </p>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-tertiary)' }}>Nothing matching “{q}” on scanned receipts in this period.</p>
+        )
+      ) : tops.length ? (
+        <div>
+          <div className="zt-eyebrow" style={{ marginBottom: 8 }}>Most bought</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {tops.map((t) => (
+              <button
+                key={t.label}
+                onClick={() => setQ(t.label)}
+                style={{ padding: '6px 12px', fontSize: 12.5, background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                {t.label} <span className="zt-num" style={{ color: 'var(--text-tertiary)' }}>×{t.qty}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--text-tertiary)' }}>
+          <Icon name="camera" size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
+          Scan grocery receipts and every line item becomes searchable here.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function ZHQReceipts() {
   const { Button, Icon, EmptyState } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA || {};
@@ -221,6 +308,7 @@ function ZHQReceipts() {
             </Button>
           </div>
           {error ? <div style={{ color: 'var(--red-500)', fontSize: 13 }}>{error}</div> : null}
+          {receipts.length ? <ItemSearchCard receipts={receipts} /> : null}
           {receipts.length === 0 ? (
             <EmptyState
               icon="receipt"

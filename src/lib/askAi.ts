@@ -68,6 +68,28 @@ export function buildCoachContext(d: any): string {
         ...(t.isTransfer ? { transfer: true } : {}),
         ...(t.pending ? { pending: true } : {}),
       })),
+    // Giving/tithing ledger (owed on gross vs set aside vs paid out).
+    giving: d.giving
+      ? {
+          charityAccountBalance_isUnpaidObligation: d.giving.charityBalanceLabel,
+          last6Months: arr(d.giving.months).map((m: any) => ({ month: m.month, owed: m.owedLabel, setAside: m.accruedLabel, paid: m.settledLabel })),
+        }
+      : null,
+    // Scanned-receipt line items so item-level questions ("how much did we
+    // spend on eggs this year?") are answerable. A floor — only scanned
+    // purchases count. Capped to keep the context bounded.
+    receiptItems: arr(d.receipts)
+      .slice(0, 120)
+      .flatMap((r: any) =>
+        arr(r.lines).map((l: any) => ({
+          item: l.name,
+          qty: l.qty ?? 1,
+          price: l.price ?? undefined,
+          merchant: r.merchant ?? undefined,
+          date: r.dateISO ?? undefined,
+        }))
+      )
+      .slice(0, 600),
   };
   return JSON.stringify(snapshot);
 }
