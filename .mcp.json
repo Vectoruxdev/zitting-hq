@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "zitting-hq": {
+      "type": "http",
+      "url": "https://zitting-hq.vercel.app/api/mcp?key=2a73fede3785bc1a1b8dc3c33e624793a690a1f2d2dccec10bfbb33a0c4d891a"
+    }
+  }
+}
