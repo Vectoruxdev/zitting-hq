@@ -290,6 +290,24 @@ export default async function Home() {
               ) : null}
             </Link>
 
+            {/* ============ CAMERAS (owner only) ============ */}
+            {role === "owner" ? (
+              <Link href="/nest" className="hq-card" style={cardStyle(3)}>
+                <CardHead icon="📷" label="Cameras" hint="Open cameras" />
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <span aria-hidden style={{ flex: "none", width: 52, height: 52, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 14, background: "var(--surface-sunken, rgba(255,255,255,0.05))", fontSize: 26 }}>
+                    💡
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>Nest → Govee</div>
+                    <div style={{ fontSize: 12.5, color: "var(--text-tertiary)", marginTop: 3, lineHeight: 1.5 }}>
+                      Person, motion, and doorbell events light up the house.
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ) : null}
+
             {/* ============ GROCERIES ============ */}
             <Link href="/groceries" className="hq-card" style={cardStyle(3)}>
               <CardHead icon="🛒" label="Groceries" hint="Open list" />

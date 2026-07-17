@@ -772,3 +772,101 @@ export const familyEvents = pgTable(
   },
   (t) => [index("idx_family_events_date").on(t.date)]
 );
+
+// ---- Nest (cameras → Govee lights) ---------------------------------------
+// Google Nest cameras (Smart Device Management API) push motion/person/chime
+// events through Pub/Sub; rules map those events to Govee light actions.
+// Owner-only module. The OAuth refresh token is sensitive — server-side only,
+// same posture as plaid_items.access_token.
+
+/** Single-row Google OAuth token store (id always "household"). */
+export const nestTokens = pgTable("nest_tokens", {
+  id: text("id").primaryKey().default("household"),
+  refreshToken: text("refresh_token").notNull(),
+  accessToken: text("access_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  scope: text("scope"),
+  connectedBy: text("connected_by"), // app user email who linked the account
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const nestDevices = pgTable("nest_devices", {
+  id: text("id").primaryKey(), // SDM device id (last path segment)
+  sdmName: text("sdm_name").notNull().unique(), // enterprises/{project}/devices/{id}
+  type: text("type"), // e.g. sdm.devices.types.DOORBELL
+  displayName: text("display_name"),
+  room: text("room"),
+  traits: jsonb("traits"),
+  enabled: boolean("enabled").notNull().default(true),
+  lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const goveeDevices = pgTable("govee_devices", {
+  device: text("device").primaryKey(), // Govee device id (MAC-style)
+  model: text("model").notNull(), // required alongside `device` on every control call
+  name: text("name"),
+  controllable: boolean("controllable").notNull().default(true),
+  supportsColor: boolean("supports_color").notNull().default(true),
+  raw: jsonb("raw"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export type NestRuleAction = {
+  kind: "flash" | "color" | "off";
+  color?: { r: number; g: number; b: number };
+  brightness?: number; // 1–100
+  flashes?: number; // flash kind only
+  /** color kind: revert to previous state after N seconds (null = leave it). */
+  restoreAfterSeconds?: number | null;
+};
+
+/** camera × event type → light action. */
+export const nestRules = pgTable(
+  "nest_rules",
+  {
+    id: serial("id").primaryKey(),
+    nestDeviceId: text("nest_device_id")
+      .notNull()
+      .references(() => nestDevices.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(), // person | motion | chime | sound | any
+    goveeDevice: text("govee_device")
+      .notNull()
+      .references(() => goveeDevices.device, { onDelete: "cascade" }),
+    action: jsonb("action").$type<NestRuleAction>().notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    // Local time window (America/Denver) when the rule may fire; null = always.
+    activeStart: text("active_start"), // "HH:MM"
+    activeEnd: text("active_end"),
+    // Min seconds between firings — also keeps us inside Govee's rate limit.
+    cooldownSeconds: integer("cooldown_seconds").notNull().default(120),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_nest_rules_device").on(t.nestDeviceId)]
+);
+
+/** Event log. Unique event_id dedupes Pub/Sub at-least-once redelivery; the
+ *  `media` clip-preview URLs are the phase-2 (face recognition) raw material
+ *  but expire minutes after the event. */
+export const nestEvents = pgTable(
+  "nest_events",
+  {
+    id: serial("id").primaryKey(),
+    eventId: text("event_id").notNull().unique(),
+    nestDeviceId: text("nest_device_id"),
+    eventType: text("event_type").notNull(),
+    eventAt: timestamp("event_at", { withTimezone: true }),
+    media: jsonb("media"), // { previewUrl?: string }
+    ruleId: integer("rule_id"),
+    actionStatus: text("action_status").notNull().default("none"), // fired | no_rule | cooldown | quiet_hours | disabled | error | none
+    actionError: text("action_error"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    index("idx_nest_events_device").on(t.nestDeviceId),
+    index("idx_nest_events_created").on(t.createdAt),
+  ]
+);
