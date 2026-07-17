@@ -55,6 +55,13 @@ export const MODULES: HqModule[] = [
     icon: "✅",
     status: "planned",
   },
+  {
+    slug: "nest",
+    name: "Cameras",
+    description: "Nest cameras trigger the Govee lights — person, motion, doorbell.",
+    icon: "📷",
+    status: "active",
+  },
 ];
 
 export const ACTIVE_MODULES = MODULES.filter((m) => m.status === "active");

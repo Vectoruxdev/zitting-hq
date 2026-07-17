@@ -16,6 +16,7 @@ const PUBLIC_PATHS = [
   "/api/digest/cron", // email digests (CRON_SECRET-guarded)
   "/api/push/vapid", // public VAPID key (safe to expose)
   "/api/mcp", // remote MCP server — guarded by its own MCP_TOKEN, not a session
+  "/api/nest/events", // Pub/Sub push (NEST_EVENTS_TOKEN-guarded)
   "/api/sse", // MCP SSE transport (legacy clients)
   "/api/message", // MCP SSE message channel
   "/sw.js", // service worker must load without a session redirect
