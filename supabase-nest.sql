@@ -69,3 +69,12 @@ CREATE TABLE IF NOT EXISTS nest_events (
 );
 CREATE INDEX IF NOT EXISTS idx_nest_events_device ON nest_events (nest_device_id);
 CREATE INDEX IF NOT EXISTS idx_nest_events_created ON nest_events (created_at);
+
+-- The app reaches Postgres directly (Drizzle), which bypasses RLS. Enabling
+-- RLS with no policies closes the PostgREST/anon-key path — critical for
+-- nest_tokens (Google refresh token lives there).
+ALTER TABLE nest_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nest_devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE govee_devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nest_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nest_events ENABLE ROW LEVEL SECURITY;
