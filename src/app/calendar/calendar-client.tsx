@@ -107,23 +107,22 @@ function Inner(p: Props) {
 
 const VIS_LABEL: Record<string, string> = { family: "Shared with the family", private: "Just you (and the owner)", custom: "Some people" };
 
-function FeedsSheet({ open, onClose, feeds, people, me, isOwner, onChanged }: { open: boolean; onClose: () => void; feeds: FeedInfo[]; people: PersonLite[]; me: string | null; isOwner: boolean; onChanged: () => void }) {
-  const [name, setName] = React.useState("");
-  const [url, setUrl] = React.useState("");
-  const [visibility, setVisibility] = React.useState("family");
-  const [shared, setShared] = React.useState<string[]>([]);
-  const [household, setHousehold] = React.useState(false);
-  const [busy, setBusy] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-  const [editVis, setEditVis] = React.useState<number | null>(null);
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <span aria-hidden style={{ flex: "none", width: 26, height: 26, borderRadius: 13, background: "var(--accent-soft)", color: "var(--accent)", display: "grid", placeItems: "center", font: "600 var(--fs-sm)/1 var(--font-num)" }}>{n}</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: 1 }}><span style={{ font: "var(--type-label)", color: "var(--text-primary)" }}>{title}</span>{children}</div>
+    </div>
+  );
+}
+
+interface FeedRowProps { f: FeedInfo; editable: boolean; me: string | null; people: PersonLite[]; editVis: number | null; setEditVis: (id: number | null) => void; run: (key: string, fn: () => Promise<{ ok: boolean; error?: string } | void>) => Promise<void> }
+function FeedRow({ f, editable, me, people, editVis, setEditVis, run }: FeedRowProps) {
   const person = (id: string | null) => people.find((x) => x.id === id) || null;
-  const mine = feeds.filter((f) => f.memberId && f.memberId === me);
-  const others = feeds.filter((f) => !(f.memberId && f.memberId === me));
-  const run = async (key: string, fn: () => Promise<{ ok: boolean; error?: string } | void>) => { setBusy(key); try { const r = await fn(); if (r && !r.ok) setError(r.error || "That didn't save"); else onChanged(); } finally { setBusy(null); } };
-  const others_label = (f: FeedInfo) => { const p = person(f.memberId); return f.memberId ? `${p?.greetingName ?? "Someone"}’s · ${f.visibility === "family" ? "shared with the family" : f.visibility === "custom" ? "shared with some people" : "private"}` : "Household calendar"; };
-  const FeedRow = ({ f, editable }: { f: FeedInfo; editable: boolean }) => (
+  const othersLabel = (x: FeedInfo) => { const p = person(x.memberId); return x.memberId ? `${p?.greetingName ?? "Someone"}’s · ${x.visibility === "family" ? "shared with the family" : x.visibility === "custom" ? "shared with some people" : "private"}` : "Household calendar"; };
+  return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <Row icon="calendar-days" tint="sky" title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: f.color ?? "var(--data-2)", flex: "none" }} />{f.name}</span>} meta={f.error ? `Couldn’t load: ${f.error}` : `${f.enabled ? "On" : "Off"} · ${f.memberId === me ? VIS_LABEL[f.visibility] ?? f.visibility : others_label(f)}`}
+      <Row icon="calendar-days" tint="sky" title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: f.color ?? "var(--data-2)", flex: "none" }} />{f.name}</span>} meta={f.error ? `Couldn’t load: ${f.error}` : `${f.enabled ? "On" : "Off"} · ${f.memberId === me ? VIS_LABEL[f.visibility] ?? f.visibility : othersLabel(f)}`}
         trailing={editable ? <><Toggle size="sm" checked={f.enabled} onChange={(v) => run(`f-${f.id}`, () => actions.setCalendarFeedEnabled(f.id, v))} style={{ minHeight: 32 }} />{f.memberId ? <IconButton icon="eye" label="Who can see it" size="sm" active={editVis === f.id} onClick={() => setEditVis(editVis === f.id ? null : f.id)} /> : null}<IconButton icon="x" label={`Remove ${f.name}`} size="sm" onClick={() => run(`d-${f.id}`, () => actions.deleteCalendarFeed(f.id))} /></> : undefined} chevron={false} />
       {editable && editVis === f.id && f.memberId ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 44px" }}>
@@ -133,23 +132,83 @@ function FeedsSheet({ open, onClose, feeds, people, me, isOwner, onChanged }: { 
       ) : null}
     </div>
   );
+}
+
+function FeedsSheet({ open, onClose, feeds, people, me, isOwner, onChanged }: { open: boolean; onClose: () => void; feeds: FeedInfo[]; people: PersonLite[]; me: string | null; isOwner: boolean; onChanged: () => void }) {
+  const [name, setName] = React.useState("");
+  const [url, setUrl] = React.useState("");
+  const [visibility, setVisibility] = React.useState("family");
+  const [shared, setShared] = React.useState<string[]>([]);
+  const [household, setHousehold] = React.useState(false);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [editVis, setEditVis] = React.useState<number | null>(null);
+  const mine = feeds.filter((f) => f.memberId && f.memberId === me);
+  const others = feeds.filter((f) => !(f.memberId && f.memberId === me));
+  const run = async (key: string, fn: () => Promise<{ ok: boolean; error?: string } | void>) => { setBusy(key); try { const r = await fn(); if (r && !r.ok) setError(r.error || "That didn't save"); else onChanged(); } finally { setBusy(null); } };
+  const [checked, setChecked] = React.useState<{ url: string; name: string | null; upcoming: number; isPublicGoogle: boolean } | null>(null);
+  const [checking, setChecking] = React.useState(false);
+  const looksLikeGoogle = /calendar\.google\.com\/calendar\/ical\//i.test(url);
+  const check = async () => {
+    setChecking(true); setError(null); setChecked(null);
+    try {
+      const r = await actions.checkCalendarFeed(url);
+      if (!r.ok) setError(r.error);
+      else { setChecked({ url: url.trim(), name: r.name, upcoming: r.upcoming, isPublicGoogle: r.isPublicGoogle }); if (!name.trim() && r.name) setName(r.name); }
+    } catch { setError("Couldn't check that address right now."); } finally { setChecking(false); }
+  };
+  const hint = { font: "var(--type-body-sm)", color: "var(--text-secondary)" } as React.CSSProperties;
   return (
     <BottomSheet open={open} onClose={onClose} title="Google Calendars" footer={<Button size="lg" fullWidth variant="ghost" onClick={onClose}>Done</Button>}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>Each person can connect their own Google Calendar and decide who sees it. In Google Calendar on a computer: Settings → your calendar → Integrate calendar → copy the <b>Secret address in iCal format</b>. Read-only; changes show up within 15 minutes.</p>
-        {mine.length ? <Section title="Your calendars"><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{mine.map((f) => <FeedRow key={f.id} f={f} editable />)}</div></Section> : null}
-        <Section title={mine.length ? "Add another" : "Connect your calendar"}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Input label="Name" placeholder="Work" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input label="Secret iCal address" type="url" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" value={url} onChange={(e) => setUrl(e.target.value)} error={error ?? undefined} />
-            {!household ? <RadioGroup label="Who can see it" layout="cards" columns={3} value={visibility} onChange={setVisibility} options={[{ value: "family", label: "Family" }, { value: "custom", label: "Some people" }, { value: "private", label: "Just me" }]} /> : null}
-            {!household && visibility === "custom" ? <div style={{ display: "flex", flexWrap: "wrap", gap: "0 14px" }}>{people.filter((x) => x.id !== me).map((x) => <Checkbox key={x.id} label={x.greetingName} checked={shared.includes(x.id)} onChange={(v) => setShared((s) => (v ? [...s, x.id] : s.filter((i) => i !== x.id)))} style={{ minHeight: 36, padding: "6px 0" }} />)}</div> : null}
-            {isOwner ? <Checkbox label="This is a household calendar, not anyone’s own" checked={household} onChange={setHousehold} /> : null}
-            <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>{household ? "Household calendars are shared with everyone." : visibility === "private" ? "Only you see these events on the calendar and Home. The owner can see everything, as always." : visibility === "custom" ? "Only the people you pick see these events." : "Everyone in the family sees these events, in your color."}</span>
-            <Button loading={busy === "add"} disabled={!name.trim() || !url.trim()} iconLeft="plus" onClick={() => run("add", async () => { setError(null); const r = await actions.addCalendarFeed({ name, url, visibility, sharedWith: shared, household }); if (r.ok) { setName(""); setUrl(""); setShared([]); setHousehold(false); } return r; })}>Connect</Button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <p style={{ margin: 0, ...hint }}>Connect your own Google Calendar and it shows up here and on Home, in your color. You decide who sees it, and you can switch it off any time. It’s read-only — nothing in Google changes.</p>
+        {mine.length ? <Section title="Your calendars"><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{mine.map((f) => <FeedRow key={f.id} f={f} editable me={me} people={people} editVis={editVis} setEditVis={setEditVis} run={run} />)}</div></Section> : null}
+
+        <Section title={mine.length ? "Connect another calendar" : "Connect your calendar"} eyebrow="About five minutes, on a computer">
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <Step n={1} title="Open Google Calendar’s settings">
+              <span style={hint}>This part isn’t in the phone app. Use a computer, or in your phone’s browser open the menu and tap “Request desktop site”.</span>
+              <Button size="sm" variant="secondary" iconRight="external-link" onClick={() => window.open("https://calendar.google.com/calendar/r/settings", "_blank", "noopener")} style={{ alignSelf: "flex-start" }}>Open Google Calendar settings</Button>
+            </Step>
+            <Step n={2} title="Pick your calendar">
+              <span style={hint}>On the left, under <b>Settings for my calendars</b>, click the calendar with your name on it (or whichever one you want to share).</span>
+            </Step>
+            <Step n={3} title="Copy the secret address">
+              <span style={hint}>Scroll down to <b>Integrate calendar</b>. Copy the one called <b>Secret address in iCal format</b> — the long link ending in <b>basic.ics</b>. Not “Public address”; the secret one is what lets the app see your private events.</span>
+              <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Treat that address like a password: anyone who has it can read your calendar. It’s stored on the server only and never shown again. If it ever leaks, click <b>Reset</b> next to it in Google and paste the new one here.</span>
+            </Step>
+            <Step n={4} title="Paste it here and check it">
+              <Input type="url" placeholder="https://calendar.google.com/calendar/ical/…/private-…/basic.ics" value={url} onChange={(e) => { setUrl(e.target.value); setChecked(null); setError(null); }} error={error ?? undefined} />
+              {url.trim() && !looksLikeGoogle && !error ? <span style={{ font: "var(--type-caption)", color: "var(--warning)" }}>That doesn’t look like a Google Calendar address. Other calendars (Outlook, iCloud, a school) work too if it’s an iCal link.</span> : null}
+              <Button size="sm" variant={checked ? "ghost" : "secondary"} iconLeft={checked ? "circle-check" : "search"} loading={checking} disabled={!url.trim()} onClick={check} style={{ alignSelf: "flex-start" }}>{checked ? "Checked" : "Check the address"}</Button>
+              {checked ? (
+                <InlineAlert tone={checked.isPublicGoogle ? "warning" : "positive"} title={checked.isPublicGoogle ? "That’s the public address" : `Found ${checked.name ? `“${checked.name}”` : "your calendar"}`}>
+                  {checked.isPublicGoogle ? "It works, but Google hides your private events on the public one. Go back to step 3 and copy the Secret address instead." : checked.upcoming ? `${checked.upcoming} event${checked.upcoming === 1 ? "" : "s"} in the next 60 days. You’re good.` : "It loads, though there’s nothing in the next 60 days yet."}
+                </InlineAlert>
+              ) : null}
+            </Step>
+            <Step n={5} title="Name it and choose who sees it">
+              <Input label="What to call it" placeholder={checked?.name || "Work"} value={name} onChange={(e) => setName(e.target.value)} />
+              {!household ? <RadioGroup label="Who can see it" layout="cards" columns={3} value={visibility} onChange={setVisibility} options={[{ value: "family", label: "Family" }, { value: "custom", label: "Some people" }, { value: "private", label: "Just me" }]} /> : null}
+              {!household && visibility === "custom" ? <div style={{ display: "flex", flexWrap: "wrap", gap: "0 14px" }}>{people.filter((x) => x.id !== me).map((x) => <Checkbox key={x.id} label={x.greetingName} checked={shared.includes(x.id)} onChange={(v) => setShared((s) => (v ? [...s, x.id] : s.filter((i) => i !== x.id)))} style={{ minHeight: 36, padding: "6px 0" }} />)}</div> : null}
+              {isOwner ? <Checkbox label="This is a household calendar, not anyone’s own" checked={household} onChange={setHousehold} /> : null}
+              <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>{household ? "Household calendars are shared with everyone." : visibility === "private" ? "Only you see these events on the calendar and Home. The owner can see everything, as always." : visibility === "custom" ? "Only the people you pick see these events." : "Everyone in the family sees these events, in your color."}</span>
+              <Button loading={busy === "add"} disabled={!name.trim() || !url.trim()} iconLeft="plus" onClick={() => run("add", async () => { setError(null); const r = await actions.addCalendarFeed({ name, url, visibility, sharedWith: shared, household }); if (r.ok) { setName(""); setUrl(""); setShared([]); setHousehold(false); setChecked(null); } return r; })}>Connect</Button>
+              <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Events appear within about 15 minutes, and new ones you add in Google keep flowing in. You can switch the calendar off or change who sees it any time from this sheet.</span>
+            </Step>
           </div>
         </Section>
-        {others.length ? <Section title={isOwner ? "Everyone’s calendars" : "Shared with you"}><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{others.map((f) => <FeedRow key={f.id} f={f} editable={isOwner} />)}</div>{isOwner ? <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Switch anyone’s calendar off here and it disappears for everyone until it’s switched back on.</span> : null}</Section> : null}
+
+        {others.length ? <Section title={isOwner ? "Everyone’s calendars" : "Shared with you"}><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{others.map((f) => <FeedRow key={f.id} f={f} editable={isOwner} me={me} people={people} editVis={editVis} setEditVis={setEditVis} run={run} />)}</div>{isOwner ? <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Switch anyone’s calendar off here and it disappears for everyone until it’s switched back on.</span> : null}</Section> : null}
+
+        <Section title="If something’s off" eyebrow="Help">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, ...hint }}>
+            <span><b>I can’t find “Integrate calendar”.</b> You’re probably in the Google Calendar phone app — it isn’t there. Open calendar.google.com in a browser on a computer, or use “Request desktop site” on your phone.</span>
+            <span><b>The secret address is greyed out.</b> That calendar is shared publicly in Google; the public address works the same for it.</span>
+            <span><b>An event is missing.</b> Give it 15 minutes. If it’s still missing, it may be on a different calendar in Google (each one has its own address) — connect that one too.</span>
+            <span><b>I want to disconnect.</b> Tap the × next to the calendar above. Resetting the address in Google also disconnects it.</span>
+          </div>
+        </Section>
       </div>
     </BottomSheet>
   );
