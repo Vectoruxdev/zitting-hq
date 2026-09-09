@@ -25,7 +25,7 @@ function requireDb() {
 
 /** Create a short-lived link_token to open Plaid Link on the client. */
 export async function createLinkToken(clientUserId: string): Promise<string> {
-  const plaid = getPlaid();
+  const plaid = await getPlaid();
   if (!plaid) throw new Error("Plaid is not configured");
   try {
     const res = await plaid.linkTokenCreate({
@@ -48,7 +48,7 @@ export async function createLinkToken(clientUserId: string): Promise<string> {
 
 /** Exchange the public_token, store the item + accounts, run the first sync. */
 export async function exchangePublicToken(publicToken: string, createdBy: string | null) {
-  const plaid = getPlaid();
+  const plaid = await getPlaid();
   if (!plaid) throw new Error("Plaid is not configured");
   const database = requireDb();
 
@@ -179,7 +179,7 @@ export async function syncItem(itemId: string) {
 }
 
 async function syncItemInner(itemId: string) {
-  const plaid = getPlaid();
+  const plaid = await getPlaid();
   if (!plaid) throw new Error("Plaid is not configured");
   const database = requireDb();
 
@@ -558,7 +558,7 @@ export async function removePlaidItem(itemId: string) {
   const database = requireDb();
   const [item] = await database.select().from(s.plaidItems).where(eq(s.plaidItems.itemId, itemId));
   if (!item) return { ok: true as const };
-  const plaid = getPlaid();
+  const plaid = await getPlaid();
   if (plaid) {
     try {
       await plaid.itemRemove({ access_token: item.accessToken });

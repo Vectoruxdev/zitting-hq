@@ -137,10 +137,11 @@ async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
   if (!isDbConfigured || !db) return fallbackData();
 
   try {
-    // --- sequential reads (pooler-safe) ---
+    // --- reads in parallel waves: independent selects run together; derived maps follow ---
     // Column-explicit (no `space`) so a not-yet-migrated `space` column can't
     // break this CORE read; `space` is read separately + defensively below.
-    const accountColRows = await db
+    const [accountColRows, spaceRows, availRows, collapsedRows, memberRows, groupRows, catRows, catRuleRows, allTxnRows, splitRows, budgetRows, ruleRows, goalRows, goalMemberRows, contribRows, instanceRows, batchRows, notifRows, notifEntRows, notifRuleRows, receiptRows, receiptImageRows, receiptLineRows] = await Promise.all([
+      db
       .select({
         id: s.accounts.id,
         name: s.accounts.name,
@@ -156,35 +157,26 @@ async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
         sortOrder: s.accounts.sortOrder,
       })
       .from(s.accounts)
-      .orderBy(asc(s.accounts.sortOrder));
-    const spaceRows = await db
+      .orderBy(asc(s.accounts.sortOrder)),
+      db
       .select({ id: s.accounts.id, space: s.accounts.space })
       .from(s.accounts)
-      .catch(() => [] as { id: string; space: string }[]);
-    const spaceById = new Map(spaceRows.map((r) => [r.id, r.space]));
-    // Available balance read separately + defensively so a not-yet-migrated
-    // `available_balance` column degrades to "no available figure" instead of
-    // breaking this CORE accounts read.
-    const availRows = await db
+      .catch(() => [] as { id: string; space: string }[]),
+      // Available balance read separately + defensively so a not-yet-migrated
+      // `available_balance` column degrades to "no available figure" instead of
+      // breaking this CORE accounts read.
+      db
       .select({ id: s.accounts.id, available: s.accounts.availableBalance })
       .from(s.accounts)
-      .catch(() => [] as { id: string; available: string | null }[]);
-    const availById = new Map(availRows.map((r) => [r.id, r.available]));
-    // Declutter flag — read defensively (pre-migration → all expanded).
-    const collapsedRows = await db
+      .catch(() => [] as { id: string; available: string | null }[]),
+      // Declutter flag — read defensively (pre-migration → all expanded).
+      db
       .select({ id: s.accounts.id, collapsed: s.accounts.collapsed })
       .from(s.accounts)
-      .catch(() => [] as { id: string; collapsed: boolean }[]);
-    const collapsedById = new Map(collapsedRows.map((r) => [r.id, r.collapsed]));
-    const allAccountRows = accountColRows.map((a) => ({
-      ...a,
-      space: spaceById.get(a.id) ?? "household",
-      availableBalance: availById.get(a.id) ?? null,
-      collapsed: collapsedById.get(a.id) ?? false,
-    }));
-    // Column-explicit (no `allowance`) so a not-yet-migrated allowance column
-    // can't break this CORE read; allowance is read separately + defensively.
-    const memberRows = await db
+      .catch(() => [] as { id: string; collapsed: boolean }[]),
+      // Column-explicit (no `allowance`) so a not-yet-migrated allowance column
+      // can't break this CORE read; allowance is read separately + defensively.
+      db
       .select({
         id: s.familyMembers.id,
         name: s.familyMembers.name,
@@ -195,37 +187,29 @@ async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
         color: s.familyMembers.color,
       })
       .from(s.familyMembers)
-      .orderBy(asc(s.familyMembers.name));
-    const groupRows = await db.select().from(s.categoryGroups).orderBy(asc(s.categoryGroups.sortOrder));
-    const catRows = await db.select().from(s.categories).orderBy(asc(s.categories.sortOrder));
-    const catRuleRows = await db.select().from(s.categorizationRules).orderBy(asc(s.categorizationRules.priority));
-    const allTxnRows = await db.select().from(s.transactions).orderBy(asc(s.transactions.id));
-    // Business-space accounts (and their transactions) are filtered OUT of the
-    // entire household view here — every derivation below inherits it. They're
-    // surfaced separately as data.excludedAccounts so the UI can manage them.
-    const businessIds = new Set(
-      allAccountRows.filter((a) => ((a as { space?: string }).space ?? "household") !== "household").map((a) => a.id)
-    );
-    const accountRows = allAccountRows.filter((a) => !businessIds.has(a.id));
-    const txnRows = allTxnRows.filter((t) => !t.accountId || !businessIds.has(t.accountId));
-    // Feature/auxiliary tables are read DEFENSIVELY (`.catch(() => [])`): a schema
-    // drift on one of them (a column the live DB doesn't have yet) degrades that
-    // ONE section to empty instead of throwing and wiping the entire dashboard.
-    // Core tables (accounts/members/categories/transactions) are left to hard-fail.
-    const splitRows = await db.select().from(s.transactionSplits).orderBy(asc(s.transactionSplits.sortOrder)).catch(() => []);
-    const budgetRows = await db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder)).catch(() => []);
-    const ruleRows = await db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder)).catch(() => []);
-    const goalRows = await db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder)).catch(() => []);
-    const goalMemberRows = await db.select().from(s.savingsGoalMembers).catch(() => [] as { goalId: string; memberId: string }[]);
-    const contribRows = await db.select().from(s.savingsContributions).orderBy(asc(s.savingsContributions.id)).catch(() => []);
-    // The old display-only `transfers` table is deprecated; upcoming/past now
-    // come from transfer_instances (real, account-linked).
-    const instanceRows = await db.select().from(s.transferInstances).orderBy(asc(s.transferInstances.id)).catch(() => []);
-    const batchRows = await db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt)).catch(() => []);
-    // Column-explicit (NOT select()) so a not-yet-migrated entity_type/entity_ref
-    // column can't make this CORE read throw and wipe the whole feed; those two
-    // are read separately + defensively below.
-    const notifRows = await db
+      .orderBy(asc(s.familyMembers.name)),
+      db.select().from(s.categoryGroups).orderBy(asc(s.categoryGroups.sortOrder)),
+      db.select().from(s.categories).orderBy(asc(s.categories.sortOrder)),
+      db.select().from(s.categorizationRules).orderBy(asc(s.categorizationRules.priority)),
+      db.select().from(s.transactions).orderBy(asc(s.transactions.id)),
+      // Feature/auxiliary tables are read DEFENSIVELY (`.catch(() => [])`): a schema
+      // drift on one of them (a column the live DB doesn't have yet) degrades that
+      // ONE section to empty instead of throwing and wiping the entire dashboard.
+      // Core tables (accounts/members/categories/transactions) are left to hard-fail.
+      db.select().from(s.transactionSplits).orderBy(asc(s.transactionSplits.sortOrder)).catch(() => []),
+      db.select().from(s.budgets).orderBy(asc(s.budgets.sortOrder)).catch(() => []),
+      db.select().from(s.allocationRules).orderBy(asc(s.allocationRules.sortOrder)).catch(() => []),
+      db.select().from(s.savingsGoals).orderBy(asc(s.savingsGoals.sortOrder)).catch(() => []),
+      db.select().from(s.savingsGoalMembers).catch(() => [] as { goalId: string; memberId: string }[]),
+      db.select().from(s.savingsContributions).orderBy(asc(s.savingsContributions.id)).catch(() => []),
+      // The old display-only `transfers` table is deprecated; upcoming/past now
+      // come from transfer_instances (real, account-linked).
+      db.select().from(s.transferInstances).orderBy(asc(s.transferInstances.id)).catch(() => []),
+      db.select().from(s.importBatches).orderBy(asc(s.importBatches.createdAt)).catch(() => []),
+      // Column-explicit (NOT select()) so a not-yet-migrated entity_type/entity_ref
+      // column can't make this CORE read throw and wipe the whole feed; those two
+      // are read separately + defensively below.
+      db
       .select({
         id: s.notifications.id,
         type: s.notifications.type,
@@ -247,20 +231,38 @@ async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
         id: number; type: string; icon: string | null; tone: string; title: string;
         body: string | null; timeLabel: string | null; unread: boolean; audience: string;
         memberId: string | null; linkTo: string | null; createdAt: Date | null; sortOrder: number;
-      }[]);
-    // Entity linkage (supabase-notif-entity.sql) — separate defensive read so a
-    // pre-migration DB degrades to "no entity" (route fallback), not a broken feed.
-    const notifEntRows = await db
+      }[]),
+      // Entity linkage (supabase-notif-entity.sql) — separate defensive read so a
+      // pre-migration DB degrades to "no entity" (route fallback), not a broken feed.
+      db
       .select({ id: s.notifications.id, entityType: s.notifications.entityType, entityRef: s.notifications.entityRef })
       .from(s.notifications)
-      .catch(() => [] as { id: number; entityType: string | null; entityRef: string | null }[]);
+      .catch(() => [] as { id: number; entityType: string | null; entityRef: string | null }[]),
+      db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)).catch(() => []),
+      db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)).catch(() => []),
+      // Uploaded receipt images (migration supabase-receipts.sql) — defensive so a
+      // pre-migration DB degrades to an empty inbox instead of a wipe.
+      db.select().from(s.receipts).orderBy(asc(s.receipts.createdAt)).catch(() => [] as (typeof s.receipts.$inferSelect)[]),
+      db.select().from(s.receiptLines).orderBy(asc(s.receiptLines.sortOrder)).catch(() => [] as (typeof s.receiptLines.$inferSelect)[]),
+    ]);
+    const spaceById = new Map(spaceRows.map((r) => [r.id, r.space]));
+    const availById = new Map(availRows.map((r) => [r.id, r.available]));
+    const collapsedById = new Map(collapsedRows.map((r) => [r.id, r.collapsed]));
+    const allAccountRows = accountColRows.map((a) => ({
+      ...a,
+      space: spaceById.get(a.id) ?? "household",
+      availableBalance: availById.get(a.id) ?? null,
+      collapsed: collapsedById.get(a.id) ?? false,
+    }));
+    // Business-space accounts (and their transactions) are filtered OUT of the
+    // entire household view here — every derivation below inherits it. They're
+    // surfaced separately as data.excludedAccounts so the UI can manage them.
+    const businessIds = new Set(
+      allAccountRows.filter((a) => ((a as { space?: string }).space ?? "household") !== "household").map((a) => a.id)
+    );
+    const accountRows = allAccountRows.filter((a) => !businessIds.has(a.id));
+    const txnRows = allTxnRows.filter((t) => !t.accountId || !businessIds.has(t.accountId));
     const notifEntById = new Map(notifEntRows.map((r) => [r.id, r]));
-    const notifRuleRows = await db.select().from(s.notificationRules).orderBy(asc(s.notificationRules.sortOrder)).catch(() => []);
-    const receiptRows = await db.select().from(s.receiptItems).orderBy(asc(s.receiptItems.sortOrder)).catch(() => []);
-    // Uploaded receipt images (migration supabase-receipts.sql) — defensive so a
-    // pre-migration DB degrades to an empty inbox instead of a wipe.
-    const receiptImageRows = await db.select().from(s.receipts).orderBy(asc(s.receipts.createdAt)).catch(() => [] as (typeof s.receipts.$inferSelect)[]);
-    const receiptLineRows = await db.select().from(s.receiptLines).orderBy(asc(s.receiptLines.sortOrder)).catch(() => [] as (typeof s.receiptLines.$inferSelect)[]);
     // Member-managed accounts + per-member allowance (migration 0005) — defensive
     // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
     // Phase 6: each grant carries an access level (manage | view). Pre-migration
@@ -270,16 +272,53 @@ async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
       .from(s.accountMembers)
       .catch(async () =>
         (await db!.select({ accountId: s.accountMembers.accountId, memberId: s.accountMembers.memberId }).from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[])).map((r) => ({ ...r, access: "manage" }))
-      );
-    // Learned merchant→category memory (for the owner "What it's learned" view).
-    const memoryRows = await db.select().from(s.merchantMemory).catch(() => []);
-    // Owner notification preferences (defensive — empty before the migration).
-    const notifPrefRows = await db.select().from(s.notificationPrefs).catch(() => [] as { event: string; enabled: boolean; inApp: boolean; push: boolean }[]);
-    // Which of our accounts are linked to a Plaid (auto-syncing) bank + when
-    // that bank last synced (real time, not the static "Synced just now" label).
-    const plaidAcctRows = await db.select({ accountId: s.plaidAccounts.accountId, itemId: s.plaidAccounts.itemId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null; itemId: string }[]);
+      );;
+    const [memoryRows, notifPrefRows, plaidAcctRows, plaidItemRows, allowanceRows, lastSeenRows, digestOptInRows, celebrationRows, [digestRow], allowanceRuleRows, allowanceSplitRows, expectedIncomeRows, incomeSourceRows, [financeSettingsRow]] = await Promise.all([
+      // Learned merchant→category memory (for the owner "What it's learned" view).
+      db.select().from(s.merchantMemory).catch(() => []),
+      // Owner notification preferences (defensive — empty before the migration).
+      db.select().from(s.notificationPrefs).catch(() => [] as { event: string; enabled: boolean; inApp: boolean; push: boolean }[]),
+      // Which of our accounts are linked to a Plaid (auto-syncing) bank + when
+      // that bank last synced (real time, not the static "Synced just now" label).
+      db.select({ accountId: s.plaidAccounts.accountId, itemId: s.plaidAccounts.itemId }).from(s.plaidAccounts).catch(() => [] as { accountId: string | null; itemId: string }[]),
+      db.select({ itemId: s.plaidItems.itemId, lastSyncedAt: s.plaidItems.lastSyncedAt }).from(s.plaidItems).catch(() => [] as { itemId: string; lastSyncedAt: Date | null }[]),
+      db
+      .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; allowance: string | null }[]),
+      // Last-seen (new column, migration 0013) — separate defensive read so a
+      // pre-migration DB degrades to "never seen" instead of breaking the member read.
+      db
+      .select({ id: s.familyMembers.id, lastSeenAt: s.familyMembers.lastSeenAt })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; lastSeenAt: Date | null }[]),
+      // Read digest opt-in separately (new column) so a pre-migration DB doesn't
+      // break the core member read.
+      db
+      .select({ id: s.familyMembers.id, digestOptIn: s.familyMembers.digestOptIn })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; digestOptIn: boolean }[]),
+      // Celebration style (supabase-celebrations.sql) — separate defensive read;
+      // pre-migration DBs default everyone to the spicy pack (adults-only app).
+      db
+      .select({ id: s.familyMembers.id, celebrationStyle: s.familyMembers.celebrationStyle })
+      .from(s.familyMembers)
+      .catch(() => [] as { id: string; celebrationStyle: string }[]),
+      db.select().from(s.digestSettings).where(eq(s.digestSettings.id, "household")).catch(() => []),
+      // Performance-allowance rules + splits (migration 0007) — defensive so a
+      // pre-migration DB degrades to "no allowance rules" not a wipe.
+      db.select().from(s.allowanceRules).catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]),
+      db.select().from(s.allowanceSplits).catch(() => [] as (typeof s.allowanceSplits.$inferSelect)[]),
+      // Manually-entered / adjusted expected income for the transfer-coverage forecast
+      // (migration 0008) — defensive so a pre-migration DB just uses auto-forecasts.
+      db.select().from(s.expectedIncome).catch(() => [] as (typeof s.expectedIncome.$inferSelect)[]),
+      // Curated income registry (migration 0009) — the source of truth for "what
+      // counts as income." Only marked payers drive forecasting + allowances.
+      db.select().from(s.incomeSources).catch(() => [] as (typeof s.incomeSources.$inferSelect)[]),
+      // Household finance settings (cash-runway cushion); defensive default pre-migration.
+      db.select().from(s.financeSettings).where(eq(s.financeSettings.id, "household")).catch(() => [] as (typeof s.financeSettings.$inferSelect)[]),
+    ]);
     const plaidLinkedIds = new Set(plaidAcctRows.map((r) => r.accountId).filter(Boolean) as string[]);
-    const plaidItemRows = await db.select({ itemId: s.plaidItems.itemId, lastSyncedAt: s.plaidItems.lastSyncedAt }).from(s.plaidItems).catch(() => [] as { itemId: string; lastSyncedAt: Date | null }[]);
     const lastSyncByItem = new Map(plaidItemRows.map((r) => [r.itemId, r.lastSyncedAt ? new Date(r.lastSyncedAt) : null]));
     const syncedLabelFor = (accountId: string, fallback: string | null): string | null => {
       if (!plaidLinkedIds.has(accountId)) return fallback; // manual account → keep its label
@@ -289,41 +328,6 @@ async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
       const rt = relTime(last, new Date());
       return `Synced ${rt === "Just now" ? "just now" : rt}`;
     };
-    const allowanceRows = await db
-      .select({ id: s.familyMembers.id, allowance: s.familyMembers.allowance })
-      .from(s.familyMembers)
-      .catch(() => [] as { id: string; allowance: string | null }[]);
-    // Last-seen (new column, migration 0013) — separate defensive read so a
-    // pre-migration DB degrades to "never seen" instead of breaking the member read.
-    const lastSeenRows = await db
-      .select({ id: s.familyMembers.id, lastSeenAt: s.familyMembers.lastSeenAt })
-      .from(s.familyMembers)
-      .catch(() => [] as { id: string; lastSeenAt: Date | null }[]);
-    // Read digest opt-in separately (new column) so a pre-migration DB doesn't
-    // break the core member read.
-    const digestOptInRows = await db
-      .select({ id: s.familyMembers.id, digestOptIn: s.familyMembers.digestOptIn })
-      .from(s.familyMembers)
-      .catch(() => [] as { id: string; digestOptIn: boolean }[]);
-    // Celebration style (supabase-celebrations.sql) — separate defensive read;
-    // pre-migration DBs default everyone to the spicy pack (adults-only app).
-    const celebrationRows = await db
-      .select({ id: s.familyMembers.id, celebrationStyle: s.familyMembers.celebrationStyle })
-      .from(s.familyMembers)
-      .catch(() => [] as { id: string; celebrationStyle: string }[]);
-    const [digestRow] = await db.select().from(s.digestSettings).where(eq(s.digestSettings.id, "household")).catch(() => []);
-    // Performance-allowance rules + splits (migration 0007) — defensive so a
-    // pre-migration DB degrades to "no allowance rules" not a wipe.
-    const allowanceRuleRows = await db.select().from(s.allowanceRules).catch(() => [] as (typeof s.allowanceRules.$inferSelect)[]);
-    const allowanceSplitRows = await db.select().from(s.allowanceSplits).catch(() => [] as (typeof s.allowanceSplits.$inferSelect)[]);
-    // Manually-entered / adjusted expected income for the transfer-coverage forecast
-    // (migration 0008) — defensive so a pre-migration DB just uses auto-forecasts.
-    const expectedIncomeRows = await db.select().from(s.expectedIncome).catch(() => [] as (typeof s.expectedIncome.$inferSelect)[]);
-    // Curated income registry (migration 0009) — the source of truth for "what
-    // counts as income." Only marked payers drive forecasting + allowances.
-    const incomeSourceRows = await db.select().from(s.incomeSources).catch(() => [] as (typeof s.incomeSources.$inferSelect)[]);
-    // Household finance settings (cash-runway cushion); defensive default pre-migration.
-    const [financeSettingsRow] = await db.select().from(s.financeSettings).where(eq(s.financeSettings.id, "household")).catch(() => [] as (typeof s.financeSettings.$inferSelect)[]);
 
     // Start from mock so still-mock sections (member/ask/permissions/nav) exist.
     const data: FinanceData = JSON.parse(JSON.stringify(MOCK_FINANCE_DATA));
