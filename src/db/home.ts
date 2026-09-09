@@ -20,6 +20,7 @@ import { isModuleEnabled, modulesFor } from "@/lib/modules";
 import { fetchWeather, type Weather } from "@/lib/weather";
 import { scenicForDay, type Scenic } from "@/lib/scenic";
 import type { Viewer } from "./queries";
+import { resetDb } from "@/db";
 
 export interface HomeData {
   todayISO: string;
@@ -58,11 +59,20 @@ export function daypartFor(hour: number): HomeData["daypart"] {
   return "evening";
 }
 
-/** A read that can neither throw nor hang: its fallback after `ms`, and on error. */
-function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000): Promise<T> {
+/**
+ * A read that can neither throw nor hang: its fallback after `ms`, and on
+ * error. A database read that trips the watchdog also resets the connection
+ * pool — a hang here means a dead pooled socket, and everything after it
+ * should reconnect rather than wait its own turn to time out.
+ */
+function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000, opts: { db?: boolean } = {}): Promise<T> {
   const t0 = Date.now();
   return new Promise((resolve) => {
-    const t = setTimeout(() => { console.error(`[home] ${label} timed out after ${ms}ms — using its empty state`); resolve(fallback()); }, ms);
+    const t = setTimeout(() => {
+      console.error(`[home] ${label} timed out after ${ms}ms — using its empty state`);
+      if (opts.db !== false) resetDb(`home ${label} > ${ms}ms`);
+      resolve(fallback());
+    }, ms);
     p.then((v) => { clearTimeout(t); const took = Date.now() - t0; if (took > 1500) console.log(`[home] ${label} slow: ${took}ms`); resolve(v); }, (e) => { clearTimeout(t); console.error(`[home] ${label} failed after ${Date.now() - t0}ms:`, e instanceof Error ? e.message : e); resolve(fallback()); });
   });
 }
@@ -70,27 +80,32 @@ function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000):
 export async function getHomeData(viewer: Viewer, fallbackName: string): Promise<HomeData> {
   const todayISO = familyTodayISO();
   const av = { memberId: viewer.memberId, role: viewer.role };
-  // Sequential on purpose. The Supabase transaction pooler scrambles queries
-  // that postgres.js pipelines when many run at once — a Promise.all here is
-  // exactly what hung Home on the first preview deploy. Each read is also
-  // fenced so one slow module renders as its empty state, never a hung page.
+  // Everything at once. The reads are independent, so the page costs one
+  // round trip of the slowest read, not the sum of all of them. (They used to
+  // run one after another to dodge a hang that turned out to be stale pooled
+  // sockets, not concurrency — see src/db/index.ts.) Each read is fenced so one
+  // slow module renders as its empty state, never a hung page.
   const tHome = Date.now();
-  const dashboard = await getDashboardData(viewer);
-  const people = await guarded("people", getPeople(), () => [] as Person[]);
-  const quote = await guarded("quote", quoteOfTheDay(av, todayISO), () => null);
-  const unread = await guarded("unread", unreadCount(av), () => 0);
-  const nights = await guarded("nights", getNights(todayISO, 1), () => []);
-  const swaps = await guarded("swaps", listSwaps("pending"), () => []);
-  const access: Record<string, boolean> = viewer.role !== "owner" && viewer.memberId ? await guarded("module access", getModuleAccess(viewer.memberId), () => ({} as Record<string, boolean>)) : {};
-  const allowedSlugs = modulesFor(viewer.role).map((m) => m.slug).filter((slug) => access[slug] !== false);
-  const goals = await guarded("goals", homeGoals(av, todayISO), () => []);
-  const chores = await guarded("chores", listChores(), () => [] as Chore[]);
-  const completions = await guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]);
   const photosEnabled = isModuleEnabled("photos");
-  const pod = photosEnabled ? await guarded("photo of the day", photoOfTheDay(av, todayISO), () => null) : null;
-  const recent = photosEnabled ? await guarded("recent photos", recentPhotos(av, 6), () => []) : [];
-  const weather = await guarded("weather", fetchWeather(), () => null, 5000);
-  const cal = await guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000);
+  const [dashboard, people, quote, unread, nights, swaps, access, goals, chores, completions, pod, recent, weather, cal] = await Promise.all([
+    getDashboardData(viewer),
+    guarded("people", getPeople(), () => [] as Person[]),
+    guarded("quote", quoteOfTheDay(av, todayISO), () => null),
+    guarded("unread", unreadCount(av), () => 0),
+    guarded("nights", getNights(todayISO, 1), () => []),
+    guarded("swaps", listSwaps("pending"), () => []),
+    viewer.role !== "owner" && viewer.memberId
+      ? guarded("module access", getModuleAccess(viewer.memberId), () => ({} as Record<string, boolean>))
+      : Promise.resolve({} as Record<string, boolean>),
+    guarded("goals", homeGoals(av, todayISO), () => []),
+    guarded("chores", listChores(), () => [] as Chore[]),
+    guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]),
+    photosEnabled ? guarded("photo of the day", photoOfTheDay(av, todayISO), () => null) : Promise.resolve(null as Awaited<ReturnType<typeof photoOfTheDay>>),
+    photosEnabled ? guarded("recent photos", recentPhotos(av, 6), () => []) : Promise.resolve([] as Awaited<ReturnType<typeof recentPhotos>>),
+    guarded("weather", fetchWeather(), () => null, 5000, { db: false }),
+    guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000),
+  ]);
+  const allowedSlugs = modulesFor(viewer.role).map((m) => m.slug).filter((slug) => access[slug] !== false);
   console.log(`[home] reads ${Date.now() - tHome}ms`);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
