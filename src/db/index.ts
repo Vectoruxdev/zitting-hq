@@ -41,7 +41,9 @@ const client = connectionString
       // the "dashboard section timed out" hang. One query in flight per
       // connection; concurrency comes from the pool instead.
       max_pipeline: 1,
-    }))
+      // max_pipeline is a real postgres.js option (src/index.js parses it) that
+      // its type definitions don't declare.
+    } as postgres.Options<Record<string, postgres.PostgresType>> & { max_pipeline: number }))
   : null;
 
 export const db = client ? drizzle(client, { schema }) : null;
