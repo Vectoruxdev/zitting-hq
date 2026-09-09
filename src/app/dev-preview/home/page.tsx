@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { AppFrame } from "@/components/app-frame";
-import { HomeScreen } from "@/app/(home)/home-screen";
+import { HomeScreen } from "@/app/(app)/(home)/home-screen";
 import type { HomeData } from "@/db/home";
 import { scenicForDay } from "@/lib/scenic";
 
