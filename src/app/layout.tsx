@@ -30,11 +30,13 @@ export default async function RootLayout({
 }>) {
   // The profile's theme choice is mirrored into a cookie (see /me actions) so
   // the server renders the right theme on first paint; the inline script below
-  // covers devices that only have the localStorage choice.
+  // covers devices that only have the localStorage choice. It mutates <html>
+  // before hydration (theme attribute, hidden-document class), hence
+  // suppressHydrationWarning on the element — the standard theme-script pattern.
   const themeCookie = (await cookies()).get("zhq-theme")?.value;
   const dark = themeCookie === "dark";
   return (
-    <html lang="en" className={`${newsreader.variable} ${figtree.variable} h-full`} data-zh-theme={dark ? "dark" : undefined}>
+    <html lang="en" className={`${newsreader.variable} ${figtree.variable} h-full`} data-zh-theme={dark ? "dark" : undefined} suppressHydrationWarning>
       <head>
         {/* Browser-tab favicon (PNG — modern browsers prefer the highest match). */}
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />

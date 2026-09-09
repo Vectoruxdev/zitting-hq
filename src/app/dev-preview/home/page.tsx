@@ -29,6 +29,8 @@ function mock(variant: "owner" | "wife", state: "full" | "empty"): HomeData {
     recentPhotos: full ? [1, 2, 3, 4, 5, 6].map((i) => ({ id: i, src: `https://picsum.photos/seed/zh-r${i}/400/400` })) : [],
     goals: full ? [{ id: "hawaii", title: "Hawaii, spring break", value: 0.4, current: 3200, target: 8000, money: true, people: [1, 2, 3] }, { id: "read", title: "Read together every night", value: 0.71, money: false, people: [4, 5, 6] }] : [],
     unread: full ? 3 : 0,
+    tonight: full ? { cook: "jaelynn", dish: ["katelynn"], note: null } : null,
+    pendingSwaps: full && member ? 1 : 0,
     dashboard: {
       todayISO: "2026-09-08",
       finance: member

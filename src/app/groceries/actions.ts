@@ -13,11 +13,18 @@ async function ensureFamily() {
   return u;
 }
 
-const refresh = () => revalidatePath("/groceries");
+const refresh = () => { revalidatePath("/groceries"); revalidatePath("/"); };
 
-export async function addShoppingItem(args: { name: string; note?: string | null; category?: string | null }) {
+export async function addShoppingItem(args: { name: string; note?: string | null; category?: string | null; assigneeMemberId?: string | null }) {
   const u = await ensureFamily();
   const res = await h.addShoppingItem({ ...args, addedBy: u?.memberId ?? null });
+  if (res.ok && args.assigneeMemberId) await h.setShoppingAssignee(res.id, args.assigneeMemberId, u?.memberId ?? null).catch(() => {});
+  refresh();
+  return res;
+}
+export async function setShoppingAssignee(id: number, assigneeMemberId: string | null) {
+  const u = await ensureFamily();
+  const res = await h.setShoppingAssignee(id, assigneeMemberId, u?.memberId ?? null);
   refresh();
   return res;
 }

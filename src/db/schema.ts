@@ -698,6 +698,9 @@ export const shoppingItems = pgTable(
     addedBy: text("added_by").references(() => familyMembers.id),
     checked: boolean("checked").notNull().default(false),
     source: text("source").notNull().default("manual"), // manual | meal | pantry
+    // Phase 2: who's grabbing it / who asked for it
+    assigneeMemberId: text("assignee_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    requestedBy: text("requested_by").references(() => familyMembers.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -725,11 +728,18 @@ export const pantryItems = pgTable(
 export const recipes = pgTable("recipes", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  emoji: text("emoji"),
+  emoji: text("emoji"), // legacy; the UI shows a cover photo instead
   ingredients: jsonb("ingredients").$type<{ name: string; qty?: string }[]>().notNull().default([]),
   notes: text("notes"),
   lastMadeOn: date("last_made_on"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  // Phase 2 (supabase-phase2-kitchen.sql)
+  coverPhotoPath: text("cover_photo_path"), // key in the private 'recipes' bucket
+  servings: integer("servings"),
+  prepMinutes: integer("prep_minutes"),
+  tags: text("tags").array().notNull().default([]),
+  sourceUrl: text("source_url"),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
 });
 
 /** The week grid: one row per date+slot, pointing at a recipe or free text. */
@@ -928,4 +938,64 @@ export const shares = pgTable(
     memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.memberId] }), index("idx_shares_member").on(t.memberId)]
+);
+
+// ---- Phase 2 (2026-09 revamp): the kitchen — supabase-phase2-kitchen.sql ----
+
+/** Default cook / dish duty per weekday (0 = Sunday … 6 = Saturday). */
+export const dinnerRotation = pgTable("dinner_rotation", {
+  weekday: integer("weekday").primaryKey(),
+  cookMemberId: text("cook_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  dishMemberIds: text("dish_member_ids").array().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+/** Per-date override of the rotation (a swap, a one-off, a note). */
+export const dinnerAssignments = pgTable("dinner_assignments", {
+  date: date("date").primaryKey(),
+  cookMemberId: text("cook_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  dishMemberIds: text("dish_member_ids").array().notNull().default([]),
+  note: text("note"),
+  source: text("source").notNull().default("override"), // override | swap
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const dinnerSwaps = pgTable(
+  "dinner_swaps",
+  {
+    id: serial("id").primaryKey(),
+    fromMemberId: text("from_member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    toMemberId: text("to_member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    fromDate: date("from_date").notNull(),
+    toDate: date("to_date").notNull(),
+    status: text("status").notNull().default("pending"), // pending | accepted | declined | cancelled
+    message: text("message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_dinner_swaps_status").on(t.status)]
+);
+
+export const mealIdeas = pgTable("meal_ideas", {
+  id: serial("id").primaryKey(),
+  url: text("url").notNull(),
+  platform: text("platform").notNull().default("web"), // tiktok | instagram | youtube | web
+  title: text("title"),
+  imageUrl: text("image_url"),
+  author: text("author"),
+  notes: text("notes"),
+  postedBy: text("posted_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("idea"), // idea | planned | made
+  recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const mealIdeaReactions = pgTable(
+  "meal_idea_reactions",
+  {
+    ideaId: integer("idea_id").notNull().references(() => mealIdeas.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull().default("heart"),
+  },
+  (t) => [primaryKey({ columns: [t.ideaId, t.memberId] })]
 );

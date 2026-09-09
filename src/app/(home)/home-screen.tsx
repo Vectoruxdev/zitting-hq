@@ -72,14 +72,20 @@ function PhotoOfDay({ data, narrow }: { data: HomeData; narrow: boolean }) {
 function TodaySection({ data }: { data: HomeData }) {
   const router = useRouter();
   const d = data.dashboard.today;
-  const empty = !d.dinner && !d.events.length;
+  const empty = !d.dinner && !d.events.length && !data.tonight?.cook;
   return (
     <Section title="Today" onAction={() => router.push("/calendar")} actionLabel="Calendar">
       {empty ? (
         <EmptyState compact icon="calendar" title="A quiet day" body={data.dashboard.calendar.feedCount ? "Nothing on the calendar. Plan a dinner and it shows up here." : "Nothing planned. Connect a calendar or plan a dinner and it shows up here."} style={{ padding: "8px 0" }} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {d.dinner ? <Row icon="chef-hat" tint="butter" title={`Tonight — ${d.dinner.name}`} meta="Dinner" onClick={() => router.push("/meals")} /> : null}
+          {d.dinner || data.tonight?.cook ? (() => {
+            const cook = data.people.find((p) => p.id === data.tonight?.cook);
+            const mine = !!cook && cook.id === data.viewer.memberId;
+            const dish = (data.tonight?.dish ?? []).map((id) => data.people.find((p) => p.id === id)?.greetingName).filter(Boolean).join(", ");
+            const title = d.dinner ? (mine ? `Your night — ${d.dinner.name}` : cook ? `${cook.greetingName}’s night — ${d.dinner.name}` : `Tonight — ${d.dinner.name}`) : mine ? "Your night — nothing planned yet" : `${cook!.greetingName}’s night — nothing planned yet`;
+            return <Row avatar={cook ? { name: cook.name, src: cook.avatarUrl, person: cook.hue } : undefined} icon={cook ? undefined : "chef-hat"} tint="butter" title={title} meta={[data.tonight?.note, dish ? `dishes: ${dish}` : null].filter(Boolean).join(" · ") || "Dinner"} trailing={mine ? <Button size="sm" variant="soft" onClick={() => router.push(`/meals?swap=${data.todayISO}`)}>Swap</Button> : undefined} onClick={() => router.push("/meals")} chevron={!mine} />;
+          })() : null}
           {d.events.map((e, i) => <Row key={i} time={e.time || "All day"} title={e.title} onClick={() => router.push("/calendar")} />)}
         </div>
       )}
@@ -89,12 +95,15 @@ function TodaySection({ data }: { data: HomeData }) {
 
 function AttentionSection({ data }: { data: HomeData }) {
   const router = useRouter();
-  const items = data.dashboard.needsAttention;
+  const items = [
+    ...(data.pendingSwaps ? [{ key: "swaps", label: `${data.pendingSwaps} dinner swap${data.pendingSwaps === 1 ? "" : "s"} waiting for your answer`, href: "/meals", tone: "accent" as const }] : []),
+    ...data.dashboard.needsAttention,
+  ];
   if (!items.length) return <Section title="Needs attention"><Row icon="circle-check" tint="mint" title="All clear" meta="Nothing needs you right now." /></Section>;
   return (
     <Section title="Needs attention" action={<Badge tone="accent">{items.length}</Badge>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {items.map((it) => <Row key={it.key} tone="soft" tint={it.tone === "warn" ? "butter" : "coral"} icon={it.href.startsWith("/finance") ? "receipt" : "shopping-cart"} title={it.label} onClick={() => router.push(it.href)} style={{ margin: 0, boxSizing: "border-box", padding: "8px 12px" }} />)}
+        {items.map((it) => <Row key={it.key} tone="soft" tint={it.tone === "warn" ? "butter" : "coral"} icon={it.key === "swaps" ? "chef-hat" : it.href.startsWith("/finance") ? "receipt" : "shopping-cart"} title={it.label} onClick={() => router.push(it.href)} style={{ margin: 0, boxSizing: "border-box", padding: "8px 12px" }} />)}
       </div>
     </Section>
   );

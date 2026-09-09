@@ -9,6 +9,7 @@ import { getDashboardData, familyDateLabel, familyHour, familyTodayISO, type Das
 import { getPeople, type Person } from "./profiles";
 import { quoteOfTheDay, type Quote } from "./quotes";
 import { unreadCount } from "./notifications";
+import { getNights, listSwaps } from "./kitchen";
 import type { Viewer } from "./queries";
 
 export interface HomeData {
@@ -24,6 +25,10 @@ export interface HomeData {
   recentPhotos: { id: string | number; src: string }[];
   goals: { id: string; title: string; value: number; current?: number; target?: number; money: boolean; people: number[] }[];
   unread: number;
+  /** Tonight's cook and dish duty (Phase 2). */
+  tonight: { cook: string | null; dish: string[]; note: string | null } | null;
+  /** Swap requests waiting on this viewer. */
+  pendingSwaps: number;
   dashboard: DashboardData;
 }
 
@@ -36,12 +41,15 @@ export function daypartFor(hour: number): HomeData["daypart"] {
 
 export async function getHomeData(viewer: Viewer, fallbackName: string): Promise<HomeData> {
   const todayISO = familyTodayISO();
-  const [dashboard, people, quote, unread] = await Promise.all([
+  const [dashboard, people, quote, unread, nights, swaps] = await Promise.all([
     getDashboardData(viewer),
     getPeople().catch(() => [] as Person[]),
     quoteOfTheDay({ memberId: viewer.memberId, role: viewer.role }, todayISO).catch(() => null),
     unreadCount({ memberId: viewer.memberId, role: viewer.role }).catch(() => 0),
+    getNights(todayISO, 1).catch(() => []),
+    listSwaps("pending").catch(() => []),
   ]);
+  const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
   return {
     todayISO,
@@ -55,6 +63,8 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     recentPhotos: [],
     goals: [],
     unread,
+    tonight: tonightPlan ? { cook: tonightPlan.cook, dish: tonightPlan.dish, note: tonightPlan.note } : null,
+    pendingSwaps: swaps.filter((sw) => sw.toMemberId === viewer.memberId).length,
     dashboard,
   };
 }

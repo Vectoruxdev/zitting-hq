@@ -44,13 +44,25 @@ export async function addShoppingItem(args: {
 }) {
   const name = args.name.trim();
   if (!name) return { ok: false as const, error: "Name is required" };
-  await requireDb().insert(s.shoppingItems).values({
+  const [row] = await requireDb().insert(s.shoppingItems).values({
     name,
     note: args.note?.trim() || null,
     category: args.category || "other",
     addedBy: args.addedBy ?? null,
     source: args.source ?? "manual",
-  });
+  }).returning({ id: s.shoppingItems.id });
+  return { ok: true as const, id: row.id };
+}
+
+/** Who's grabbing it — notifies them if it's someone else (Phase 2). */
+export async function setShoppingAssignee(id: number, assigneeMemberId: string | null, requestedBy: string | null) {
+  const database = requireDb();
+  await database.update(s.shoppingItems).set({ assigneeMemberId, requestedBy: assigneeMemberId ? requestedBy : null }).where(eq(s.shoppingItems.id, id));
+  if (assigneeMemberId && assigneeMemberId !== requestedBy) {
+    const [item] = await database.select({ name: s.shoppingItems.name }).from(s.shoppingItems).where(eq(s.shoppingItems.id, id));
+    const { createNotification } = await import("./mutations");
+    await createNotification({ type: "grocery_request", module: "groceries", tone: "info", icon: "shopping-cart", audience: "member", memberId: assigneeMemberId, title: `Can you grab ${item?.name ?? "something"}?`, body: "It's on the list with your name on it.", linkTo: "/groceries", dedupeKey: `grocery-${id}-${assigneeMemberId}` }).catch(() => {});
+  }
   return { ok: true as const };
 }
 
