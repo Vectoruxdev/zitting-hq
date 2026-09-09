@@ -6,6 +6,7 @@
 import { desc } from "drizzle-orm";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
+import { cached } from "@/lib/cache";
 
 export interface HubViewer { memberId: string | null; role: "owner" | "partner" | "member" }
 
@@ -43,7 +44,7 @@ export function hrefFor(n: { id: number; module: string | null; linkTo: string |
   return base[mod] || "/notifications";
 }
 
-export async function listNotifications(viewer: HubViewer, limit = 100): Promise<HubNotification[]> {
+async function listNotifications__live(viewer: HubViewer, limit = 100): Promise<HubNotification[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db
     .select()
@@ -60,7 +61,7 @@ export async function listNotifications(viewer: HubViewer, limit = 100): Promise
     }));
 }
 
-export async function unreadCount(viewer: HubViewer): Promise<number> {
+async function unreadCount__live(viewer: HubViewer): Promise<number> {
   if (!isDbConfigured || !db) return 0;
   const rows = await db
     .select({ id: s.notifications.id, audience: s.notifications.audience, memberId: s.notifications.memberId, unread: s.notifications.unread })
@@ -68,3 +69,7 @@ export async function unreadCount(viewer: HubViewer): Promise<number> {
     .catch(() => [] as { id: number; audience: string; memberId: string | null; unread: boolean }[]);
   return visibleTo(rows, viewer).filter((n) => n.unread).length;
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const listNotifications = cached("notifications:listNotifications", ["notifications"], listNotifications__live);
+export const unreadCount = cached("notifications:unreadCount", ["notifications"], unreadCount__live);

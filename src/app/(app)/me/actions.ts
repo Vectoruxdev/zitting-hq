@@ -4,7 +4,7 @@
  * (memberId is never taken from the client). The owner edits other people in
  * People & Permissions (Phase 6).
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/auth";
 import { createSupabaseServerClient, isAuthConfigured } from "@/lib/supabase/server";
@@ -30,7 +30,7 @@ export async function updateMyProfile(patch: { greetingName?: string | null; hue
   if (patch.hue !== undefined) clean.hue = patch.hue != null && HUES.includes(patch.hue) ? patch.hue : null;
   if (patch.birthday !== undefined) clean.birthday = patch.birthday && /^\d{4}-\d{2}-\d{2}$/.test(patch.birthday) ? patch.birthday : null;
   await upsertProfile(u.memberId!, clean);
-  revalidatePath("/"); revalidatePath("/me");
+  touched("people", "/"); touched("people", "/me");
   return { ok: true as const };
 }
 
@@ -42,7 +42,7 @@ export async function setMyTheme(theme: ThemePref) {
   if (theme === "system") jar.delete("zhq-theme");
   else jar.set("zhq-theme", theme, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   if (u) await upsertProfile(u.memberId!, { theme });
-  revalidatePath("/", "layout");
+  touched("people", "/", "layout");
   return { ok: true as const };
 }
 
@@ -50,7 +50,7 @@ export async function setMyNotificationPref(event: string, patch: { inApp?: bool
   const u = await me();
   if (!u) return { ok: false as const, error: "Sign in first" };
   await setMemberNotificationPref(u.memberId!, event, patch);
-  revalidatePath("/me");
+  touched("people", "/me");
   return { ok: true as const };
 }
 
@@ -71,7 +71,7 @@ export async function uploadMyAvatar(formData: FormData) {
   const prev = (await getPerson(u.memberId))?.avatarPath ?? null;
   await upsertProfile(u.memberId!, { avatarPath: path });
   if (prev) await admin.storage.from(AVATARS_BUCKET).remove([prev]).catch(() => {});
-  revalidatePath("/", "layout");
+  touched("people", "/", "layout");
   return { ok: true as const, url: await avatarUrl(path) };
 }
 
@@ -82,7 +82,7 @@ export async function removeMyAvatar() {
   await upsertProfile(u.memberId!, { avatarPath: null });
   const admin = getAdminClient();
   if (prev && admin) await admin.storage.from(AVATARS_BUCKET).remove([prev]).catch(() => {});
-  revalidatePath("/", "layout");
+  touched("people", "/", "layout");
   return { ok: true as const };
 }
 

@@ -31,6 +31,7 @@ import { monthlySpendSeries, monthlyIncomeSeries, balanceSeries, topSpendCategor
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { MOCK_FINANCE_DATA } from "@/finance/data/mockData";
+import { cached } from "@/lib/cache";
 
 export interface Viewer {
   memberId: string | null;
@@ -132,7 +133,7 @@ function emptyData(): FinanceData {
 // On a deployed environment, never show the curated mock — show empty instead.
 const fallbackData = (): FinanceData => (process.env.VERCEL ? emptyData() : MOCK_FINANCE_DATA);
 
-export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
+async function getFinanceData__live(viewer?: Viewer): Promise<FinanceData> {
   if (!isDbConfigured || !db) return fallbackData();
 
   try {
@@ -2286,3 +2287,6 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     return failed;
   }
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const getFinanceData = cached("queries:getFinanceData", ["finance"], getFinanceData__live);

@@ -8,6 +8,7 @@ import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { addDaysISO, localISO } from "./household";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { cached } from "@/lib/cache";
 
 export const RECIPES_BUCKET = "recipes";
 
@@ -112,33 +113,33 @@ export async function coverUrl(path: string | null | undefined): Promise<string 
   return data?.signedUrl ?? null;
 }
 
-export async function getRotation(): Promise<RotationDay[]> {
+async function getRotation__live(): Promise<RotationDay[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.dinnerRotation).orderBy(asc(s.dinnerRotation.weekday)).catch(() => [] as (typeof s.dinnerRotation.$inferSelect)[]);
   return rows.map((r) => ({ weekday: r.weekday, cookMemberId: r.cookMemberId, dishMemberIds: r.dishMemberIds ?? [] }));
 }
 
-export async function getAssignments(fromISO: string, toISO: string): Promise<Assignment[]> {
+async function getAssignments__live(fromISO: string, toISO: string): Promise<Assignment[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.dinnerAssignments).where(and(gte(s.dinnerAssignments.date, fromISO), lte(s.dinnerAssignments.date, toISO))).catch(() => [] as (typeof s.dinnerAssignments.$inferSelect)[]);
   return rows.map((r) => ({ date: String(r.date), cookMemberId: r.cookMemberId, dishMemberIds: r.dishMemberIds ?? [], note: r.note, source: r.source }));
 }
 
 /** Nights for a date range with cooks resolved. */
-export async function getNights(fromISO: string, days: number): Promise<NightPlan[]> {
+async function getNights__live(fromISO: string, days: number): Promise<NightPlan[]> {
   const toISO = addDaysISO(fromISO, days - 1);
   const [rotation, assignments] = [await getRotation(), await getAssignments(fromISO, toISO)];
   return Array.from({ length: days }, (_, i) => cookForDate(addDaysISO(fromISO, i), rotation, assignments));
 }
 
-export async function listSwaps(status: "pending" | "all" = "pending"): Promise<Swap[]> {
+async function listSwaps__live(status: "pending" | "all" = "pending"): Promise<Swap[]> {
   if (!isDbConfigured || !db) return [];
   const q = db.select().from(s.dinnerSwaps).orderBy(desc(s.dinnerSwaps.createdAt));
   const rows = await (status === "pending" ? q.where(eq(s.dinnerSwaps.status, "pending")) : q).catch(() => [] as (typeof s.dinnerSwaps.$inferSelect)[]);
   return rows.map((r) => ({ id: r.id, fromMemberId: r.fromMemberId, toMemberId: r.toMemberId, fromDate: String(r.fromDate), toDate: String(r.toDate), status: r.status, message: r.message, createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null }));
 }
 
-export async function listIdeas(): Promise<Idea[]> {
+async function listIdeas__live(): Promise<Idea[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.mealIdeas).orderBy(desc(s.mealIdeas.createdAt)).catch(() => [] as (typeof s.mealIdeas.$inferSelect)[]);
   const reactions = rows.length ? await db.select().from(s.mealIdeaReactions).where(inArray(s.mealIdeaReactions.ideaId, rows.map((r) => r.id))).catch(() => [] as (typeof s.mealIdeaReactions.$inferSelect)[]) : [];
@@ -214,3 +215,10 @@ export async function updateRecipeMeta(recipeId: number, patch: Partial<{ servin
 }
 
 export const weekStartOf = (d: Date): string => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localISO(x); };
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const getNights = cached("kitchen:getNights", ["meals"], getNights__live);
+export const listSwaps = cached("kitchen:listSwaps", ["meals"], listSwaps__live);
+export const getRotation = cached("kitchen:getRotation", ["meals"], getRotation__live);
+export const getAssignments = cached("kitchen:getAssignments", ["meals"], getAssignments__live);
+export const listIdeas = cached("kitchen:listIdeas", ["meals"], listIdeas__live);

@@ -6,6 +6,7 @@
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
+import { cached } from "@/lib/cache";
 
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "any";
 export interface Chore { id: string; title: string; icon: string | null; assigneeMemberId: string | null; days: string; timeOfDay: TimeOfDay; points: number; needsCheck: boolean; active: boolean; sort: number }
@@ -70,13 +71,13 @@ const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOStrin
 const toChore = (r: ChoreRow): Chore => ({ id: r.id, title: r.title, icon: r.icon, assigneeMemberId: r.assigneeMemberId, days: r.days, timeOfDay: (TIME_ORDER.includes(r.timeOfDay as TimeOfDay) ? r.timeOfDay : "any") as TimeOfDay, points: r.points, needsCheck: r.needsCheck, active: r.active, sort: r.sort });
 const toComp = (r: CompRow): Completion => ({ id: r.id, choreId: r.choreId, memberId: r.memberId, day: String(r.day), doneAt: iso(r.doneAt), checkedBy: r.checkedBy, checkedAt: iso(r.checkedAt) });
 
-export async function listChores(opts?: { includeInactive?: boolean }): Promise<Chore[]> {
+async function listChores__live(opts?: { includeInactive?: boolean }): Promise<Chore[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.chores).orderBy(asc(s.chores.sort), asc(s.chores.createdAt)).catch(() => [] as ChoreRow[]);
   return rows.map(toChore).filter((c) => opts?.includeInactive || c.active);
 }
 
-export async function listCompletions(fromISO: string, toISO: string): Promise<Completion[]> {
+async function listCompletions__live(fromISO: string, toISO: string): Promise<Completion[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.choreCompletions).where(and(gte(s.choreCompletions.day, fromISO), lte(s.choreCompletions.day, toISO))).orderBy(desc(s.choreCompletions.day)).catch(() => [] as CompRow[]);
   return rows.map(toComp);
@@ -113,3 +114,7 @@ export async function uncompleteChore(choreId: string, day: string) {
 export async function checkChore(completionId: number, by: string | null, checked: boolean) {
   await requireDb().update(s.choreCompletions).set(checked ? { checkedBy: by, checkedAt: new Date() } : { checkedBy: null, checkedAt: null }).where(eq(s.choreCompletions.id, completionId));
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const listChores = cached("chores:listChores", ["chores"], listChores__live);
+export const listCompletions = cached("chores:listCompletions", ["chores"], listCompletions__live);

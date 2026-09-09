@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendDueReminders } from "@/db/reminders";
+import { touchedByJob } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
   }
   try {
     const sent = await sendDueReminders(new Date());
+    touchedByJob("notifications");
     return NextResponse.json({ ok: true, sent });
   } catch (err) {
     console.error("[reminders cron]", err);

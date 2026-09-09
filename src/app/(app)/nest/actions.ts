@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import type { NestRuleAction } from "@/db/schema";
@@ -14,7 +14,7 @@ async function ensureOwner() {
   return u;
 }
 
-const refresh = () => revalidatePath("/nest");
+const refresh = () => touched("nest", "/nest");
 
 const result = async (fn: () => Promise<unknown>) => {
   try {

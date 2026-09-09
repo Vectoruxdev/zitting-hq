@@ -14,6 +14,7 @@
  */
 import { createMcpHandler } from "mcp-handler";
 import { registerAllTools } from "@/mcp/register";
+import { touchedByJob } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 // 300s so the sync_now tool (slow bank pulls) fits; reads return well under 60.
@@ -48,4 +49,12 @@ async function handler(req: Request): Promise<Response> {
   return auth.tier === "readonly" ? readonlyHandler(req) : fullHandler(req);
 }
 
-export { handler as GET, handler as POST, handler as DELETE };
+// MCP tools write through db/mutations.ts without naming cache tags, so after
+// any tool call the money model (and what hangs off it) is marked stale.
+async function tagged(req: Request): Promise<Response> {
+  const res = await handler(req);
+  if (req.method === "POST") touchedByJob(["finance", "notifications", "people"]);
+  return res;
+}
+
+export { tagged as GET, tagged as POST, tagged as DELETE };

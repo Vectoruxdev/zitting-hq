@@ -3,7 +3,7 @@
  * Quotes actions. Anyone signed in can add; only the person who added a quote
  * (or the owner) can edit/delete it. Visibility follows canView.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { addQuote, deleteQuote, getQuote, updateQuote, listQuotes, setQuoteSaved } from "@/db/quotes";
@@ -32,7 +32,7 @@ export async function createQuote(input: { text: string; saidByMemberId?: string
   if (text.length > 600) return { ok: false as const, error: "Keep it under 600 characters" };
   const visibility = VIS.includes(input.visibility || "") ? input.visibility! : "family";
   const id = await addQuote({ text, saidByMemberId: input.saidByMemberId || null, saidByName: input.saidByName || null, saidOn: input.saidOn && /^\d{4}-\d{2}-\d{2}$/.test(input.saidOn) ? input.saidOn : null, addedBy: u.memberId, visibility, sharedWith: input.sharedWith });
-  revalidatePath("/quotes"); revalidatePath("/");
+  touched("quotes", "/quotes"); touched("quotes", "/");
   return { ok: true as const, id };
 }
 
@@ -43,14 +43,14 @@ export async function toggleSaved(id: number, saved: boolean) {
   const visible = (await listQuotes({ memberId: u.memberId, role: u.role })).some((q) => q.id === id);
   if (!visible) throw new Error("Not found");
   await setQuoteSaved(id, u.memberId, saved);
-  revalidatePath("/quotes"); revalidatePath("/");
+  touched("quotes", "/quotes"); touched("quotes", "/");
   return { ok: true as const, saved };
 }
 
 export async function toggleFavorite(id: number, favorite: boolean) {
   await who();
   await updateQuote(id, { favorite });
-  revalidatePath("/quotes");
+  touched("quotes", "/quotes");
   return { ok: true as const };
 }
 
@@ -58,7 +58,7 @@ export async function setShowOnLogin(id: number, show: boolean) {
   const u = await who();
   if (u.role !== "owner") throw new Error("Only the owner curates the login page");
   await updateQuote(id, { showOnLogin: show });
-  revalidatePath("/quotes"); revalidatePath("/login");
+  touched("quotes", "/quotes"); touched("quotes", "/login");
   return { ok: true as const };
 }
 
@@ -71,13 +71,13 @@ export async function editQuote(id: number, patch: { text?: string; saidByMember
   if (patch.saidOn !== undefined) clean.saidOn = patch.saidOn && /^\d{4}-\d{2}-\d{2}$/.test(patch.saidOn) ? patch.saidOn : null;
   if (patch.visibility !== undefined && VIS.includes(patch.visibility)) clean.visibility = patch.visibility;
   await updateQuote(id, clean, patch.visibility === "custom" ? patch.sharedWith ?? [] : patch.visibility ? [] : undefined);
-  revalidatePath("/quotes"); revalidatePath("/");
+  touched("quotes", "/quotes"); touched("quotes", "/");
   return { ok: true as const };
 }
 
 export async function removeQuote(id: number) {
   await canEdit(id);
   await deleteQuote(id);
-  revalidatePath("/quotes"); revalidatePath("/");
+  touched("quotes", "/quotes"); touched("quotes", "/");
   return { ok: true as const };
 }

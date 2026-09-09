@@ -20,6 +20,7 @@ import { firstRunOnOrAfter, nextOccurrence, dueRuns, type Cadence } from "./sche
 import { forecastIncome, computeCoverage, shortfallAlert, incomeLandingOn, projectRunway, runwayAlert, type IncomeSourceInput } from "./forecast";
 import { UNCATEGORIZED_ID } from "./seedCategories";
 import { tallyLearning, mergeTallies, emptyTally, type LearningTally } from "./learnBatch";
+import { touchedAnywhere } from "@/lib/cache";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function dateLabel(iso: string | null): string | null {
@@ -1999,6 +2000,7 @@ export async function createNotification(args: {
       })
       .returning({ id: s.notifications.id });
     insertedId = row?.id;
+    touchedAnywhere("notifications");
   }
   // Fan the same alert out to subscribed devices (best-effort — a push failure
   // must never undo the stored notification). Dynamic import keeps the web-push

@@ -9,6 +9,7 @@ import { canView, type Viewer } from "@/lib/access";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { signMany } from "./photos";
 import { daysBetween } from "@/lib/zoned-time";
+import { cached } from "@/lib/cache";
 
 export const DOCUMENTS_BUCKET = "documents";
 
@@ -30,7 +31,7 @@ export function countdown(startsOn: string | null, endsOn: string | null, todayI
   return daysBetween(todayISO, startsOn);
 }
 
-export async function listTrips(viewer: Viewer, todayISO: string): Promise<Trip[]> {
+async function listTrips__live(viewer: Viewer, todayISO: string): Promise<Trip[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.trips).orderBy(asc(s.trips.startsOn)).catch(() => [] as (typeof s.trips.$inferSelect)[]);
   if (!rows.length) return [];
@@ -60,7 +61,7 @@ export async function listTrips(viewer: Viewer, todayISO: string): Promise<Trip[
     .filter((t) => canView({ visibility: t.visibility, ownerId: t.createdBy, sharedWith: t.sharedWith }, viewer) || (!!viewer.memberId && t.participants.includes(viewer.memberId)));
 }
 
-export async function getTrip(id: string, viewer: Viewer, todayISO: string): Promise<TripDetail | null> {
+async function getTrip__live(id: string, viewer: Viewer, todayISO: string): Promise<TripDetail | null> {
   const trip = (await listTrips(viewer, todayISO)).find((t) => t.id === id);
   if (!trip || !db) return null;
   const [items, docs, packing] = [
@@ -122,3 +123,7 @@ export async function deleteTripDocument(id: string) {
 export async function addPacking(tripId: string, label: string, assigneeMemberId: string | null) { const [row] = await requireDb().insert(s.tripPacking).values({ tripId, label: label.trim(), assigneeMemberId }).returning({ id: s.tripPacking.id }); return row.id; }
 export async function setPacking(id: number, patch: Partial<{ checked: boolean; assigneeMemberId: string | null; label: string }>) { await requireDb().update(s.tripPacking).set(patch).where(eq(s.tripPacking.id, id)); }
 export async function deletePacking(id: number) { await requireDb().delete(s.tripPacking).where(eq(s.tripPacking.id, id)); }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const listTrips = cached("trips:listTrips", ["trips"], listTrips__live);
+export const getTrip = cached("trips:getTrip", ["trips"], getTrip__live);

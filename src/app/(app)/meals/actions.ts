@@ -3,7 +3,7 @@
  * Meals & dinner nights. Shared family space: any signed-in member may plan,
  * cook, and swap; swaps are guarded by the state machine in db/kitchen.ts.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
@@ -19,7 +19,7 @@ async function ensureFamily() {
   if (!u) throw new Error("Not signed in");
   return u;
 }
-const refresh = () => { revalidatePath("/meals"); revalidatePath("/groceries"); revalidatePath("/"); };
+const refresh = () => { touched(["meals", "calendar"], "/meals"); touched(["meals", "calendar"], "/groceries"); touched(["meals", "calendar"], "/"); };
 
 export async function saveRecipe(args: Parameters<typeof h.saveRecipe>[0] & { servings?: number | null; prepMinutes?: number | null; tags?: string[]; sourceUrl?: string | null }) {
   await ensureFamily();

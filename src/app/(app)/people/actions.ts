@@ -4,7 +4,7 @@
  * account access levels, allowance. Adding/removing people and invites reuse
  * the finance actions (same owner guard).
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import * as m from "@/db/mutations";
@@ -20,7 +20,7 @@ async function ensureOwner() {
   if (!u || u.role !== "owner") throw new Error("Not authorized");
   return { memberId: u.memberId };
 }
-const refresh = () => { revalidatePath("/people"); revalidatePath("/"); revalidatePath("/finance"); };
+const refresh = () => { touched(["people", "finance"], "/people"); touched(["people", "finance"], "/"); touched(["people", "finance"], "/finance"); };
 
 export async function setKindAction(memberId: string, kind: "adult" | "child") {
   await ensureOwner();

@@ -4,7 +4,7 @@
  * made it, its participants, or the owner. Check-ins are open to anyone who
  * can see a family goal; personal goals take check-ins from their people.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import * as g from "@/db/goals";
@@ -19,7 +19,7 @@ async function who() {
   if (!u) throw new Error("Not signed in");
   return { memberId: u.memberId, role: u.role, name: u.name };
 }
-const refresh = (id?: string) => { revalidatePath("/goals"); revalidatePath("/"); if (id) revalidatePath(`/goals/${id}`); };
+const refresh = (id?: string) => { touched("goals", "/goals"); touched("goals", "/"); if (id) touched("goals", `/goals/${id}`); };
 const VIS = ["family", "private", "custom"];
 const KINDS: g.ProgressKind[] = ["checkoff", "count", "streak", "savings"];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
