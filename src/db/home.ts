@@ -28,7 +28,13 @@ export interface HomeData {
   /** morning | afternoon | evening | late */
   daypart: "morning" | "afternoon" | "evening" | "late";
   greetingName: string;
-  viewer: { memberId: string | null; role: Viewer["role"]; kind: "adult" | "child"; hue: number; avatarUrl: string | null; modules: string[] };
+  viewer: {
+    memberId: string | null; role: Viewer["role"]; kind: "adult" | "child"; hue: number; avatarUrl: string | null; modules: string[];
+    /** The real person is the owner — possibly looking at the app as `memberId` right now. */
+    actingOwner: boolean;
+    /** The real person's roster id (the owner's, while viewing as someone else). */
+    realMemberId: string | null;
+  };
   people: Pick<Person, "id" | "name" | "greetingName" | "hue" | "avatarUrl" | "kind">[];
   quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn" | "saved"> | null;
   photoOfDay: { id?: string; src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
@@ -77,7 +83,7 @@ function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000, 
   });
 }
 
-export async function getHomeData(viewer: Viewer, fallbackName: string): Promise<HomeData> {
+export async function getHomeData(viewer: Viewer, fallbackName: string, real: { actingOwner: boolean; realMemberId: string | null } = { actingOwner: viewer.role === "owner", realMemberId: viewer.memberId }): Promise<HomeData> {
   const todayISO = familyTodayISO();
   const av = { memberId: viewer.memberId, role: viewer.role };
   // Everything at once. The reads are independent, so the page costs one
@@ -114,7 +120,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     dateLabel: familyDateLabel(),
     daypart: daypartFor(familyHour()),
     greetingName: me?.greetingName || fallbackName.split(" ")[0] || "there",
-    viewer: { memberId: viewer.memberId, role: viewer.role, kind: me?.kind ?? "adult", hue: me?.hue ?? 1, avatarUrl: me?.avatarUrl ?? null, modules: allowedSlugs },
+    viewer: { memberId: viewer.memberId, role: viewer.role, kind: me?.kind ?? "adult", hue: me?.hue ?? 1, avatarUrl: me?.avatarUrl ?? null, modules: allowedSlugs, actingOwner: real.actingOwner, realMemberId: real.realMemberId },
     people: people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind })),
     quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn, saved: quote.saved } : null,
     photoOfDay: pod && pod.src ? { id: pod.id, src: pod.src, title: pod.caption, by: people.find((x) => x.id === pod.uploadedBy)?.greetingName ?? null, album: null, count: 0 } : null,

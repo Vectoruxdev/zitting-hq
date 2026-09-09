@@ -13,7 +13,12 @@ export default async function Home() {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login");
   const role = (user?.role ?? "owner") as "owner" | "partner" | "member";
-  const data = await getHomeData({ memberId: user?.memberId ?? null, role }, user?.name ?? "there");
+  // While the owner is "viewing as" someone, `user` is that person — but the
+  // family row should still work as the owner's switcher.
+  const data = await getHomeData({ memberId: user?.memberId ?? null, role }, user?.name ?? "there", {
+    actingOwner: role === "owner" || !!user?.viewingAs,
+    realMemberId: user?.viewingAs ? user.viewingAs.ownerMemberId : (user?.memberId ?? null),
+  });
   return (
     <>
       <HomeScreen data={data} />

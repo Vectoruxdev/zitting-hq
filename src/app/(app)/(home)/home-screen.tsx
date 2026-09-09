@@ -43,19 +43,42 @@ function Greeting({ data }: { data: HomeData }) {
   );
 }
 
-/** The family, as people — tap yourself for your profile; the owner taps anyone to see the app as they see it. */
+/**
+ * The family, as people. Everyone: tap yourself for your profile. The owner:
+ * tap anyone to see the app as they see it, tap yourself to come back — it
+ * keeps working as a switcher while you're viewing as someone else.
+ */
 function FamilyRow({ data }: { data: HomeData }) {
   const router = useRouter();
+  const v = data.viewer;
+  const viewingAs = v.actingOwner && v.realMemberId !== v.memberId;
+  const after = (r: { ok: boolean }) => { if (r.ok) { router.push("/"); router.refresh(); } };
   if (!data.people.length) return null;
   return (
     <div className="zhq-hscroll" style={{ display: "flex", gap: 4, overflowX: "auto", margin: "0 -8px", padding: "0 8px", flex: "0 1 auto", minWidth: 0 }}>
-      {data.people.map((p, i) => (
-        <button key={p.id} type="button" title={p.id === data.viewer.memberId ? "Your profile" : data.viewer.role === "owner" ? `See the app as ${p.greetingName}` : undefined} onClick={async () => { if (p.id === data.viewer.memberId) { router.push("/me"); return; } if (data.viewer.role === "owner") { const r = await viewAsAction(p.id); if (r.ok) { router.push("/"); router.refresh(); } return; } router.push("/me"); }}
-          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "6px 8px", border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-md)", color: "var(--text-primary)", font: "inherit", flex: "none", animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 40}ms both` }}>
-          <Avatar name={p.name} src={p.avatarUrl} person={p.hue} size="lg" />
-          <span style={{ font: "500 var(--fs-xs)/1 var(--font-ui)" }}>{p.greetingName}</span>
-        </button>
-      ))}
+      {data.people.map((p, i) => {
+        const isReal = p.id === v.realMemberId;
+        const isShown = p.id === v.memberId;
+        const title = isReal && viewingAs ? "Back to you" : isShown ? (viewingAs ? `${p.greetingName}’s profile` : "Your profile") : v.actingOwner ? `See the app as ${p.greetingName}` : undefined;
+        const onClick = async () => {
+          if (v.actingOwner) {
+            if (isReal) { if (viewingAs) after(await viewAsAction(null)); else router.push("/me"); return; }
+            if (isShown) { router.push("/me"); return; }
+            after(await viewAsAction(p.id));
+            return;
+          }
+          router.push("/me");
+        };
+        return (
+          <button key={p.id} type="button" title={title} aria-pressed={viewingAs && isShown ? true : undefined} onClick={onClick}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "6px 8px", border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-md)", color: "var(--text-primary)", font: "inherit", flex: "none", animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 40}ms both` }}>
+            <span style={{ borderRadius: "50%", boxShadow: viewingAs && isShown ? "0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent)" : undefined }}>
+              <Avatar name={p.name} src={p.avatarUrl} person={p.hue} size="lg" />
+            </span>
+            <span style={{ font: "500 var(--fs-xs)/1 var(--font-ui)" }}>{p.greetingName}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
