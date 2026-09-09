@@ -4,13 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { PasswordInput } from "@/components/password-input";
+import { requestPasswordReset } from "@/app/login/actions";
 
 type Status = "loading" | "noConfig" | "ready" | "noSession";
+
+// Public keys are inlined at build time, so "is sign-in configured" is a constant.
+const AUTH_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export default function SetPasswordPage() {
   const router = useRouter();
   const supabaseRef = useRef<ReturnType<typeof createSupabaseBrowserClient>>(null);
-  const [status, setStatus] = useState<Status>("loading");
+  const [status, setStatus] = useState<Status>(AUTH_CONFIGURED ? "loading" : "noConfig");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
@@ -19,6 +23,11 @@ export default function SetPasswordPage() {
   const [reqEmail, setReqEmail] = useState("");
   const [reqMsg, setReqMsg] = useState("");
   const [reqBusy, setReqBusy] = useState(false);
+  const [reqDone, setReqDone] = useState(false);
+  // What kind of link this is (recovery = "reset my password", invite = first
+  // login) and why it failed, when it did — both read from the URL.
+  const [linkType, setLinkType] = useState<"recovery" | "invite" | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   // Resolve which state we're in. Missing public env keys → noConfig (server
   // misconfig). A valid invite/recovery link establishes a session (read from
@@ -27,26 +36,37 @@ export default function SetPasswordPage() {
   useEffect(() => {
     const sb = createSupabaseBrowserClient();
     supabaseRef.current = sb;
-    if (!sb) {
-      setStatus("noConfig");
-      return;
-    }
+    if (!sb) return; // status already "noConfig"
     let cancelled = false;
     // Establish a session from whatever shape the link arrives in:
-    //  - ?token_hash=…&type=recovery|invite  → verifyOtp (the current default)
-    //  - ?code=…                              → exchangeCodeForSession
-    //  - #access_token=…                      → auto-handled by detectSessionInUrl
+    //  - ?token_hash=…&type=recovery|invite  → verifyOtp (our own emails)
+    //  - ?code=…                              → exchangeCodeForSession (PKCE)
+    //  - #access_token=…&refresh_token=…      → setSession (Supabase's own
+    //    emails: implicit flow, which the PKCE browser client won't auto-read)
+    //  - #error=…&error_code=otp_expired      → say so plainly
     // Relying on getSession() alone left valid links looking "expired" instantly.
     async function establish() {
       try {
         const url = new URL(window.location.href);
+        const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
         const tokenHash = url.searchParams.get("token_hash");
-        const type = url.searchParams.get("type");
+        const type = url.searchParams.get("type") || hash.get("type");
         const code = url.searchParams.get("code");
+        const accessToken = hash.get("access_token");
+        const refreshToken = hash.get("refresh_token");
+        const errCode = url.searchParams.get("error_code") || hash.get("error_code");
+        const errDesc = url.searchParams.get("error_description") || hash.get("error_description");
+        if (type === "recovery" || type === "invite") setLinkType(type);
+        if (errCode || errDesc) setLinkError(errCode === "otp_expired" ? "expired" : (errDesc || errCode || "invalid").replace(/\+/g, " "));
         if (tokenHash && type) {
-          await sb!.auth.verifyOtp({ token_hash: tokenHash, type: type as "recovery" | "invite" | "signup" | "magiclink" | "email" });
+          const { error } = await sb!.auth.verifyOtp({ token_hash: tokenHash, type: type as "recovery" | "invite" | "signup" | "magiclink" | "email" });
+          if (error) setLinkError(/expired|invalid|not found/i.test(error.message) ? "expired" : error.message);
         } else if (code) {
-          await sb!.auth.exchangeCodeForSession(code);
+          const { error } = await sb!.auth.exchangeCodeForSession(code);
+          if (error) setLinkError(error.message);
+        } else if (accessToken && refreshToken) {
+          const { error } = await sb!.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          if (error) setLinkError(error.message);
         }
       } catch {
         /* fall through — getSession decides below */
@@ -79,24 +99,28 @@ export default function SetPasswordPage() {
       setBusy(false);
       return;
     }
-    router.push("/finance");
+    router.push("/");
+    router.refresh();
   }
 
+  // Ask for a fresh link. Goes through our server (roster emails only, sent
+  // with our own template) rather than Supabase's mailer, which rate-limits to
+  // one request a minute and once answered 429 right after a real reset.
   async function requestNew(e: React.FormEvent) {
     e.preventDefault();
     setReqMsg("");
-    const sb = supabaseRef.current;
     const email = reqEmail.trim().toLowerCase();
-    if (!sb || !email) return;
+    if (!email) return;
     setReqBusy(true);
-    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/auth/set-password` : undefined;
-    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
-    setReqBusy(false);
-    setReqMsg(
-      error
-        ? error.message
-        : "If that email has an account, a fresh link is on its way — check your inbox and spam. If it doesn't arrive, ask whoever invited you to resend it."
-    );
+    try {
+      await requestPasswordReset(email);
+      setReqDone(true);
+      setReqMsg(`Check your email. If ${email} is on the family roster, a fresh link is there — give it a minute, and look in spam. Didn’t get it? Ask Jared to send one from People.`);
+    } catch {
+      setReqMsg("Something went wrong sending the link. Try again in a minute, or ask Jared to send one from People.");
+    } finally {
+      setReqBusy(false);
+    }
   }
 
   const field: React.CSSProperties = {
@@ -135,20 +159,20 @@ export default function SetPasswordPage() {
         </div>
         <div style={{ background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-lg, 18px)", padding: 24 }}>
           <h1 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
-            {status === "noConfig" ? "Almost there" : status === "noSession" ? "This link can't be used" : "Set your password"}
+            {status === "noConfig" ? "Almost there" : status === "noSession" ? "This link can't be used" : linkType === "recovery" ? "Choose a new password" : "Set your password"}
           </h1>
 
           {status === "loading" ? (
-            <p style={{ margin: "8px 0 0", fontSize: 13.5, color: "var(--text-secondary)" }}>Checking your invite link…</p>
+            <p style={{ margin: "8px 0 0", fontSize: 13.5, color: "var(--text-secondary)" }}>Checking your link…</p>
           ) : status === "ready" ? (
             <>
-              <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "var(--text-secondary)" }}>Choose a password to finish setting up your Zitting HQ login.</p>
+              <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "var(--text-secondary)" }}>{linkType === "recovery" ? "Pick a new password for your Zitting HQ login. You’ll be signed in as soon as it’s saved." : "Choose a password to finish setting up your Zitting HQ login."}</p>
               <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <PasswordInput placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} style={field} autoComplete="new-password" />
                 <PasswordInput placeholder="Confirm password" value={pw2} onChange={(e) => setPw2(e.target.value)} style={field} autoComplete="new-password" />
                 {error ? <p style={{ margin: 0, fontSize: 13, color: "var(--negative)" }}>{error}</p> : null}
                 <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1, cursor: busy ? "default" : "pointer" }}>
-                  {busy ? "Saving…" : "Set password & continue"}
+                  {busy ? "Saving…" : linkType === "recovery" ? "Save new password" : "Set password & continue"}
                 </button>
               </form>
             </>
@@ -165,8 +189,16 @@ export default function SetPasswordPage() {
             // noSession — expired / already used / wrong link
             <>
               <p style={{ margin: "0 0 14px", fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                This invite link has expired or was already used. Enter your email and we&apos;ll send a fresh one.
+                {linkError === "expired"
+                  ? "This link has expired or was already used — each one works once, for about an hour."
+                  : linkError
+                    ? `This link didn’t work (${linkError}).`
+                    : "This page needs to be opened from a link in your email — the link may have expired, been used already, or been cut short when it was copied."}
+                {" "}Enter your email and we&apos;ll send a fresh one.
               </p>
+              {reqDone ? (
+                <p role="status" style={{ margin: 0, fontSize: 13.5, color: "var(--text-primary)", lineHeight: 1.5 }}>{reqMsg}</p>
+              ) : (
               <form onSubmit={requestNew} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <input
                   type="email"
@@ -182,8 +214,9 @@ export default function SetPasswordPage() {
                   {reqBusy ? "Sending…" : "Send me a new link"}
                 </button>
               </form>
+              )}
               <p style={{ margin: "14px 0 0", fontSize: 12.5, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-                If it doesn&apos;t arrive in a few minutes (check spam), ask whoever invited you to resend your invite link.
+                Open the new link on this same device, straight from the email. If it doesn&apos;t arrive in a few minutes (check spam), Jared can send one from People.
               </p>
             </>
           )}
