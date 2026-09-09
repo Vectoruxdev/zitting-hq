@@ -11,6 +11,7 @@ import { AppShell, BottomSheet, Card, IconButton, type ShellModule } from "@/ui"
 import { modulesFor, moduleForPath } from "@/lib/modules";
 import type { FrameUser } from "@/lib/frame-user";
 import { signOut } from "@/app/login/actions";
+import { BuildStamp } from "@/components/build-stamp";
 import { tickRemindersAction } from "@/app/actions/reminders";
 import { viewAsAction } from "@/app/actions/view-as";
 
@@ -113,6 +114,7 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
           modules={modules} active={active} onNavigate={go}
           user={{ name: user.name, person: user.person, src: user.src ?? undefined }}
           onAction={() => setAdd(true)} actionIcon="plus" actionLabel="Add something" onSignOut={() => signOut()} onUser={() => router.push("/me")} headerActions={headerActions}
+          footer={<BuildStamp />}
         >
           <div ref={scroller} style={{ height: "100%", overflow: "auto", minWidth: 0, scrollbarGutter: "stable" }}>{children}</div>
         </AppShell>

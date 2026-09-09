@@ -1,10 +1,11 @@
 import React from 'react';
+import { buildLabel, buildTitle } from '../../lib/build';
 /* Shell — sidebar + topbar layout for the Zitting Finance desktop app. */
 
 // Build stamp — inlined at build time via next.config.ts. Updates on every
 // commit + deploy (Vercel rebuilds each push). Falls back to 'dev' locally.
-const BUILD_LABEL = `Build ${process.env.NEXT_PUBLIC_BUILD_NUMBER || '0'} · ${process.env.NEXT_PUBLIC_BUILD_SHA || 'dev'}`;
-const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME || '';
+const BUILD_LABEL = buildLabel();
+const BUILD_TIME = buildTitle();
 function ZHQSidebar({ active, onNavigate, onLogout }) {
   const { Icon, Avatar } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;

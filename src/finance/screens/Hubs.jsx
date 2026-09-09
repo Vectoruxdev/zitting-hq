@@ -1,4 +1,5 @@
 import React from 'react';
+import { buildLabel, buildTitle } from '../../lib/build';
 /* Hubs — tabbed wrapper screens for the consolidated 7-item nav. Each hub
    renders the DS Tabs row and then the ORIGINAL screen components unmodified
    (window.ZHQBulk, ZHQImport, ZHQAllocations, …). Tab state is owned by
@@ -6,8 +7,8 @@ import React from 'react';
    land on a specific tab. */
 
 // Build stamp — same inlined pattern as Shell.jsx.
-const BUILD_LABEL = `Build ${process.env.NEXT_PUBLIC_BUILD_NUMBER || '0'} · ${process.env.NEXT_PUBLIC_BUILD_SHA || 'dev'}`;
-const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME || '';
+const BUILD_LABEL = buildLabel();
+const BUILD_TIME = buildTitle();
 
 function HubTabs({ options, value, onChange }) {
   const { Tabs } = window.ZittingHQDesignSystem_c9e528;
