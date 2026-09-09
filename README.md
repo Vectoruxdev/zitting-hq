@@ -74,9 +74,15 @@ registry in `src/lib/modules.ts` drives every navigation surface.
 5. `supabase-phase5-goals-chores.sql` — goals, check-ins, chores, completions
 6. `supabase-phase6-money-v2.sql` — `account_members.access` (manage | view), per-member module switches
 
-**Env vars** (names only): `CRON_SECRET` also guards `/api/reminders/cron`
-(every 15 min, see `vercel.json`); `MCP_READONLY_TOKEN` enables the read-only
-MCP tier (`/api/mcp`) — set it to give agents a token that can't write.
+**Reminders** (appointments/events) are sent by `sendDueReminders()` in
+`src/db/reminders.ts`: it ticks after every Home visit (at most once per five
+minutes per server instance) and runs once a day inside the digest cron as a
+backstop — Vercel Hobby only allows daily crons. `/api/reminders/cron`
+(`CRON_SECRET` bearer) exists for an external 15-minute scheduler if you want
+minute-level precision without anyone opening the app.
+
+**Env vars** (names only): `MCP_READONLY_TOKEN` enables the read-only MCP tier
+(`/api/mcp`) — set it to give agents a token that can't write.
 
 **Permissions:** the owner sees everything; every shareable item carries a
 `visibility` (family | private | custom + `shares`) checked by one predicate,

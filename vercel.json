@@ -11,10 +11,6 @@
     {
       "path": "/api/digest/cron",
       "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/reminders/cron",
-      "schedule": "*/15 * * * *"
     }
   ]
 }
