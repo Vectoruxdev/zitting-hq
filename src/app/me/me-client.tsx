@@ -130,10 +130,33 @@ function Inner({ person, prefs, canEdit }: { person: Person | null; prefs: Membe
 
       <Reveal index={4}>
         <Section title="Account">
+          <PasswordSection />
           <Row icon="log-out" tint="coral" title="Sign out" meta="On this device" onClick={() => signOut()} />
         </Section>
       </Reveal>
     </div>
+  );
+}
+
+/** Change your own password from inside the app; the sign-in page has "Forgot your password?" for when you're locked out. */
+function PasswordSection() {
+  const { toast } = useToast();
+  const [open, setOpen] = React.useState(false);
+  const [pw, setPw] = React.useState("");
+  const [pw2, setPw2] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  return (
+    <>
+      <Row icon="key-round" tint="lilac" title="Change password" meta={open ? "Choose a new one below" : "At least 8 characters"} onClick={() => setOpen((o) => !o)} chevron={!open} />
+      {open ? (
+        <form style={{ display: "flex", flexDirection: "column", gap: 10, padding: "4px 0 12px 44px" }} onSubmit={async (e) => { e.preventDefault(); setBusy(true); setError(null); const r = await actions.changeMyPassword(pw, pw2); setBusy(false); if (r.ok) { toast({ title: "Password changed", tone: "positive" }); setPw(""); setPw2(""); setOpen(false); } else setError(r.error); }}>
+          <Input label="New password" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <Input label="Type it again" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} error={error ?? undefined} />
+          <div style={{ display: "flex", gap: 8 }}><Button type="submit" size="sm" loading={busy} disabled={pw.length < 8 || !pw2}>Save new password</Button><Button type="button" size="sm" variant="ghost" onClick={() => { setOpen(false); setError(null); }}>Cancel</Button></div>
+        </form>
+      ) : null}
+    </>
   );
 }
 

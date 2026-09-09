@@ -35,7 +35,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <h1 style={{ margin: "0 0 4px", font: "var(--type-h2)", color: "var(--text-primary)" }}>Welcome home</h1>
             <p style={{ margin: "0 0 18px", font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>Sign in to Zitting HQ.</p>
             <LoginForm redirectTo={redirectTo} />
-            <p style={{ margin: "16px 0 0", font: "var(--type-caption)", color: "var(--text-tertiary)", lineHeight: 1.55 }}>Invited but no password yet? Use the link in your invite email to set one.</p>
+            <p style={{ margin: "16px 0 0", font: "var(--type-caption)", color: "var(--text-tertiary)", lineHeight: 1.55 }}><a href="/login/forgot" className="zh-link" style={{ color: "var(--accent)", fontWeight: 600 }}>Forgot your password?</a> · Invited but no password yet? Use the link in your invite email to set one.</p>
           </div>
         </div>
         <p style={{ margin: 0, font: "var(--type-caption)", color: "var(--text-tertiary)" }}>A private app for the Zitting household. Read-only bank access — it never moves money.</p>

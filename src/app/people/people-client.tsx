@@ -74,10 +74,12 @@ function PersonPanel({ person, p, busy, run, onLink }: { person: PersonAdmin; p:
       <Section title="Signing in" action={<Badge tone={person.lastSeenAt ? "positive" : person.status === "invited" ? "info" : "neutral"}>{person.lastSeenAt ? "Signed in" : person.status === "invited" ? "Invited" : "No login"}</Badge>}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <span style={{ font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>{signedIn}</span>
+          <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Forgot their password? <b>Reset password</b> emails them a link to choose a new one (or hands you the link to pass along). They can also do it themselves from the sign-in page.</span>
           <Input label="Email" type="email" placeholder="them@example.com" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => { if ((email.trim() || null) !== (person.email ?? null)) run("email", () => actions.renameAction(person.id, { email }), "Saved"); }} />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button size="sm" variant="secondary" iconLeft="send" disabled={!email.trim()} loading={busy === "invite"} onClick={() => run("invite", async () => { const r = await sendInviteEmail(email); if (r.link && !r.ok) onLink(r.link); return { ok: r.ok, error: r.error }; }, "Invite sent")}>{person.lastSeenAt ? "Send a reset link" : "Send invite"}</Button>
             <Button size="sm" variant="ghost" iconLeft="link" disabled={!email.trim()} loading={busy === "link"} onClick={() => run("link", async () => { const r = await getInviteLink(email); if (r.ok && r.link) onLink(r.link); return r; })}>Copy a link instead</Button>
+            <Button size="sm" variant="ghost" iconLeft="key-round" disabled={!person.email} loading={busy === "reset"} onClick={() => run("reset", async () => { const r = await actions.sendPasswordResetAction(person.id); if (r.link && !r.sent) onLink(r.link); return { ok: r.ok, error: r.sent ? null : r.error }; }, "Reset email sent")}>Reset password</Button>
           </div>
         </div>
       </Section>

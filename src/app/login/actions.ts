@@ -37,3 +37,27 @@ export async function signOut() {
   await supabase.auth.signOut();
   redirect("/login");
 }
+
+/**
+ * "Forgot your password?" — sends a reset link if (and only if) the address
+ * belongs to someone on the family roster. Always answers the same way, so
+ * the sign-in page never confirms who is or isn't in the family.
+ */
+export async function requestPasswordReset(emailArg: string): Promise<{ ok: true }> {
+  const email = (emailArg || "").trim().toLowerCase();
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: true };
+  try {
+    const { db } = await import("@/db");
+    const { familyMembers } = await import("@/db/schema");
+    if (!db) return { ok: true };
+    const rows = await db.select({ email: familyMembers.email, name: familyMembers.name }).from(familyMembers);
+    const m = rows.find((r) => (r.email ?? "").toLowerCase() === email);
+    if (!m) return { ok: true };
+    const { sendPasswordResetEmail } = await import("@/lib/password-reset");
+    const r = await sendPasswordResetEmail(email, { name: m.name });
+    if (!r.sent) console.error("[password reset] not sent:", r.error);
+  } catch (e) {
+    console.error("[password reset]", e instanceof Error ? e.message : e);
+  }
+  return { ok: true };
+}

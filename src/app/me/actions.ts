@@ -7,7 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/auth";
-import { isAuthConfigured } from "@/lib/supabase/server";
+import { createSupabaseServerClient, isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { AVATARS_BUCKET, avatarUrl, getPerson, setMemberNotificationPref, upsertProfile, type ThemePref } from "@/db/profiles";
 
@@ -83,5 +83,18 @@ export async function removeMyAvatar() {
   const admin = getAdminClient();
   if (prev && admin) await admin.storage.from(AVATARS_BUCKET).remove([prev]).catch(() => {});
   revalidatePath("/", "layout");
+  return { ok: true as const };
+}
+
+/** Change the signed-in person's own password (needs a live session). */
+export async function changeMyPassword(password: string, confirm: string) {
+  if (!isAuthConfigured) return { ok: false as const, error: "Sign-in isn't configured here." };
+  const u = await getCurrentUser();
+  if (!u) throw new Error("Not authorized");
+  if (password.length < 8) return { ok: false as const, error: "Use at least 8 characters." };
+  if (password !== confirm) return { ok: false as const, error: "The two passwords don't match." };
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
 }
