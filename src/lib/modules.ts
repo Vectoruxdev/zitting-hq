@@ -48,7 +48,8 @@ export const MODULES: HqModule[] = [
   { slug: "chores", name: "Chores", description: "Per-kid checklists and the weekly chart.", icon: "square-check", tint: "butter", group: "Family", status: "active", href: "/chores" },
   { slug: "finance", name: "Finance", description: "Accounts, spending, budgets, and where the money goes.", icon: "wallet", tint: "sky", group: "Money", status: "active", primary: true, href: "/finance" },
   { slug: "people", name: "People", description: "Who's in the family and what each person can see.", icon: "users", tint: "lilac", group: "Home", status: "active", roles: ["owner"], href: "/people" },
-  { slug: "nest", name: "Cameras", description: "Nest cameras trigger the Govee lights — person, motion, doorbell.", icon: "video", tint: "lilac", group: "Home", status: "active", roles: ["owner"], href: "/nest" },
+  // Cameras: built, switched off 2026-09-09 (Jared) — flip `hidden` to bring it back.
+  { slug: "nest", name: "Cameras", description: "Nest cameras trigger the Govee lights — person, motion, doorbell.", icon: "video", tint: "lilac", group: "Home", status: "active", roles: ["owner"], hidden: true, href: "/nest" },
 ];
 
 export const ACTIVE_MODULES = MODULES.filter((m) => m.status === "active");

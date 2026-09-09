@@ -3,6 +3,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getNestData } from "@/db/nest";
 import { NestClient } from "./nest-client";
 
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function NestPage() {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/nest");
+  await guardModule(user, "nest");
   const ctx = await frameContext(user);
 
   // Owner-only module: members see a friendly closed door, not the controls.

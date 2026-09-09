@@ -11,6 +11,8 @@ import * as m from "@/db/mutations";
 import { upsertProfile } from "@/db/profiles";
 import { listHouseholdAccounts, setAccountAccess, setModuleAccess, type AccountAccess } from "@/db/permissions";
 import { SWITCHABLE_MODULES } from "@/lib/module-access";
+import { sendPasswordResetEmail } from "@/lib/password-reset";
+import { listMembersAdmin } from "@/db/permissions";
 
 async function ensureOwner() {
   if (!isAuthConfigured) return { memberId: null as string | null };
@@ -75,4 +77,14 @@ export async function setAccountAccessAction(accountId: string, memberId: string
   await setAccountAccess(accountId, memberId, access);
   refresh();
   return { ok: true as const };
+}
+
+/** Email a password-reset link to one person (owner). Returns the link too when email isn't set up. */
+export async function sendPasswordResetAction(memberId: string) {
+  await ensureOwner();
+  const m = (await listMembersAdmin()).find((x) => x.id === memberId);
+  if (!m) return { ok: false as const, sent: false, link: null, error: "Not found" };
+  if (!m.email) return { ok: false as const, sent: false, link: null, error: "No email on file for this person." };
+  const r = await sendPasswordResetEmail(m.email, { name: m.name });
+  return { ok: r.ok, sent: r.sent, link: r.link, error: r.error };
 }
