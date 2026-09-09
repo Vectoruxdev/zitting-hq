@@ -70,10 +70,10 @@ export function pickQuoteOfDay<T>(items: T[], dateISO: string): T | null {
 }
 
 export async function quoteOfTheDay(viewer: Viewer, dateISO: string): Promise<Quote | null> {
+  // One pick a day from everything the viewer may see — the family's own words
+  // and the seeded scripture and prophets alike (Jared, 2026-09-09).
   const all = await listQuotes(viewer);
-  // Prefer the family's own words over the seeded classics once they exist.
-  const own = all.filter((q) => q.source !== "seed");
-  return pickQuoteOfDay(own.length ? own : all, dateISO);
+  return pickQuoteOfDay([...all].sort((a, b) => a.id - b.id), dateISO);
 }
 
 /** Pre-auth login page: only the curated subset flagged show_on_login. */

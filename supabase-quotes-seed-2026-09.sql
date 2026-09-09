@@ -1,0 +1,61 @@
+-- Zitting HQ — quotes seed, 2026-09-09 (Jared): the New Testament on Christ (KJV)
+-- and words from Joseph Smith, Brigham Young, John Taylor, Heber C. Kimball and
+-- Wilford Woodruff, several on the principle of plural marriage. Home's quote of
+-- the day draws from these and the family's own. show_on_login = true only for
+-- the ones fit for the pre-auth login page. Idempotent by text.
+INSERT INTO quotes (text, said_by_name, visibility, show_on_login, source)
+SELECT v.text, v.who, 'family', v.login, 'seed'
+FROM (VALUES
+  ('For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.', 'John 3:16', true),
+  ('Jesus saith unto him, I am the way, the truth, and the life: no man cometh unto the Father, but by me.', 'John 14:6', true),
+  ('Jesus said unto her, I am the resurrection, and the life: he that believeth in me, though he were dead, yet shall he live.', 'John 11:25', true),
+  ('Come unto me, all ye that labour and are heavy laden, and I will give you rest.', 'Matthew 11:28', true),
+  ('Take my yoke upon you, and learn of me; for I am meek and lowly in heart: and ye shall find rest unto your souls. For my yoke is easy, and my burden is light.', 'Matthew 11:29–30', true),
+  ('I am the light of the world: he that followeth me shall not walk in darkness, but shall have the light of life.', 'John 8:12', true),
+  ('Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you. Let not your heart be troubled, neither let it be afraid.', 'John 14:27', true),
+  ('Let your light so shine before men, that they may see your good works, and glorify your Father which is in heaven.', 'Matthew 5:16', true),
+  ('A new commandment I give unto you, That ye love one another; as I have loved you, that ye also love one another.', 'John 13:34', true),
+  ('I can do all things through Christ which strengtheneth me.', 'Philippians 4:13', true),
+  ('But seek ye first the kingdom of God, and his righteousness; and all these things shall be added unto you.', 'Matthew 6:33', true),
+  ('I am the vine, ye are the branches: He that abideth in me, and I in him, the same bringeth forth much fruit: for without me ye can do nothing.', 'John 15:5', true),
+  ('For unto you is born this day in the city of David a Saviour, which is Christ the Lord.', 'Luke 2:11', true),
+  ('Teaching them to observe all things whatsoever I have commanded you: and, lo, I am with you alway, even unto the end of the world. Amen.', 'Matthew 28:20', true),
+  ('I am the good shepherd: the good shepherd giveth his life for the sheep.', 'John 10:11', true),
+  ('Jesus Christ the same yesterday, and to day, and for ever.', 'Hebrews 13:8', true),
+  ('We love him, because he first loved us.', '1 John 4:19', true),
+  ('These things I have spoken unto you, that in me ye might have peace. In the world ye shall have tribulation: but be of good cheer; I have overcome the world.', 'John 16:33', true),
+  ('Behold, I stand at the door, and knock: if any man hear my voice, and open the door, I will come in to him, and will sup with him, and he with me.', 'Revelation 3:20', true),
+  ('Thou shalt love the Lord thy God with all thy heart, and with all thy soul, and with all thy mind. This is the first and great commandment. And the second is like unto it, Thou shalt love thy neighbour as thyself.', 'Matthew 22:37–39', true),
+  ('For where two or three are gathered together in my name, there am I in the midst of them.', 'Matthew 18:20', true),
+  ('But Jesus beheld them, and said unto them, With men this is impossible; but with God all things are possible.', 'Matthew 19:26', true),
+  ('Casting all your care upon him; for he careth for you.', '1 Peter 5:7', true),
+  ('In my Father''s house are many mansions: if it were not so, I would have told you. I go to prepare a place for you.', 'John 14:2', true),
+  ('For by grace are ye saved through faith; and that not of yourselves: it is the gift of God.', 'Ephesians 2:8', true),
+  ('And Jesus said unto them, I am the bread of life: he that cometh to me shall never hunger; and he that believeth on me shall never thirst.', 'John 6:35', true),
+  ('Ask, and it shall be given you; seek, and ye shall find; knock, and it shall be opened unto you.', 'Matthew 7:7', true),
+  ('Greater love hath no man than this, that a man lay down his life for his friends.', 'John 15:13', true),
+  ('Be not afraid, only believe.', 'Mark 5:36', true),
+  ('And he said unto them, Go ye into all the world, and preach the gospel to every creature.', 'Mark 16:15', true),
+  ('Happiness is the object and design of our existence; and will be the end thereof, if we pursue the path that leads to it; and this path is virtue, uprightness, faithfulness, holiness, and keeping all the commandments of God.', 'Joseph Smith · Teachings of the Prophet Joseph Smith, 255', true),
+  ('A man filled with the love of God, is not content with blessing his family alone, but ranges through the whole world, anxious to bless the whole human race.', 'Joseph Smith · Teachings of the Prophet Joseph Smith, 174', true),
+  ('Friendship is one of the grand fundamental principles of “Mormonism”; it is designed to revolutionize and civilize the world, and cause wars and contentions to cease and men to become friends and brothers.', 'Joseph Smith · Teachings of the Prophet Joseph Smith, 316', true),
+  ('The Standard of Truth has been erected; no unhallowed hand can stop the work from progressing; persecutions may rage, mobs may combine, armies may assemble, calumny may defame, but the truth of God will go forth boldly, nobly, and independent, till it has penetrated every continent, visited every clime, swept every country, and sounded in every ear, till the purposes of God shall be accomplished, and the Great Jehovah shall say the work is done.', 'Joseph Smith · Wentworth Letter, 1842', true),
+  ('In the celestial glory there are three heavens or degrees; and in order to obtain the highest, a man must enter into this order of the priesthood [meaning the new and everlasting covenant of marriage]; and if he does not, he cannot obtain it. He may enter into the other, but that is the end of his kingdom; he cannot have an increase.', 'Joseph Smith · Doctrine and Covenants 131:1–4, May 1843', true),
+  ('For behold, I reveal unto you a new and an everlasting covenant; and if ye abide not that covenant, then are ye damned; for no one can reject this covenant and be permitted to enter into my glory.', 'Joseph Smith · Doctrine and Covenants 132:4', true),
+  ('Then shall they be gods, because they have no end; therefore shall they be from everlasting to everlasting, because they continue; then shall they be above all, because all things are subject unto them. Then shall they be gods, because they have all power, and the angels are subject unto them.', 'Joseph Smith · Doctrine and Covenants 132:20', true),
+  ('This is eternal lives—to know the only wise and true God, and Jesus Christ, whom he hath sent. I am he. Receive ye, therefore, my law.', 'Joseph Smith · Doctrine and Covenants 132:24', true),
+  ('And again, as pertaining to the law of the priesthood—if any man espouse a virgin, and desire to espouse another, and the first give her consent, and if he espouse the second, and they are virgins, and have vowed to no other man, then is he justified; he cannot commit adultery for they are given unto him; for he cannot commit adultery with that that belongeth unto him and to none else.', 'Joseph Smith · Doctrine and Covenants 132:61', false),
+  ('And if he have ten virgins given unto him by this law, he cannot commit adultery, for they belong to him, and they are given unto him; therefore is he justified.', 'Joseph Smith · Doctrine and Covenants 132:62', false),
+  ('The only men who become Gods, even the Sons of God, are those who enter into polygamy. Others attain unto a glory and may even be permitted to come into the presence of the Father and the Son; but they cannot reign as kings in glory, because they had blessings offered unto them, and they refused to accept them.', 'Brigham Young · Journal of Discourses 11:269, August 19, 1866', false),
+  ('Now if any of you will deny the plurality of wives, and continue to do so, I promise that you will be damned; and I will go still further and say, take this revelation, or any other revelation that the Lord has given, and deny it in your feelings, and I promise that you will be damned.', 'Brigham Young · Journal of Discourses 3:266, July 14, 1855', false),
+  ('Every accomplishment, every polished grace, every useful attainment in mathematics, music, and in all science and art belong to the Saints, and they should avail themselves as expeditiously as possible of the wealth of knowledge the sciences offer to every diligent and persevering scholar.', 'Brigham Young · Journal of Discourses 10:224, 1863', true),
+  ('We, as a people, are determined to be free; for with us it is—“The kingdom of God or nothing.”', 'John Taylor · Journal of Discourses 6:18–27, November 1, 1857', true),
+  ('He has revealed unto us the Law of Celestial Marriage, associated with which is the principle of plural marriage.', 'John Taylor · Journal of Discourses 24:229, 1883', false),
+  ('My son John, you have asked me concerning the New and Everlasting Covenant how far it is binding upon my people. All commandments that I give must be obeyed by those calling themselves by my name unless they are revoked by me or by my authority.', 'Revelation to John Taylor, September 27, 1886', false),
+  ('I have not revoked this law, nor will I, for it is everlasting, and those who will enter into my glory must obey the conditions thereof; even so, Amen.', 'Revelation to John Taylor, September 27, 1886', false),
+  ('I have noticed that a man who has but one wife, and is inclined to that doctrine, soon begins to wither and dry up, while a man who goes into plurality looks fresh, young, and sprightly.', 'Heber C. Kimball · Journal of Discourses 5:22, 1857', false),
+  ('The time will come when no man nor woman will be able to endure on borrowed light. Each will have to be guided by the light within himself.', 'Heber C. Kimball · 1868, in Orson F. Whitney, Life of Heber C. Kimball, 449–50', true),
+  ('If we were to do away with polygamy, it would only be one feather in the bird, one ordinance in the Church and kingdom. Do away with that, then we must do away with prophets and Apostles, with revelation and the gifts and graces of the Gospel, and finally give up our religion altogether and turn sectarians and do as the world does, then all would be right. We just can’t do that, for God has commanded us to build up His kingdom and to bear our testimony to the nations of the earth, and we are going to do it, come life or come death.', 'Wilford Woodruff · Journal of Discourses 13:166, December 12, 1869', false),
+  ('Wo unto that Nation or house or people who seek to hinder my People from obeying the Patriarchal Law of Abraham which leadeth to a Celestial Glory.', 'Wilford Woodruff · Revelation, January 1880', false)
+) AS v(text, who, login)
+WHERE NOT EXISTS (SELECT 1 FROM quotes q WHERE q.text = v.text);

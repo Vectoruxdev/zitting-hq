@@ -28,7 +28,7 @@ function Inner({ quotes, people, viewer }: { quotes: Quote[]; people: Pick<Perso
   const [busy, setBusy] = React.useState(false);
   const personOf = (id: string | null) => people.find((p) => p.id === id);
   const shown = quotes
-    .filter((x) => tab === "all" || (tab === "favorites" ? x.favorite : x.saidByMemberId === tab))
+    .filter((x) => tab === "all" || (tab === "favorites" ? x.favorite : tab === "words" ? x.source === "seed" : tab === "family" ? x.source !== "seed" : x.saidByMemberId === tab))
     .filter((x) => !q || x.text.toLowerCase().includes(q.toLowerCase()) || (x.saidByName || "").toLowerCase().includes(q.toLowerCase()));
   const speakers = Array.from(new Set(quotes.map((x) => x.saidByMemberId).filter(Boolean))) as string[];
   const save = async () => {
@@ -49,7 +49,7 @@ function Inner({ quotes, people, viewer }: { quotes: Quote[]; people: Pick<Perso
       {quotes.length ? (
         <Reveal index={1}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <Tabs size="sm" items={[{ key: "all", label: "All", count: quotes.length }, { key: "favorites", label: "Favorites", icon: "heart", count: quotes.filter((x) => x.favorite).length || undefined }, ...speakers.map((id) => ({ key: id, label: personOf(id)?.greetingName || "Someone" }))]} value={tab} onChange={setTab} style={{ flex: "1 1 320px" }} />
+            <Tabs size="sm" items={[{ key: "all", label: "All", count: quotes.length }, { key: "family", label: "Family", count: quotes.filter((x) => x.source !== "seed").length || undefined }, { key: "words", label: "Scripture & prophets", icon: "book-open", count: quotes.filter((x) => x.source === "seed").length || undefined }, { key: "favorites", label: "Favorites", icon: "heart", count: quotes.filter((x) => x.favorite).length || undefined }, ...speakers.map((id) => ({ key: id, label: personOf(id)?.greetingName || "Someone" }))]} value={tab} onChange={setTab} style={{ flex: "1 1 320px" }} />
             <SearchField size="sm" placeholder="Search quotes" value={q} onChange={setQ} style={{ flex: "0 1 260px" }} />
           </div>
         </Reveal>
