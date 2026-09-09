@@ -1231,3 +1231,10 @@ export const choreCompletions = pgTable("chore_completions", {
   checkedBy: text("checked_by").references(() => familyMembers.id, { onDelete: "set null" }),
   checkedAt: timestamp("checked_at", { withTimezone: true }),
 }, (t) => [uniqueIndex("chore_completions_chore_id_day_key").on(t.choreId, t.day), index("idx_chore_completions_day").on(t.day)]);
+
+/** Per-person saved quotes — "I liked this one, keep it where I can find it." */
+export const quoteSaves = pgTable("quote_saves", {
+  quoteId: integer("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [primaryKey({ columns: [t.quoteId, t.memberId] }), index("idx_quote_saves_member").on(t.memberId, t.createdAt)]);

@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
-import { addQuote, deleteQuote, getQuote, updateQuote } from "@/db/quotes";
+import { addQuote, deleteQuote, getQuote, updateQuote, listQuotes, setQuoteSaved } from "@/db/quotes";
 
 async function who() {
   if (!isAuthConfigured) return { memberId: null as string | null, role: "owner" as const };
@@ -34,6 +34,17 @@ export async function createQuote(input: { text: string; saidByMemberId?: string
   const id = await addQuote({ text, saidByMemberId: input.saidByMemberId || null, saidByName: input.saidByName || null, saidOn: input.saidOn && /^\d{4}-\d{2}-\d{2}$/.test(input.saidOn) ? input.saidOn : null, addedBy: u.memberId, visibility, sharedWith: input.sharedWith });
   revalidatePath("/quotes"); revalidatePath("/");
   return { ok: true as const, id };
+}
+
+/** Save a quote to your own list (or take it out). Read access is checked by the same rule as everywhere: you can only save what you can see. */
+export async function toggleSaved(id: number, saved: boolean) {
+  const u = await who();
+  if (!u.memberId) return { ok: true as const, saved: false }; // preview / unlinked login: nothing to save to
+  const visible = (await listQuotes({ memberId: u.memberId, role: u.role })).some((q) => q.id === id);
+  if (!visible) throw new Error("Not found");
+  await setQuoteSaved(id, u.memberId, saved);
+  revalidatePath("/quotes"); revalidatePath("/");
+  return { ok: true as const, saved };
 }
 
 export async function toggleFavorite(id: number, favorite: boolean) {
