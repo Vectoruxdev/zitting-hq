@@ -13,8 +13,8 @@ export interface CurrentUser {
   name: string;
   role: Role;
   memberId: string | null; // the family_members row id linked by email, if any
-  /** Set while the owner is looking at the app as another person (reads only). */
-  viewingAs?: { id: string; name: string; role: Role } | null;
+  /** Set while the owner is looking at the app as another person (reads only). `ownerMemberId` is the real owner's roster id. */
+  viewingAs?: { id: string; name: string; role: Role; ownerMemberId: string | null } | null;
 }
 
 export const VIEW_AS_COOKIE = "zhq-view-as";
@@ -97,7 +97,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
         const [m] = await db.select({ id: familyMembers.id, name: familyMembers.name, role: familyMembers.role }).from(familyMembers).where(eq(familyMembers.id, target)).limit(1);
         if (m && m.id !== memberId) {
           const asRole = (["owner", "partner", "member"].includes(m.role) ? m.role : "member") as Role;
-          return { email, name: m.name, role: asRole, memberId: m.id, viewingAs: { id: m.id, name: m.name, role: asRole } };
+          return { email, name: m.name, role: asRole, memberId: m.id, viewingAs: { id: m.id, name: m.name, role: asRole, ownerMemberId: memberId } };
         }
       }
     } catch {

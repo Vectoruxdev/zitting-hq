@@ -1,6 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { VIEW_AS_COOKIE } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type SignInState = { error?: string };
@@ -29,12 +31,19 @@ export async function signIn(
     return { error: "Wrong email or password." };
   }
 
+  await clearViewAs();
   redirect(redirectTo.startsWith("/") ? redirectTo : "/");
+}
+
+/** Drop the owner's "view as" cookie — a new session always starts as yourself. */
+async function clearViewAs() {
+  try { (await cookies()).set(VIEW_AS_COOKIE, "", { path: "/", maxAge: 0, httpOnly: true, sameSite: "lax", secure: true }); } catch { /* not in a mutable cookie context */ }
 }
 
 export async function signOut() {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
+  await clearViewAs();
   redirect("/login");
 }
 
