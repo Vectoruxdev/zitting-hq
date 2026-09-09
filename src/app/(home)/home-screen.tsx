@@ -8,8 +8,9 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Avatar, Badge, Button, EmptyState, Icon, IconButton, ImageCard, ModuleTile, Money, PhotoHero, ProgressBar, Reveal, Row, Section, Skeleton, Stagger,
+  Avatar, Badge, Button, Celebrate, Checkbox, EmptyState, Icon, IconButton, ImageCard, ModuleTile, Money, PhotoHero, ProgressBar, Reveal, Row, Section, Skeleton, Stagger,
 } from "@/ui";
+import { completeChoreAction, uncompleteChoreAction } from "@/app/chores/actions";
 import { modulesFor } from "@/lib/modules";
 import type { HomeData } from "@/db/home";
 
@@ -113,13 +114,14 @@ function AttentionSection({ data }: { data: HomeData }) {
   const router = useRouter();
   const items = [
     ...(data.pendingSwaps ? [{ key: "swaps", label: `${data.pendingSwaps} dinner swap${data.pendingSwaps === 1 ? "" : "s"} waiting for your answer`, href: "/meals", tone: "accent" as const }] : []),
+    ...(data.viewer.kind === "adult" && data.chores.toCheck ? [{ key: "chores", label: `${data.chores.toCheck} chore${data.chores.toCheck === 1 ? "" : "s"} to check`, href: "/chores", tone: "warn" as const }] : []),
     ...data.dashboard.needsAttention,
   ];
   if (!items.length) return <Section title="Needs attention"><Row icon="circle-check" tint="mint" title="All clear" meta="Nothing needs you right now." /></Section>;
   return (
     <Section title="Needs attention" action={<Badge tone="accent">{items.length}</Badge>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {items.map((it) => <Row key={it.key} tone="soft" tint={it.tone === "warn" ? "butter" : "coral"} icon={it.key === "swaps" ? "chef-hat" : it.href.startsWith("/finance") ? "receipt" : "shopping-cart"} title={it.label} onClick={() => router.push(it.href)} style={{ margin: 0, boxSizing: "border-box", padding: "8px 12px" }} />)}
+        {items.map((it) => <Row key={it.key} tone="soft" tint={it.tone === "warn" ? "butter" : "coral"} icon={it.key === "swaps" ? "chef-hat" : it.key === "chores" ? "square-check" : it.href.startsWith("/finance") ? "receipt" : "shopping-cart"} title={it.label} onClick={() => router.push(it.href)} style={{ margin: 0, boxSizing: "border-box", padding: "8px 12px" }} />)}
       </div>
     </Section>
   );
@@ -199,7 +201,38 @@ function GoalsSection({ data }: { data: HomeData }) {
   return (
     <Section title="Family goals" onAction={() => router.push("/goals")}>
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {data.goals.map((g) => <ProgressBar key={g.id} label={g.title} value={g.value} current={g.money ? g.current : undefined} target={g.money ? g.target : undefined} showPercent={!g.money} tone={g.money ? "accent" : "info"} size="sm" />)}
+        {data.goals.map((g) => <button key={g.id} type="button" onClick={() => router.push(`/goals/${g.id}`)} style={{ display: "block", width: "100%", textAlign: "left", padding: 0, border: 0, background: "transparent", cursor: "pointer", font: "inherit", color: "inherit" }}><ProgressBar label={g.progressKind === "streak" && g.streak > 1 ? `${g.title} · ${g.streak}-day streak` : g.title} value={g.value} current={g.money ? g.current : g.progressKind === "count" || g.progressKind === "streak" ? `${g.current}` : undefined} target={g.money ? g.target : g.progressKind === "count" || g.progressKind === "streak" ? `${g.target ?? "?"}${g.progressKind === "streak" ? " days" : g.unit ? ` ${g.unit}` : ""}` : undefined} showPercent={g.progressKind === "checkoff"} tone={g.money ? "accent" : "info"} size="sm" /></button>)}
+      </div>
+    </Section>
+  );
+}
+
+/** Adults: each kid's day at a glance. A child: their own list with big check-offs. */
+function ChoresSection({ data }: { data: HomeData }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [fire, setFire] = React.useState(0);
+  const kid = data.viewer.kind === "child";
+  const mine = data.chores.people.find((p) => p.memberId === data.viewer.memberId);
+  if (kid) {
+    if (!mine) return <Section title="Your chores"><Row icon="sun" tint="butter" title="Nothing today" meta="No chores on your list." /></Section>;
+    const left = mine.items.filter((i) => !i.done).length;
+    return (
+      <Section title="Your chores" action={<Badge tone={left ? "neutral" : "positive"} icon={left ? undefined : "circle-check"}>{mine.done}/{mine.total}</Badge>} onAction={() => router.push("/chores")}>
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 2 }}>
+          <Celebrate fire={fire} />
+          {mine.items.map((it) => <Row key={it.choreId} leading={<Checkbox checked={it.done} size="lg" disabled={busy === it.choreId} onChange={async (v) => { setBusy(it.choreId); await (v ? completeChoreAction(it.choreId, data.todayISO, data.viewer.memberId) : uncompleteChoreAction(it.choreId, data.todayISO)); setBusy(null); if (v && left === 1) setFire((f) => f + 1); router.refresh(); }} style={{ minHeight: 0, padding: 0 }} />} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: it.done ? "line-through" : "none", opacity: it.done ? 0.65 : 1 }}><Icon name={it.icon ?? "square-check"} size={18} color="var(--text-secondary)" />{it.title}</span>} trailing={it.needsCheck && it.done ? <Badge tone={it.checked ? "positive" : "warning"} size="sm">{it.checked ? "Checked" : "Waiting"}</Badge> : undefined} chevron={false} style={{ minHeight: 56 }} />)}
+          {!left ? <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 0", font: "var(--type-body-sm)", color: "var(--positive)" }}><Icon name="party-popper" size={18} />All done for today</div> : null}
+        </div>
+      </Section>
+    );
+  }
+  const kids = data.chores.people.filter((p) => data.people.find((x) => x.id === p.memberId)?.kind === "child");
+  if (!kids.length) return null;
+  return (
+    <Section title="Chores today" onAction={() => router.push("/chores")}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {kids.map((k) => { const who = data.people.find((x) => x.id === k.memberId); const all = k.done === k.total; return <Row key={k.memberId} avatar={who ? { name: who.name, src: who.avatarUrl, person: who.hue } : undefined} title={who?.greetingName ?? "Someone"} meta={`${k.done} of ${k.total} done · ${k.points} pt${k.points === 1 ? "" : "s"}${k.streak > 1 ? ` · ${k.streak}-day streak` : ""}`} trailing={all ? <Badge tone="positive" icon="circle-check">Done</Badge> : <Badge tone="neutral">{k.total - k.done} left</Badge>} onClick={() => router.push("/chores")} />; })}
       </div>
     </Section>
   );
@@ -241,15 +274,27 @@ export function HomeScreen({ data }: { data: HomeData }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const narrow = useNarrow(ref);
   const isMember = data.viewer.role === "member";
+  const kid = data.viewer.kind === "child";
   const hidden = new Set<string>([]);
   return (
     <div ref={ref} style={{ width: "100%", maxWidth: "var(--content-max)", margin: "0 auto", padding: `${narrow ? 4 : 16}px ${narrow ? "var(--page-gutter-mobile)" : "var(--page-gutter-desktop)"} 48px` }}>
-      {narrow ? (
+      {kid ? (
+        <Stack gap={32}>
+          <Stack gap={20}><Greeting data={data} /><FamilyRow data={data} /></Stack>
+          <ChoresSection data={data} />
+          <TodaySection data={data} />
+          <GoalsSection data={data} />
+          <PhotoOfDay data={data} narrow={narrow} />
+          <QuoteBlock data={data} />
+          <RecentPhotos data={data} />
+        </Stack>
+      ) : narrow ? (
         <Stack gap={32}>
           <Stack gap={20}><Greeting data={data} /><FamilyRow data={data} /></Stack>
           <PhotoOfDay data={data} narrow />
           <TodaySection data={data} />
           <AttentionSection data={data} />
+          <ChoresSection data={data} />
           {isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}
           <QuoteBlock data={data} />
           <RecentPhotos data={data} />
@@ -264,7 +309,7 @@ export function HomeScreen({ data }: { data: HomeData }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 400px), 1fr))", gap: "40px 56px", alignItems: "start" }}>
             <Stack start={2}><PhotoOfDay data={data} narrow={false} /><TodaySection data={data} /><QuoteBlock data={data} /><RecentPhotos data={data} /></Stack>
-            <Stack start={3}><AttentionSection data={data} />{isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}<GoalsSection data={data} /><Launcher data={data} /></Stack>
+            <Stack start={3}><AttentionSection data={data} /><ChoresSection data={data} />{isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}<GoalsSection data={data} /><Launcher data={data} /></Stack>
           </div>
         </Stack>
       )}

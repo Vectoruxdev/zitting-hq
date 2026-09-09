@@ -34,15 +34,15 @@ export interface HqModule {
 
 export const MODULES: HqModule[] = [
   { slug: "home", name: "Home", description: "Today, the family, and what needs you.", icon: "house", tint: "coral", group: "Family", status: "active", primary: true, href: "/" },
-  { slug: "photos", name: "Photos", description: "The family library — moments, albums, people.", icon: "image", tint: "rose", group: "Family", status: "planned", primary: true, href: "/photos" },
+  { slug: "photos", name: "Photos", description: "The family library — moments, albums, people.", icon: "image", tint: "rose", group: "Family", status: "active", primary: true, href: "/photos" },
   { slug: "meals", name: "Meals", description: "Whose night it is, what's for dinner, and the recipe box.", icon: "utensils", tint: "butter", group: "Family", status: "active", primary: true, href: "/meals" },
   { slug: "groceries", name: "Groceries", short: "List", description: "The shared list, plus the pantry and what's running low.", icon: "shopping-cart", tint: "mint", group: "Family", status: "active", href: "/groceries" },
   { slug: "calendar", name: "Calendar", short: "Cal", description: "The family schedule in one place.", icon: "calendar", tint: "sky", group: "Family", status: "active", href: "/calendar" },
-  { slug: "appointments", name: "Appointments", short: "Appts", description: "Doctor, dentist, school — who it's for and who's driving.", icon: "stethoscope", tint: "lilac", group: "Family", status: "planned", href: "/appointments" },
-  { slug: "quotes", name: "Quotes", description: "The funny and tender things people say.", icon: "quote", tint: "rose", group: "Family", status: "planned", href: "/quotes" },
-  { slug: "goals", name: "Goals", description: "Family and personal goals, with progress.", icon: "target", tint: "mint", group: "Family", status: "planned", href: "/goals" },
-  { slug: "trips", name: "Trips", description: "Itineraries, documents, packing lists.", icon: "plane", tint: "sky", group: "Family", status: "planned", href: "/trips" },
-  { slug: "chores", name: "Chores", description: "Per-kid checklists and the weekly chart.", icon: "square-check", tint: "butter", group: "Family", status: "planned", href: "/chores" },
+  { slug: "appointments", name: "Appointments", short: "Appts", description: "Doctor, dentist, school — who it's for and who's driving.", icon: "stethoscope", tint: "lilac", group: "Family", status: "active", href: "/appointments" },
+  { slug: "quotes", name: "Quotes", description: "The funny and tender things people say.", icon: "quote", tint: "rose", group: "Family", status: "active", href: "/quotes" },
+  { slug: "goals", name: "Goals", description: "Family and personal goals, with progress.", icon: "target", tint: "mint", group: "Family", status: "active", href: "/goals" },
+  { slug: "trips", name: "Trips", description: "Itineraries, documents, packing lists.", icon: "plane", tint: "sky", group: "Family", status: "active", href: "/trips" },
+  { slug: "chores", name: "Chores", description: "Per-kid checklists and the weekly chart.", icon: "square-check", tint: "butter", group: "Family", status: "active", href: "/chores" },
   { slug: "finance", name: "Finance", description: "Accounts, spending, budgets, and where the money goes.", icon: "wallet", tint: "sky", group: "Money", status: "active", primary: true, href: "/finance" },
   { slug: "nest", name: "Cameras", description: "Nest cameras trigger the Govee lights — person, motion, doorbell.", icon: "video", tint: "lilac", group: "Home", status: "active", roles: ["owner"], href: "/nest" },
 ];

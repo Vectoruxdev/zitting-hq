@@ -13,6 +13,8 @@ import { getNights, listSwaps } from "./kitchen";
 import { photoOfTheDay, recentPhotos } from "./photos";
 import { getCalendar, type CalItem } from "./calendar";
 import { addDaysISO } from "./household";
+import { homeGoals } from "./goals";
+import { choreStreak, dayFor, listChores, listCompletions, type Chore, type Completion } from "./chores";
 import type { Viewer } from "./queries";
 
 export interface HomeData {
@@ -26,7 +28,9 @@ export interface HomeData {
   quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn"> | null;
   photoOfDay: { id?: string; src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
   recentPhotos: { id: string | number; src: string }[];
-  goals: { id: string; title: string; value: number; current?: number; target?: number; money: boolean; people: number[] }[];
+  goals: { id: string; title: string; value: number; current?: number; target?: number; unit?: string | null; money: boolean; people: number[]; progressKind: "checkoff" | "count" | "streak" | "savings"; doneToday: boolean; streak: number; mine: boolean }[];
+  /** Chores today per person (kids first), and how many finished chores are waiting for an adult's check. */
+  chores: { people: { memberId: string; items: { choreId: string; title: string; icon: string | null; done: boolean; needsCheck: boolean; checked: boolean }[]; done: number; total: number; points: number; possible: number; streak: number }[]; toCheck: number };
   unread: number;
   /** Tonight's cook and dish duty (Phase 2). */
   tonight: { cook: string | null; dish: string[]; note: string | null } | null;
@@ -55,6 +59,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     listSwaps("pending").catch(() => []),
   ]);
   const av = { memberId: viewer.memberId, role: viewer.role };
+  const [goals, chores, completions] = await Promise.all([homeGoals(av, todayISO).catch(() => []), listChores().catch(() => [] as Chore[]), listCompletions(addDaysISO(todayISO, -60), todayISO).catch(() => [] as Completion[])]);
   const [pod, recent, cal] = await Promise.all([photoOfTheDay(av, todayISO).catch(() => null), recentPhotos(av, 6).catch(() => []), getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }).catch(() => ({ items: [] as CalItem[], feeds: [], configured: false }))]);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
@@ -68,7 +73,15 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn } : null,
     photoOfDay: pod && pod.src ? { id: pod.id, src: pod.src, title: pod.caption, by: people.find((x) => x.id === pod.uploadedBy)?.greetingName ?? null, album: null, count: 0 } : null,
     recentPhotos: recent.filter((x) => x.thumb || x.src).map((x) => ({ id: x.id, src: (x.thumb || x.src) as string })),
-    goals: [],
+    goals: goals.map((g) => ({ id: g.id, title: g.title, value: g.progress.value, current: g.progress.current, target: g.progress.target ?? undefined, unit: g.progress.unit, money: g.progress.money, people: g.participants.map((id) => people.find((p) => p.id === id)?.hue ?? 1), progressKind: g.progressKind, doneToday: g.progress.doneToday, streak: g.progress.streak, mine: !!viewer.memberId && g.participants.includes(viewer.memberId) })),
+    chores: (() => {
+      const ordered = [...people].sort((a, b) => Number(a.kind === "adult") - Number(b.kind === "adult"));
+      const days = dayFor(chores, completions, ordered.map((p) => p.id), todayISO).filter((d) => d.due.length);
+      return {
+        people: days.map((d) => ({ memberId: d.memberId as string, items: d.due.map((c) => { const done = d.done.find((x) => x.choreId === c.id); return { choreId: c.id, title: c.title, icon: c.icon, done: !!done, needsCheck: c.needsCheck, checked: !!done?.checkedAt }; }), done: d.done.length, total: d.due.length, points: d.points, possible: d.possible, streak: choreStreak(chores, completions, d.memberId as string, todayISO) })),
+        toCheck: days.reduce((a, d) => a + d.waitingCheck, 0),
+      };
+    })(),
     unread,
     tonight: tonightPlan ? { cook: tonightPlan.cook, dish: tonightPlan.dish, note: tonightPlan.note } : null,
     pendingSwaps: swaps.filter((sw) => sw.toMemberId === viewer.memberId).length,

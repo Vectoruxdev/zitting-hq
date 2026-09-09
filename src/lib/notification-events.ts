@@ -13,6 +13,7 @@ export const MEMBER_NOTIFICATION_EVENTS: NotificationEvent[] = [
   { key: "shared_with_you", label: "Shared with you", body: "A photo, quote, goal or trip was shared with you.", module: "family" },
   { key: "grocery_request", label: "Grocery requests", body: "Someone asked you to grab something.", module: "groceries" },
   { key: "goal_completed", label: "Goals reached", body: "A family or personal goal is finished.", module: "goals" },
+  { key: "chore_check", label: "Chores to check", body: "A kid finished a chore that needs an adult's okay.", module: "chores" },
 ];
 
 export interface MemberPref { event: string; inApp: boolean; push: boolean; email: boolean }

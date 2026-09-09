@@ -1152,3 +1152,68 @@ export const tripPacking = pgTable("trip_packing", {
   checked: boolean("checked").notNull().default(false),
   sort: integer("sort").notNull().default(0),
 });
+
+// ── Phase 5: goals & chores ─────────────────────────────────────────────────
+/** Family and personal goals; savings goals link to the finance module's savings_goals. */
+export const goals = pgTable("goals", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  kind: text("kind").notNull().default("family"), // family | personal
+  progressKind: text("progress_kind").notNull().default("checkoff"), // checkoff | count | streak | savings
+  target: numeric("target", { precision: 14, scale: 2 }),
+  unit: text("unit"),
+  savingsGoalId: text("savings_goal_id").references(() => savingsGoals.id, { onDelete: "set null" }),
+  coverPhotoId: text("cover_photo_id").references(() => photos.id, { onDelete: "set null" }),
+  dueOn: date("due_on"),
+  hue: integer("hue"),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  visibility: text("visibility").notNull().default("family"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedBy: text("completed_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const goalParticipants = pgTable("goal_participants", {
+  goalId: text("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.goalId, t.memberId] })]);
+
+export const goalCheckins = pgTable("goal_checkins", {
+  id: serial("id").primaryKey(),
+  goalId: text("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
+  memberId: text("member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  day: date("day").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull().default("1"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("idx_goal_checkins_goal").on(t.goalId, t.day)]);
+
+/** A recurring chore: who, which weekdays (digits, Sunday = 0), when in the day, points, whether an adult checks it. */
+export const chores = pgTable("chores", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  icon: text("icon"),
+  assigneeMemberId: text("assignee_member_id").references(() => familyMembers.id, { onDelete: "set null" }), // null = anyone
+  days: text("days").notNull().default("0123456"),
+  timeOfDay: text("time_of_day").notNull().default("any"), // morning | afternoon | evening | any
+  points: integer("points").notNull().default(1),
+  needsCheck: boolean("needs_check").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const choreCompletions = pgTable("chore_completions", {
+  id: serial("id").primaryKey(),
+  choreId: text("chore_id").notNull().references(() => chores.id, { onDelete: "cascade" }),
+  memberId: text("member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  day: date("day").notNull(),
+  doneAt: timestamp("done_at", { withTimezone: true }).defaultNow(),
+  checkedBy: text("checked_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  checkedAt: timestamp("checked_at", { withTimezone: true }),
+}, (t) => [uniqueIndex("chore_completions_chore_id_day_key").on(t.choreId, t.day), index("idx_chore_completions_day").on(t.day)]);
