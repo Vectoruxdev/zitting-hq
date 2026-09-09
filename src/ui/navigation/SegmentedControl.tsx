@@ -11,6 +11,7 @@ export interface SegmentedControlProps {
   onChange?: (key: string) => void;
   size?: "sm" | "md";
   style?: React.CSSProperties;
+  className?: string;
 }
 
 function Seg({ item, active, onSelect, size }: { item: SegmentItem; active: boolean; onSelect: (k: string) => void; size: "sm" | "md" }) {
@@ -26,7 +27,7 @@ function Seg({ item, active, onSelect, size }: { item: SegmentItem; active: bool
 }
 
 /** Pill segmented control with a sliding thumb. Only for 2–4 exclusive views that all DO something. */
-export function SegmentedControl({ items = [], value, defaultValue, onChange, size = "md", style }: SegmentedControlProps) {
+export function SegmentedControl({ items = [], value, defaultValue, onChange, size = "md", style, className }: SegmentedControlProps) {
   const [inner, setInner] = React.useState(defaultValue ?? items[0]?.key);
   const active = value ?? inner;
   const ref = React.useRef<HTMLDivElement>(null);
@@ -37,7 +38,7 @@ export function SegmentedControl({ items = [], value, defaultValue, onChange, si
   }, [active, items.length]);
   const select = (k: string) => { setInner(k); onChange?.(k); };
   return (
-    <div ref={ref} role="radiogroup" style={{ position: "relative", display: "inline-flex", padding: 3, gap: 2, borderRadius: "var(--radius-pill)", background: "var(--surface-sunken)", ...style }}>
+    <div ref={ref} role="radiogroup" className={className} style={{ position: "relative", display: "inline-flex", padding: 3, gap: 2, borderRadius: "var(--radius-pill)", background: "var(--surface-sunken)", ...style }}>
       <span aria-hidden style={{ position: "absolute", top: 3, bottom: 3, left: th.left, width: th.width, borderRadius: "var(--radius-pill)", background: "var(--surface-raised)", boxShadow: "var(--shadow-1)", transition: "left var(--dur-base) var(--ease-out), width var(--dur-base) var(--ease-out)" }} />
       {items.map((it) => <Seg key={it.key} item={it} active={it.key === active} onSelect={select} size={size} />)}
     </div>

@@ -17,7 +17,7 @@ const FinanceApp = dynamic(() => import("./FinanceApp"), {
         placeItems: "center",
         background: "var(--bg-app)",
         color: "var(--text-tertiary)",
-        fontFamily: "var(--font-sans)",
+        fontFamily: "var(--font-ui)",
         fontSize: 13,
         letterSpacing: "0.02em",
       }}
@@ -31,14 +31,16 @@ export default function FinanceClient({
   data,
   role = "owner",
   name,
+  embedded = false,
 }: {
   data?: unknown;
   role?: "owner" | "partner" | "member";
   name?: string;
+  embedded?: boolean;
 }) {
   return (
-    <div style={{ height: "100vh", overflow: "hidden", background: "var(--bg-app)" }}>
-      <FinanceApp data={data} role={role} name={name} />
+    <div style={{ height: embedded ? "100%" : "100vh", overflow: "hidden", background: "var(--bg-app)" }}>
+      <FinanceApp data={data} role={role} name={name} embedded={embedded} />
     </div>
   );
 }

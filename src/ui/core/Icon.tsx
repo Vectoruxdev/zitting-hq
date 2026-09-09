@@ -4,9 +4,10 @@
  * SVGs from a CDN at runtime; production uses lucide-react with the same names.
  * Explicit named imports keep the bundle tree-shaken (no namespace import).
  *
- * GENERATED from the guide's ICONS list — add a glyph to ICONS below AND to the
- * import/map, then use it. An unknown name renders an empty box and warns in dev
- * (the old system rendered nothing silently).
+ * GENERATED from the guide's ICONS list (+ an `extra` group this app adds) —
+ * add a glyph to ICONS below AND to the import/map, then use it. An unknown
+ * name renders an empty box and warns in dev (the old system rendered nothing
+ * silently).
  */
 import * as React from "react";
 import type { LucideIcon } from "lucide-react";
@@ -104,6 +105,78 @@ import {
   Lightbulb as I_lightbulb,
   MoonStar as I_moon_star,
   Timer as I_timer,
+  ChartPie as I_chart_pie,
+  Link as I_link,
+  DollarSign as I_dollar_sign,
+  ArrowDown as I_arrow_down,
+  ArrowUp as I_arrow_up,
+  LayoutDashboard as I_layout_dashboard,
+  ChevronsLeft as I_chevrons_left,
+  ChevronsRight as I_chevrons_right,
+  Paperclip as I_paperclip,
+  NotebookPen as I_notebook_pen,
+  UtensilsCrossed as I_utensils_crossed,
+  ShoppingBasket as I_shopping_basket,
+  Gift as I_gift,
+  Baby as I_baby,
+  School as I_school,
+  Bed as I_bed,
+  SunMedium as I_sun_medium,
+  KeyRound as I_key_round,
+  Mail as I_mail,
+  Phone as I_phone,
+  Send as I_send,
+  LogIn as I_log_in,
+  UserPlus as I_user_plus,
+  ShieldCheck as I_shield_check,
+  CalendarCheck as I_calendar_check,
+  CalendarPlus as I_calendar_plus,
+  ImagePlus as I_image_plus,
+  Folder as I_folder,
+  FileText as I_file_text,
+  Printer as I_printer,
+  QrCode as I_qr_code,
+  ScanLine as I_scan_line,
+  WandSparkles as I_wand_sparkles,
+  Star as I_star,
+  ThumbsUp as I_thumbs_up,
+  Smile as I_smile,
+  Bookmark as I_bookmark,
+  ClipboardList as I_clipboard_list,
+  ListChecks as I_list_checks,
+  CircleDot as I_circle_dot,
+  Circle as I_circle,
+  Square as I_square,
+  SquarePen as I_square_pen,
+  Pin as I_pin,
+  Map as I_map,
+  Route as I_route,
+  Luggage as I_luggage,
+  Ticket as I_ticket,
+  Hotel as I_hotel,
+  Navigation as I_navigation,
+  Wifi as I_wifi,
+  Bluetooth as I_bluetooth,
+  Battery as I_battery,
+  Refrigerator as I_refrigerator,
+  CookingPot as I_cooking_pot,
+  Carrot as I_carrot,
+  Apple as I_apple,
+  Egg as I_egg,
+  Milk as I_milk,
+  Wheat as I_wheat,
+  Fish as I_fish,
+  Beef as I_beef,
+  Salad as I_salad,
+  Soup as I_soup,
+  Sandwich as I_sandwich,
+  Pizza as I_pizza,
+  Cake as I_cake,
+  Coffee as I_coffee,
+  CupSoda as I_cup_soda,
+  IceCreamCone as I_ice_cream_cone,
+  Candy as I_candy,
+  Popcorn as I_popcorn,
 } from "lucide-react";
 
 const MAP: Record<string, LucideIcon> = {
@@ -200,6 +273,78 @@ const MAP: Record<string, LucideIcon> = {
   "lightbulb": I_lightbulb,
   "moon-star": I_moon_star,
   "timer": I_timer,
+  "chart-pie": I_chart_pie,
+  "link": I_link,
+  "dollar-sign": I_dollar_sign,
+  "arrow-down": I_arrow_down,
+  "arrow-up": I_arrow_up,
+  "layout-dashboard": I_layout_dashboard,
+  "chevrons-left": I_chevrons_left,
+  "chevrons-right": I_chevrons_right,
+  "paperclip": I_paperclip,
+  "notebook-pen": I_notebook_pen,
+  "utensils-crossed": I_utensils_crossed,
+  "shopping-basket": I_shopping_basket,
+  "gift": I_gift,
+  "baby": I_baby,
+  "school": I_school,
+  "bed": I_bed,
+  "sun-medium": I_sun_medium,
+  "key-round": I_key_round,
+  "mail": I_mail,
+  "phone": I_phone,
+  "send": I_send,
+  "log-in": I_log_in,
+  "user-plus": I_user_plus,
+  "shield-check": I_shield_check,
+  "calendar-check": I_calendar_check,
+  "calendar-plus": I_calendar_plus,
+  "image-plus": I_image_plus,
+  "folder": I_folder,
+  "file-text": I_file_text,
+  "printer": I_printer,
+  "qr-code": I_qr_code,
+  "scan-line": I_scan_line,
+  "wand-sparkles": I_wand_sparkles,
+  "star": I_star,
+  "thumbs-up": I_thumbs_up,
+  "smile": I_smile,
+  "bookmark": I_bookmark,
+  "clipboard-list": I_clipboard_list,
+  "list-checks": I_list_checks,
+  "circle-dot": I_circle_dot,
+  "circle": I_circle,
+  "square": I_square,
+  "square-pen": I_square_pen,
+  "pin": I_pin,
+  "map": I_map,
+  "route": I_route,
+  "luggage": I_luggage,
+  "ticket": I_ticket,
+  "hotel": I_hotel,
+  "navigation": I_navigation,
+  "wifi": I_wifi,
+  "bluetooth": I_bluetooth,
+  "battery": I_battery,
+  "refrigerator": I_refrigerator,
+  "cooking-pot": I_cooking_pot,
+  "carrot": I_carrot,
+  "apple": I_apple,
+  "egg": I_egg,
+  "milk": I_milk,
+  "wheat": I_wheat,
+  "fish": I_fish,
+  "beef": I_beef,
+  "salad": I_salad,
+  "soup": I_soup,
+  "sandwich": I_sandwich,
+  "pizza": I_pizza,
+  "cake": I_cake,
+  "coffee": I_coffee,
+  "cup-soda": I_cup_soda,
+  "ice-cream-cone": I_ice_cream_cone,
+  "candy": I_candy,
+  "popcorn": I_popcorn,
 };
 
 /** Every glyph the product uses, by Lucide name, grouped as in the guide. */
@@ -210,6 +355,7 @@ export const ICONS: Record<string, string[]> = {
   status: ["circle-alert", "triangle-alert", "info", "circle-check", "clock", "lock", "eye", "eye-off", "loader-circle", "party-popper", "flag"],
   life: ["map-pin", "car", "sun", "moon", "book-open", "leaf", "dumbbell", "plane", "message-circle", "image-off", "camera-off"],
   cameras: ["video", "bell-ring", "person-standing", "activity", "volume-2", "lightbulb", "moon-star", "timer"],
+  extra: ["chart-pie", "link", "dollar-sign", "arrow-down", "arrow-up", "layout-dashboard", "chevrons-left", "chevrons-right", "paperclip", "notebook-pen", "utensils-crossed", "shopping-basket", "gift", "baby", "school", "bed", "sun-medium", "key-round", "mail", "phone", "send", "log-in", "user-plus", "shield-check", "calendar-check", "calendar-plus", "image-plus", "folder", "file-text", "printer", "qr-code", "scan-line", "wand-sparkles", "star", "thumbs-up", "smile", "bookmark", "clipboard-list", "list-checks", "circle-dot", "circle", "square", "square-pen", "pin", "map", "route", "luggage", "ticket", "hotel", "navigation", "wifi", "bluetooth", "battery", "refrigerator", "cooking-pot", "carrot", "apple", "egg", "milk", "wheat", "fish", "beef", "salad", "soup", "sandwich", "pizza", "cake", "coffee", "cup-soda", "ice-cream-cone", "candy", "popcorn"],
 };
 
 export type IconName = keyof typeof MAP | (string & {});
@@ -219,15 +365,16 @@ export interface IconProps {
   size?: number;
   color?: string;
   label?: string;
+  className?: string;
   style?: React.CSSProperties;
 }
 
-export function Icon({ name, size = 20, color = "currentColor", label, style }: IconProps) {
+export function Icon({ name, size = 20, color = "currentColor", label, className, style }: IconProps) {
   const Cmp = MAP[name as string];
   const base: React.CSSProperties = { display: "inline-block", flex: "none", verticalAlign: "middle", ...style };
   if (!Cmp) {
     if (process.env.NODE_ENV !== "production") console.warn(`[zh-ui] unknown icon "${String(name)}"`);
-    return <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" style={base} />;
+    return <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" className={className} style={base} />;
   }
   return (
     <Cmp
@@ -237,6 +384,7 @@ export function Icon({ name, size = 20, color = "currentColor", label, style }: 
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
+      className={className}
       style={base}
     />
   );

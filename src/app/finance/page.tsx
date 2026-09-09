@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import FinanceClient from "@/finance/FinanceClient";
+import { AppFrame } from "@/components/app-frame";
+import { frameUser } from "@/lib/frame-user";
 import { getFinanceData } from "@/db/queries";
 import { touchMemberLastSeen } from "@/db/mutations";
 import { getCurrentUser } from "@/lib/auth";
@@ -38,5 +40,14 @@ export default async function FinancePage({
     role: user?.role ?? "owner",
     previewMemberId: as ?? null,
   });
-  return <FinanceClient data={data} role={user?.role ?? "owner"} name={user?.name} />;
+  const role = user?.role ?? "owner";
+  // Members get the self-contained Spendable canvas (its own header, tabs and
+  // camera) until Phase 6 ports it into the frame; owners get finance inside
+  // the app frame with the sections as a sub-nav.
+  const bare = role === "member" || !!as;
+  return (
+    <AppFrame user={frameUser(user)} bare={bare}>
+      <FinanceClient data={data} role={role} name={user?.name} embedded={!bare} />
+    </AppFrame>
+  );
 }

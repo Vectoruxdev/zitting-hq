@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { SiteHeader } from "@/components/site-header";
+import { AppFrame } from "@/components/app-frame";
+import { frameUser } from "@/lib/frame-user";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getNestData } from "@/db/nest";
@@ -15,8 +16,8 @@ export default async function NestPage() {
   // Owner-only module: members see a friendly closed door, not the controls.
   if (isAuthConfigured && user && user.role !== "owner") {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-        <SiteHeader />
+      <AppFrame user={frameUser(user)}>
+    <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
         <main style={{ flex: 1, padding: "clamp(20px, 4vw, 40px) 18px 56px" }}>
           <div
             style={{
@@ -31,23 +32,25 @@ export default async function NestPage() {
               color: "var(--text-secondary)",
             }}
           >
-            📷 The camera controls are owner-only for now.
+            The camera controls are owner-only for now.
           </div>
         </main>
       </div>
+      </AppFrame>
     );
   }
 
   const data = await getNestData();
 
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <SiteHeader />
+    <AppFrame user={frameUser(user)}>
+    <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <main style={{ flex: 1, padding: "clamp(20px, 4vw, 40px) 18px 56px" }}>
         <div style={{ maxWidth: 860, margin: "0 auto" }}>
           <NestClient data={JSON.parse(JSON.stringify(data))} />
         </div>
       </main>
     </div>
+    </AppFrame>
   );
 }

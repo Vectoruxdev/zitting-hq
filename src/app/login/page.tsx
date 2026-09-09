@@ -1,5 +1,6 @@
 import { LoginForm } from "./login-form";
 import { MODULES } from "@/lib/modules";
+import { Icon } from "@/ui";
 
 export const metadata = { title: "Sign in · Zitting HQ" };
 
@@ -11,22 +12,22 @@ export const metadata = { title: "Sign in · Zitting HQ" };
 
 const HOW_IT_WORKS = [
   {
-    icon: "🏦",
+    icon: "landmark",
     title: "Banks sync themselves",
     body: "Accounts and transactions flow in automatically, read-only. Balances reconcile to the bank on every sync — no spreadsheets, no manual entry.",
   },
   {
-    icon: "🧠",
+    icon: "sparkles",
     title: "It learns how you categorize",
     body: "Every fix teaches it. Bulk 'tidy up' clears a month in minutes, and the review queue keeps everyone honest about where money went.",
   },
   {
-    icon: "📬",
+    icon: "arrow-left-right",
     title: "Money gets where it should",
     body: "Paychecks trigger an allocation checklist — tithing, bills, savings, allowances. Nothing moves without you; the app just watches the bank and checks things off when the real transfer lands.",
   },
   {
-    icon: "👨‍👩‍👧‍👦",
+    icon: "users",
     title: "Everyone gets their own view",
     body: "Kids see their accounts, their spending money, and their goals — and nothing else. Reviewing transactions unlocks the monthly allowance.",
   },
@@ -130,7 +131,7 @@ export default async function LoginPage({
                 minWidth: 0,
               }}
             >
-              <span style={{ fontSize: 22 }} aria-hidden>{f.icon}</span>
+              <Icon name={f.icon} size={22} color="var(--accent)" />
               <h2 style={{ margin: "10px 0 6px", fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>{f.title}</h2>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>{f.body}</p>
             </div>
@@ -153,7 +154,7 @@ export default async function LoginPage({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 22 }} aria-hidden>{m.icon}</span>
+                  <Icon name={m.icon} size={22} color="var(--accent)" />
                   <span className="zt-eyebrow" style={{ border: "1px solid var(--border-hairline)", borderRadius: 999, padding: "3px 9px" }}>Soon</span>
                 </div>
                 <h3 style={{ margin: "12px 0 4px", fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>{m.name}</h3>

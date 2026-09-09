@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { SiteHeader } from "@/components/site-header";
+import { AppFrame } from "@/components/app-frame";
+import { frameUser } from "@/lib/frame-user";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getCalendarConfig, addDaysISO, localISO } from "@/db/household";
@@ -69,8 +70,8 @@ export default async function CalendarPage() {
   }
 
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <SiteHeader />
+    <AppFrame user={frameUser(user)}>
+    <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <main style={{ flex: 1, padding: "clamp(20px, 4vw, 40px) 18px 56px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto" }}>
           <CalendarClient
@@ -84,5 +85,6 @@ export default async function CalendarPage() {
         </div>
       </main>
     </div>
+    </AppFrame>
   );
 }

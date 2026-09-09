@@ -120,10 +120,13 @@ export default function FinanceApp({
   data,
   role = "owner",
   name,
+  embedded = false,
 }: {
   data?: any;
   role?: "owner" | "partner" | "member";
   name?: string;
+  /** Rendered inside the app frame (AppShell supplies primary navigation). */
+  embedded?: boolean;
 }) {
   // Make the finance data available to the window-global screens before they
   // render. Falls back to the curated mock when no server data was supplied.
@@ -423,7 +426,7 @@ export default function FinanceApp({
   return (
     <>
       {splash}
-      <ShellC active={route} onNavigate={navigate} title={r.title} loading={refreshing} onLogout={() => signOut()}>
+      <ShellC active={route} onNavigate={navigate} title={r.title} loading={refreshing} onLogout={() => signOut()} embedded={embedded}>
         <div key={`${route}:${dataVersion}`} className="zt-enter">
           <ErrorBoundary key={route} label={route} onReset={() => setDataVersion((v) => v + 1)}>
             {r.render(navigate)}

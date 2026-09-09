@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { SiteHeader } from "@/components/site-header";
+import { AppFrame } from "@/components/app-frame";
+import { frameUser } from "@/lib/frame-user";
+import { Icon } from "@/ui";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getDashboardData, familyHour, familyDateLabel } from "@/db/dashboard";
@@ -39,7 +41,7 @@ function Bar({ value, max }: { value: number; max: number }) {
 function CardHead({ icon, label, hint }: { icon: string; label: string; hint: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
-      <span aria-hidden style={{ fontSize: 15, lineHeight: 1 }}>{icon}</span>
+      <Icon name={icon} size={16} color="var(--text-tertiary)" />
       <span className="zt-eyebrow">{label}</span>
       <span style={{ flex: 1 }} />
       {hint ? <span className="hq-card-open" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{hint} →</span> : null}
@@ -50,10 +52,10 @@ function CardHead({ icon, label, hint }: { icon: string; label: string; hint: st
 // Quick-action shortcuts — the common "add something" jumps. Universal for
 // every role; /finance lands on the member camera/receipt flow for members.
 const QUICK_ACTIONS = [
-  { icon: "📸", label: "Snap receipt", href: "/finance" },
-  { icon: "🛒", label: "Add to list", href: "/groceries" },
-  { icon: "🍽️", label: "Plan dinner", href: "/meals" },
-  { icon: "📅", label: "Add event", href: "/calendar" },
+  { icon: "receipt", label: "Snap receipt", href: "/finance" },
+  { icon: "shopping-cart", label: "Add to list", href: "/groceries" },
+  { icon: "utensils", label: "Plan dinner", href: "/meals" },
+  { icon: "calendar-plus", label: "Add event", href: "/calendar" },
 ];
 
 const DayChip = ({ chip }: { chip: string }) => (
@@ -97,8 +99,8 @@ export default async function Home() {
   const isMember = role === "member";
 
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <SiteHeader />
+    <AppFrame user={frameUser(user)}>
+    <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <main style={{ flex: 1, padding: "clamp(22px, 4vw, 44px) 18px 64px" }}>
         <div style={{ maxWidth: 1060, margin: "0 auto" }}>
           {/* greeting */}
@@ -114,7 +116,7 @@ export default async function Home() {
           <div className="zhq-hscroll" style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, marginBottom: 16 }}>
             {QUICK_ACTIONS.map((a) => (
               <Link key={a.href + a.label} href={a.href} className="hq-quick" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 9, padding: "11px 16px", borderRadius: "var(--radius-pill, 999px)", border: "1px solid var(--border-hairline)", background: "var(--surface-card)", color: "var(--text-primary)", fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", textDecoration: "none" }}>
-                <span aria-hidden style={{ fontSize: 17 }}>{a.icon}</span>
+                <Icon name={a.icon} size={18} color="var(--accent)" />
                 {a.label}
               </Link>
             ))}
@@ -124,7 +126,7 @@ export default async function Home() {
           <div className="hq-grid" style={{ marginBottom: 16 }}>
             {/* Today */}
             <div className="hq-card hq-static" style={{ ...cardStyle(3) }}>
-              <CardHead icon="🗓️" label="Today" hint="" />
+              <CardHead icon="calendar" label="Today" hint="" />
               {d.today.events.length || d.today.dinner ? (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {d.today.events.map((ev, i) => (
@@ -137,7 +139,7 @@ export default async function Home() {
                   {d.today.dinner ? (
                     <div style={{ display: "flex", alignItems: "baseline", gap: 9, padding: "7px 0" }}>
                       <span className="zt-num" style={{ flex: "none", width: 58, fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)" }}>Dinner</span>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)" }}>{d.today.dinner.emoji ? `${d.today.dinner.emoji} ` : ""}{d.today.dinner.name}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)" }}>{d.today.dinner.name}</span>
                     </div>
                   ) : null}
                 </div>
@@ -150,7 +152,7 @@ export default async function Home() {
 
             {/* Needs attention */}
             <div className="hq-card hq-static" style={{ ...cardStyle(3) }}>
-              <CardHead icon="✅" label="Needs attention" hint="" />
+              <CardHead icon="circle-check" label="Needs attention" hint="" />
               {d.needsAttention.length ? (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {d.needsAttention.map((it, i) => (
@@ -163,7 +165,7 @@ export default async function Home() {
                 </div>
               ) : (
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: "var(--accent)" }}>
-                  ✓ All caught up — nothing needs you right now.
+                  All caught up — nothing needs you right now.
                 </div>
               )}
             </div>
@@ -175,7 +177,7 @@ export default async function Home() {
               {/* soft glow behind the headline number */}
               <div aria-hidden style={{ position: "absolute", top: -90, left: -60, width: 340, height: 250, background: "radial-gradient(closest-side, rgba(63,208,127,0.13), transparent)", pointerEvents: "none" }} />
               <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
-                <CardHead icon="💰" label={isMember ? "My money" : "Finance"} hint={isMember ? "Open my money" : "Open finance"} />
+                <CardHead icon="wallet" label={isMember ? "My money" : "Finance"} hint={isMember ? "Open my money" : "Open finance"} />
                 {isMember ? (
                   <>
                     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -198,7 +200,7 @@ export default async function Home() {
                       {f.memberToReview ? (
                         <span style={pill("warn")}>{f.memberToReview} purchase{f.memberToReview === 1 ? "" : "s"} to review</span>
                       ) : (
-                        <span style={pill("good")}>✓ All caught up</span>
+                        <span style={pill("good")}>All caught up</span>
                       )}
                       {f.remainingLabel && f.memberUnlocked === false ? (
                         <span style={pill("warn")}>Allowance locked — finish reviewing</span>
@@ -235,7 +237,7 @@ export default async function Home() {
                         <span style={pill("good")}>{f.transfersPending} transfer{f.transfersPending === 1 ? "" : "s"} ready · {f.transfersPendingTotal}</span>
                       ) : null}
                       {f.toReview ? <span style={pill("warn")}>{f.toReview} to review</span> : null}
-                      {!f.transfersPending && !f.toReview ? <span style={pill("good")}>✓ Reviewed &amp; routed</span> : null}
+                      {!f.transfersPending && !f.toReview ? <span style={pill("good")}>Reviewed and routed</span> : null}
                     </div>
                   </>
                 )}
@@ -244,7 +246,7 @@ export default async function Home() {
 
             {/* ============ CALENDAR ============ */}
             <Link href="/calendar" className="hq-card" style={cardStyle(2)}>
-              <CardHead icon="📅" label="This week" hint="Calendar" />
+              <CardHead icon="calendar" label="This week" hint="Calendar" />
               {d.calendar.events.length ? (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {d.calendar.events.map((ev, i) => (
@@ -265,10 +267,10 @@ export default async function Home() {
 
             {/* ============ DINNER ============ */}
             <Link href="/meals" className="hq-card" style={cardStyle(3)}>
-              <CardHead icon="🍽️" label="Dinner" hint="Plan meals" />
+              <CardHead icon="utensils" label="Dinner" hint="Plan meals" />
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <span aria-hidden style={{ flex: "none", width: 52, height: 52, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 14, background: "var(--surface-sunken, rgba(255,255,255,0.05))", fontSize: 26 }}>
-                  {d.meals.tonight?.emoji || "🍽️"}
+                  <Icon name="utensils" size={24} color="var(--hue-butter)" />
                 </span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 3 }}>Tonight</div>
@@ -283,7 +285,7 @@ export default async function Home() {
                   {d.meals.upcoming.map((m, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 9, padding: "7px 0", borderTop: "1px solid var(--border-hairline)" }}>
                       <DayChip chip={m.chip} />
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.emoji ? `${m.emoji} ` : ""}{m.name}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
                     </div>
                   ))}
                 </div>
@@ -293,10 +295,10 @@ export default async function Home() {
             {/* ============ CAMERAS (owner only) ============ */}
             {role === "owner" ? (
               <Link href="/nest" className="hq-card" style={cardStyle(3)}>
-                <CardHead icon="📷" label="Cameras" hint="Open cameras" />
+                <CardHead icon="video" label="Cameras" hint="Open cameras" />
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                   <span aria-hidden style={{ flex: "none", width: 52, height: 52, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 14, background: "var(--surface-sunken, rgba(255,255,255,0.05))", fontSize: 26 }}>
-                    💡
+                    <Icon name="lightbulb" size={24} color="var(--hue-lilac)" />
                   </span>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>Nest → Govee</div>
@@ -310,7 +312,7 @@ export default async function Home() {
 
             {/* ============ GROCERIES ============ */}
             <Link href="/groceries" className="hq-card" style={cardStyle(3)}>
-              <CardHead icon="🛒" label="Groceries" hint="Open list" />
+              <CardHead icon="shopping-cart" label="Groceries" hint="Open list" />
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <span className="zt-num" style={{ flex: "none", width: 52, height: 52, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 14, background: "var(--surface-sunken, rgba(255,255,255,0.05))", fontSize: 23, fontWeight: 700, color: d.groceries.listCount ? "var(--accent)" : "var(--text-tertiary)" }}>
                   {d.groceries.listCount}
@@ -331,5 +333,6 @@ export default async function Home() {
         </div>
       </main>
     </div>
+    </AppFrame>
   );
 }
