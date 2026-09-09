@@ -15,7 +15,7 @@ import { completeChoreAction, uncompleteChoreAction } from "@/app/(app)/chores/a
 import { toggleSaved } from "@/app/(app)/quotes/actions";
 import { viewAsAction } from "@/app/actions/view-as";
 import { modulesFor } from "@/lib/modules";
-import type { HomeData } from "@/db/home";
+import type { HomeCore, HomeData, HomeSlow } from "@/db/home";
 import { HOME_PLACE } from "@/lib/weather";
 
 const T = { sec: { font: "var(--type-body-sm)", color: "var(--text-secondary)" } as React.CSSProperties, cap: { font: "var(--type-caption)", color: "var(--text-tertiary)" } as React.CSSProperties };
@@ -31,7 +31,7 @@ function useNarrow(ref: React.RefObject<HTMLElement | null>) {
   return narrow;
 }
 
-function Greeting({ data }: { data: HomeData }) {
+function Greeting({ data }: { data: HomeCore }) {
   const part = data.daypart === "late" ? "Up late" : data.daypart === "morning" ? "Good morning" : data.daypart === "afternoon" ? "Good afternoon" : "Good evening";
   const words = data.daypart === "late" ? ["Up", "late,", data.greetingName + "."] : [part.split(" ")[0], part.split(" ")[1] + ",", data.greetingName + "."];
   return (
@@ -49,7 +49,7 @@ function Greeting({ data }: { data: HomeData }) {
  * tap anyone to see the app as they see it, tap yourself to come back — it
  * keeps working as a switcher while you're viewing as someone else.
  */
-function FamilyRow({ data }: { data: HomeData }) {
+function FamilyRow({ data }: { data: HomeCore }) {
   const router = useRouter();
   const v = data.viewer;
   const viewingAs = v.actingOwner && v.realMemberId !== v.memberId;
@@ -85,7 +85,7 @@ function FamilyRow({ data }: { data: HomeData }) {
 }
 
 /** The hero: the family's photo of the day when the library is on; otherwise today's scenic picture of the country around home with the weather over it. */
-function SceneHero({ data, narrow }: { data: HomeData; narrow: boolean }) {
+function SceneHero({ data, narrow }: { data: HomeCore; narrow: boolean }) {
   const router = useRouter();
   const pod = data.photosEnabled ? data.photoOfDay : null;
   const ratio = narrow ? "var(--ratio-hero-mobile)" : "var(--ratio-hero)";
@@ -112,7 +112,7 @@ function SceneHero({ data, narrow }: { data: HomeData; narrow: boolean }) {
 }
 
 /** The next three days, as a quiet row under the hero. */
-function WeatherStrip({ data }: { data: HomeData }) {
+function WeatherStrip({ data }: { data: HomeCore }) {
   const w = data.weather;
   if (!w || !w.days.length) return null;
   const dayName = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
@@ -236,7 +236,7 @@ function SpendableSection({ data }: { data: HomeData }) {
   );
 }
 
-function QuoteBlock({ data }: { data: HomeData }) {
+function QuoteBlock({ data }: { data: HomeCore }) {
   const router = useRouter();
   const q = data.quote;
   const [saved, setSaved] = React.useState(q?.saved ?? false);
@@ -310,7 +310,7 @@ function ChoresSection({ data }: { data: HomeData }) {
   );
 }
 
-function RecentPhotos({ data }: { data: HomeData }) {
+function RecentPhotos({ data }: { data: HomeCore }) {
   const router = useRouter();
   return (
     <Section title="Recent photos" onAction={() => router.push("/photos")} actionLabel="All photos">
@@ -342,7 +342,26 @@ const Stack = ({ children, gap = "var(--section-gap)", start = 0, style }: { chi
   <Stagger gap={gap} start={start} style={style}>{children}</Stagger>
 );
 
-export function HomeScreen({ data }: { data: HomeData }) {
+/** Renders a slow-data section once its data has streamed in; `use()` suspends until then. */
+function WithSlow({ data, slow, render }: { data: HomeCore; slow: Promise<HomeSlow> | HomeSlow; render: (full: HomeData) => React.ReactNode }) {
+  const s = slow instanceof Promise ? React.use(slow) : slow;
+  return <>{render({ ...data, ...s })}</>;
+}
+function SectionSkeleton({ rows = 2 }: { rows?: number }) {
+  return (
+    <div aria-busy="true" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <Skeleton variant="title" width="40%" />
+      <Skeleton variant="rect" height={rows * 44} style={{ borderRadius: "var(--radius-md)" }} />
+    </div>
+  );
+}
+function Slow({ data, slow, render }: { data: HomeCore; slow: Promise<HomeSlow> | HomeSlow; render: (full: HomeData) => React.ReactNode }) {
+  return <React.Suspense fallback={<SectionSkeleton />}><WithSlow data={data} slow={slow} render={render} /></React.Suspense>;
+}
+
+export function HomeScreen({ data, slow: slowProp }: { data: HomeCore; slow?: Promise<HomeSlow> | HomeSlow }) {
+  // Previews and tests hand over the whole HomeData at once; the page streams the slow half.
+  const slow: Promise<HomeSlow> | HomeSlow = slowProp ?? (data as HomeData);
   const ref = React.useRef<HTMLDivElement>(null);
   const narrow = useNarrow(ref);
   const isMember = data.viewer.role === "member";
@@ -353,9 +372,9 @@ export function HomeScreen({ data }: { data: HomeData }) {
       {kid ? (
         <Stack gap={32}>
           <Stack gap={20}><Greeting data={data} /><FamilyRow data={data} /></Stack>
-          <ChoresSection data={data} />
-          <TodaySection data={data} />
-          <GoalsSection data={data} />
+          <Slow data={data} slow={slow} render={(d) => <ChoresSection data={d} />} />
+          <Slow data={data} slow={slow} render={(d) => <TodaySection data={d} />} />
+          <Slow data={data} slow={slow} render={(d) => <GoalsSection data={d} />} />
           <div><SceneHero data={data} narrow={narrow} /><WeatherStrip data={data} /></div>
           <QuoteBlock data={data} />
           {data.photosEnabled ? <RecentPhotos data={data} /> : null}
@@ -364,14 +383,14 @@ export function HomeScreen({ data }: { data: HomeData }) {
         <Stack gap={32}>
           <Stack gap={20}><Greeting data={data} /><FamilyRow data={data} /></Stack>
           <div><SceneHero data={data} narrow /><WeatherStrip data={data} /></div>
-          <TodaySection data={data} />
-          <AttentionSection data={data} />
-          <ChoresSection data={data} />
-          {isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}
+          <Slow data={data} slow={slow} render={(d) => <TodaySection data={d} />} />
+          <Slow data={data} slow={slow} render={(d) => <AttentionSection data={d} />} />
+          <Slow data={data} slow={slow} render={(d) => <ChoresSection data={d} />} />
+          {isMember ? <Slow data={data} slow={slow} render={(d) => <SpendableSection data={d} />} /> : <Slow data={data} slow={slow} render={(d) => <MoneySection data={d} />} />}
           <QuoteBlock data={data} />
           {data.photosEnabled ? <RecentPhotos data={data} /> : null}
-          <GoalsSection data={data} />
-          <Launcher data={data} />
+          <Slow data={data} slow={slow} render={(d) => <GoalsSection data={d} />} />
+          <Slow data={data} slow={slow} render={(d) => <Launcher data={d} />} />
         </Stack>
       ) : (
         <Stack gap={40}>
@@ -380,8 +399,8 @@ export function HomeScreen({ data }: { data: HomeData }) {
             <FamilyRow data={data} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 400px), 1fr))", gap: "40px 56px", alignItems: "start" }}>
-            <Stack start={2}><div><SceneHero data={data} narrow={false} /><WeatherStrip data={data} /></div><TodaySection data={data} /><QuoteBlock data={data} />{data.photosEnabled ? <RecentPhotos data={data} /> : null}</Stack>
-            <Stack start={3}><AttentionSection data={data} /><ChoresSection data={data} />{isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}<GoalsSection data={data} /><Launcher data={data} /></Stack>
+            <Stack start={2}><div><SceneHero data={data} narrow={false} /><WeatherStrip data={data} /></div><Slow data={data} slow={slow} render={(d) => <TodaySection data={d} />} /><QuoteBlock data={data} />{data.photosEnabled ? <RecentPhotos data={data} /> : null}</Stack>
+            <Stack start={3}><Slow data={data} slow={slow} render={(d) => <AttentionSection data={d} />} /><Slow data={data} slow={slow} render={(d) => <ChoresSection data={d} />} />{isMember ? <Slow data={data} slow={slow} render={(d) => <SpendableSection data={d} />} /> : <Slow data={data} slow={slow} render={(d) => <MoneySection data={d} />} />}<Slow data={data} slow={slow} render={(d) => <GoalsSection data={d} />} /><Slow data={data} slow={slow} render={(d) => <Launcher data={d} />} /></Stack>
           </div>
         </Stack>
       )}
