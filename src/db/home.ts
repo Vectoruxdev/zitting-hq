@@ -22,7 +22,8 @@ import { scenicForDay, type Scenic } from "@/lib/scenic";
 import type { Viewer } from "./queries";
 import { resetDb } from "@/db";
 
-export interface HomeData {
+/** What Home needs to paint its top half: greeting, family row, hero, weather, quote. Read first, sent at once. */
+export interface HomeCore {
   todayISO: string;
   dateLabel: string;
   /** morning | afternoon | evening | late */
@@ -45,18 +46,24 @@ export interface HomeData {
   scenic: Scenic;
   /** Weather at home (Colorado City, AZ); null when the forecast couldn't be fetched. */
   weather: Weather | null;
-  goals: { id: string; title: string; value: number; current?: number; target?: number; unit?: string | null; money: boolean; people: number[]; progressKind: "checkoff" | "count" | "streak" | "savings"; doneToday: boolean; streak: number; mine: boolean }[];
-  /** Chores today per person (kids first), and how many finished chores are waiting for an adult's check. */
-  chores: { people: { memberId: string; items: { choreId: string; title: string; icon: string | null; done: boolean; needsCheck: boolean; checked: boolean }[]; done: number; total: number; points: number; possible: number; streak: number }[]; toCheck: number };
   unread: number;
   /** Tonight's cook and dish duty (Phase 2). */
   tonight: { cook: string | null; dish: string[]; note: string | null } | null;
   /** Swap requests waiting on this viewer. */
   pendingSwaps: number;
+}
+
+/** The sections that take longer (money, calendar, chores, goals) — streamed in behind their skeletons. */
+export interface HomeSlow {
+  goals: { id: string; title: string; value: number; current?: number; target?: number; unit?: string | null; money: boolean; people: number[]; progressKind: "checkoff" | "count" | "streak" | "savings"; doneToday: boolean; streak: number; mine: boolean }[];
+  /** Chores today per person (kids first), and how many finished chores are waiting for an adult's check. */
+  chores: { people: { memberId: string; items: { choreId: string; title: string; icon: string | null; done: boolean; needsCheck: boolean; checked: boolean }[]; done: number; total: number; points: number; possible: number; streak: number }[]; toCheck: number };
   /** Unified calendar for today + the next 7 days (events, appointments, trips, feeds). */
   upNext: Pick<CalItem, "key" | "kind" | "title" | "dateISO" | "time" | "location" | "forMemberId" | "driverMemberId" | "familyEventId" | "tripId" | "dayOfTrip">[];
   dashboard: DashboardData;
 }
+
+export type HomeData = HomeCore & HomeSlow;
 
 export function daypartFor(hour: number): HomeData["daypart"] {
   if (hour < 5) return "late";
@@ -83,18 +90,16 @@ function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000, 
   });
 }
 
-export async function getHomeData(viewer: Viewer, fallbackName: string, real: { actingOwner: boolean; realMemberId: string | null } = { actingOwner: viewer.role === "owner", realMemberId: viewer.memberId }): Promise<HomeData> {
+export async function getHomeCore(viewer: Viewer, fallbackName: string, real: { actingOwner: boolean; realMemberId: string | null } = { actingOwner: viewer.role === "owner", realMemberId: viewer.memberId }): Promise<HomeCore> {
   const todayISO = familyTodayISO();
   const av = { memberId: viewer.memberId, role: viewer.role };
-  // Everything at once. The reads are independent, so the page costs one
-  // round trip of the slowest read, not the sum of all of them. (They used to
-  // run one after another to dodge a hang that turned out to be stale pooled
-  // sockets, not concurrency — see src/db/index.ts.) Each read is fenced so one
-  // slow module renders as its empty state, never a hung page.
+  // The quick reads, all at once: enough to paint the greeting, family row,
+  // hero and quote. The heavier sections stream in from getHomeSlow. Each
+  // read is fenced so one slow module renders as its empty state, never a
+  // hung page.
   const tHome = Date.now();
   const photosEnabled = isModuleEnabled("photos");
-  const [dashboard, people, quote, unread, nights, swaps, access, goals, chores, completions, pod, recent, weather, cal] = await Promise.all([
-    getDashboardData(viewer),
+  const [people, quote, unread, nights, swaps, access, pod, recent, weather] = await Promise.all([
     guarded("people", getPeople(), () => [] as Person[]),
     guarded("quote", quoteOfTheDay(av, todayISO), () => null),
     guarded("unread", unreadCount(av), () => 0),
@@ -103,16 +108,12 @@ export async function getHomeData(viewer: Viewer, fallbackName: string, real: { 
     viewer.role !== "owner" && viewer.memberId
       ? guarded("module access", getModuleAccess(viewer.memberId), () => ({} as Record<string, boolean>))
       : Promise.resolve({} as Record<string, boolean>),
-    guarded("goals", homeGoals(av, todayISO), () => []),
-    guarded("chores", listChores(), () => [] as Chore[]),
-    guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]),
     photosEnabled ? guarded("photo of the day", photoOfTheDay(av, todayISO), () => null) : Promise.resolve(null as Awaited<ReturnType<typeof photoOfTheDay>>),
     photosEnabled ? guarded("recent photos", recentPhotos(av, 6), () => []) : Promise.resolve([] as Awaited<ReturnType<typeof recentPhotos>>),
     guarded("weather", fetchWeather(), () => null, 5000, { db: false }),
-    guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000),
   ]);
   const allowedSlugs = modulesFor(viewer.role).map((m) => m.slug).filter((slug) => access[slug] !== false);
-  console.log(`[home] reads ${Date.now() - tHome}ms`);
+  console.log(`[home] core reads ${Date.now() - tHome}ms`);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
   return {
@@ -128,6 +129,31 @@ export async function getHomeData(viewer: Viewer, fallbackName: string, real: { 
     photosEnabled,
     scenic: scenicForDay(todayISO),
     weather,
+    unread,
+    tonight: tonightPlan ? { cook: tonightPlan.cook, dish: tonightPlan.dish, note: tonightPlan.note } : null,
+    pendingSwaps: swaps.filter((sw) => sw.toMemberId === viewer.memberId).length,
+  };
+}
+
+/**
+ * The heavier half of Home — money model, calendar (incl. Google feeds),
+ * chores and goals — read together and streamed to the client behind their
+ * section skeletons, so the top of the page never waits for them.
+ */
+export async function getHomeSlow(viewer: Viewer, core: Pick<HomeCore, "todayISO" | "people">): Promise<HomeSlow> {
+  const todayISO = core.todayISO;
+  const people = core.people;
+  const av = { memberId: viewer.memberId, role: viewer.role };
+  const t0 = Date.now();
+  const [dashboard, goals, chores, completions, cal] = await Promise.all([
+    getDashboardData(viewer),
+    guarded("goals", homeGoals(av, todayISO), () => []),
+    guarded("chores", listChores(), () => [] as Chore[]),
+    guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]),
+    guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000),
+  ]);
+  console.log(`[home] slow reads ${Date.now() - t0}ms`);
+  return {
     goals: goals.map((g) => ({ id: g.id, title: g.title, value: g.progress.value, current: g.progress.current, target: g.progress.target ?? undefined, unit: g.progress.unit, money: g.progress.money, people: g.participants.map((id) => people.find((p) => p.id === id)?.hue ?? 1), progressKind: g.progressKind, doneToday: g.progress.doneToday, streak: g.progress.streak, mine: !!viewer.memberId && g.participants.includes(viewer.memberId) })),
     chores: (() => {
       const ordered = [...people].sort((a, b) => Number(a.kind === "adult") - Number(b.kind === "adult"));
@@ -137,10 +163,13 @@ export async function getHomeData(viewer: Viewer, fallbackName: string, real: { 
         toCheck: days.reduce((a, d) => a + d.waitingCheck, 0),
       };
     })(),
-    unread,
-    tonight: tonightPlan ? { cook: tonightPlan.cook, dish: tonightPlan.dish, note: tonightPlan.note } : null,
-    pendingSwaps: swaps.filter((sw) => sw.toMemberId === viewer.memberId).length,
     upNext: cal.items.slice(0, 12).map((i) => ({ key: i.key, kind: i.kind, title: i.title, dateISO: i.dateISO, time: i.time, location: i.location, forMemberId: i.forMemberId, driverMemberId: i.driverMemberId, familyEventId: i.familyEventId, tripId: i.tripId, dayOfTrip: i.dayOfTrip })),
     dashboard,
   };
+}
+
+/** Everything Home shows, in one await (tests, previews, callers that don't stream). */
+export async function getHomeData(viewer: Viewer, fallbackName: string, real: { actingOwner: boolean; realMemberId: string | null } = { actingOwner: viewer.role === "owner", realMemberId: viewer.memberId }): Promise<HomeData> {
+  const core = await getHomeCore(viewer, fallbackName, real);
+  return { ...core, ...(await getHomeSlow(viewer, core)) };
 }
