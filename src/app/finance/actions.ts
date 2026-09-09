@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient, SITE_URL } from "@/lib/supabase/admin";
+import { generateSetPasswordLink } from "@/lib/password-reset";
 import * as m from "@/db/mutations";
 import * as plaidDb from "@/db/plaid";
 import { sendDigestPreview } from "@/db/digestSend";
@@ -100,13 +101,9 @@ export async function getInviteLink(email: string) {
   await ensureOwner();
   const admin = getAdminClient();
   if (!admin) return { ok: false as const, error: "Admin not configured" };
-  const { data, error } = await admin.auth.admin.generateLink({
-    type: "recovery",
-    email: email.trim().toLowerCase(),
-    options: { redirectTo: `${SITE_URL}/auth/set-password` },
-  });
-  if (error) return { ok: false as const, error: error.message };
-  return { ok: true as const, link: data.properties?.action_link ?? null };
+  const gen = await generateSetPasswordLink(email);
+  if (!gen.link) return { ok: false as const, error: gen.error || "Couldn't create a link." };
+  return { ok: true as const, link: gen.link };
 }
 
 /** Branded invite email body. */
@@ -138,14 +135,12 @@ export async function sendInviteEmail(emailArg: string) {
   if (!admin) return { ok: false as const, error: "Sign-in admin isn't configured on the server.", link: null as string | null };
 
   // Recovery link for an existing user; if they don't exist yet, invite-type
-  // creates them. Neither call sends an email — we send our own below.
-  const redirectTo = `${SITE_URL}/auth/set-password`;
-  let gen = await admin.auth.admin.generateLink({ type: "recovery", email: to, options: { redirectTo } });
-  if (gen.error || !gen.data?.properties?.action_link) {
-    gen = await admin.auth.admin.generateLink({ type: "invite", email: to, options: { redirectTo } });
-  }
-  const link = gen.data?.properties?.action_link ?? null;
-  if (!link) return { ok: false as const, error: gen.error?.message || "Couldn't generate an invite link.", link: null };
+  // creates them. Neither call sends an email — we send our own below. The link
+  // carries a token_hash our set-password page verifies directly (no Supabase
+  // redirect), see src/lib/password-reset.ts.
+  const gen = await generateSetPasswordLink(to);
+  const link = gen.link;
+  if (!link) return { ok: false as const, error: gen.error || "Couldn't generate an invite link.", link: null };
 
   if (!isEmailConfigured) {
     // Email not wired up — still hand back the link so the owner can send it.
