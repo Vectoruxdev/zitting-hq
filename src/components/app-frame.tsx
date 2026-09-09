@@ -6,6 +6,7 @@
  */
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import { AppShell, BottomSheet, Card, IconButton, type ShellModule } from "@/ui";
 import { modulesFor, moduleForPath } from "@/lib/modules";
 import type { FrameUser } from "@/lib/frame-user";
@@ -76,13 +77,16 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
   const [add, setAdd] = React.useState(false);
   useThemeSync(user.theme);
   useReminderTick();
-  // Warm every route in the nav so a tap shows the next screen at once.
+  // Warm the nav's loading boundaries so a tap shows the next screen's
+  // skeleton at once. `kind: "auto"` matters: the imperative default is
+  // "full", which server-renders every tab's data on every Home load — a
+  // burst of 13 page renders that saturated the connection pool (2026-09-09).
   const moduleKey = user.modules?.join(",") ?? "";
   React.useEffect(() => {
     if (bare) return;
     const allow = moduleKey ? new Set(moduleKey.split(",")) : null;
     const hrefs = [...modulesFor(user.role).filter((m) => !allow || allow.has(m.slug)).map((m) => m.href), "/notifications", "/me"];
-    for (const h of hrefs) { try { router.prefetch(h); } catch { /* prefetch is best-effort */ } }
+    for (const h of hrefs) { try { router.prefetch(h, { kind: PrefetchKind.AUTO }); } catch { /* prefetch is best-effort */ } }
   }, [bare, router, user.role, moduleKey]);
   // The content pane is the scroller (not the window), so start each screen at
   // the top — otherwise a tab tap lands you mid-page where the last one was.

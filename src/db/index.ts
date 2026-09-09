@@ -41,10 +41,12 @@ function makeClient(): Client {
     // pool) across concurrent requests, and a Home render fans out a dozen
     // reads at once — the pool serialises what doesn't fit.
     max: 6,
-    // Close idle connections fast and recycle every one on a schedule — an
-    // idle connection is the one that goes stale (see the header comment).
-    // Reconnecting in-region costs tens of milliseconds.
-    idle_timeout: 10,
+    // Close idle connections and recycle every one on a schedule — an idle
+    // connection is the one that goes stale (see the header comment). 30 s
+    // keeps a connection warm across a normal tap-tap-tap session; the
+    // pooler is slow to accept a burst of fresh connections, so reconnecting
+    // on every tap would cost more than it saves.
+    idle_timeout: 30,
     max_lifetime: 60 * 5,
     // A connection attempt the pooler never answers fails fast and the read
     // renders its empty state instead of pinning the page.
@@ -59,19 +61,28 @@ const makeDb = (c: Client): Db => drizzle(c, { schema });
 /** The Drizzle handle. A live binding — `resetDb()` swaps it for a fresh pool. */
 export let db: Db | null = connectionString ? (g.__zhqDb ??= makeDb((g.__zhqClient ??= makeClient()))) : null;
 
+const RESET_COOLDOWN_MS = 15_000;
+let lastReset = 0;
+
 /**
- * Throw the pool away and start a new one. Queries still waiting on the old
- * pool reject within a second (so their watchdogs don't have to run out), and
- * everything after this reconnects.
+ * Start a fresh pool for everything from here on. The old pool is left to
+ * drain — in-flight queries on it finish normally (a busy pool must not have
+ * its work destroyed under it), and a truly dead socket just sits there with
+ * its watchdog already answered. At most one reset per 15 s: a burst of
+ * timeouts means the pool is saturated, not stale, and swapping it repeatedly
+ * only floods the pooler with new connections.
  */
 export function resetDb(reason: string) {
   if (!connectionString) return;
+  const now = Date.now();
+  if (now - lastReset < RESET_COOLDOWN_MS) return;
+  lastReset = now;
   const old = g.__zhqClient;
-  console.error(`[db] resetting connection pool — ${reason}`);
+  console.error(`[db] fresh connection pool — ${reason}`);
   g.__zhqClient = makeClient();
   g.__zhqDb = makeDb(g.__zhqClient);
   db = g.__zhqDb;
-  old?.end({ timeout: 1 }).catch(() => {});
+  old?.end({ timeout: 60 }).catch(() => {});
 }
 
 export class DbTimeoutError extends Error {

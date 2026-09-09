@@ -41,10 +41,10 @@ export function roleForEmail(email?: string | null): Role {
 async function rosterRows() {
   const read = () => db!.select({ id: familyMembers.id, name: familyMembers.name, role: familyMembers.role, email: familyMembers.email }).from(familyMembers);
   try {
-    return await withDbTimeout(read(), 2500, "roster");
+    return await withDbTimeout(read(), 4000, "roster");
   } catch (e) {
     if (!(e instanceof DbTimeoutError)) throw e;
-    return await withDbTimeout(read(), 4000, "roster (retry on a fresh pool)");
+    return await withDbTimeout(read(), 6000, "roster (retry on a fresh pool)");
   }
 }
 
