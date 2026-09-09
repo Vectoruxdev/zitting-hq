@@ -63,7 +63,7 @@ function ZHQOverview({ onNavigate }) {
           <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: 'var(--surface-raised)', color: 'var(--accent)', marginBottom: 16 }}>
             <Icon name="dashboard" size={26} />
           </span>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>Welcome to Family HQ</h2>
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>Welcome to your money</h2>
           <p style={{ margin: '0 0 20px', color: 'var(--text-secondary)', fontSize: 14.5, lineHeight: 1.5 }}>
             Add an account and import a CSV from your bank. Your spending breakdown, trends, and totals fill in automatically.
           </p>

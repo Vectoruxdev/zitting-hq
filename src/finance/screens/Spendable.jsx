@@ -721,7 +721,7 @@ function ZHQSpendable() {
               <Icon name="bell" size={18} />
               {memberUnread > 0 ? <span style={{ position: 'absolute', top: -3, right: -3, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999, background: 'var(--warning)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{memberUnread}</span> : null}
             </button>
-            <button onClick={() => { window.location.href = '/'; }} title="Family HQ — calendar, meals, groceries" style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', border: '1px solid var(--border-hairline)', color: 'var(--accent)', cursor: 'pointer' }}>
+            <button onClick={() => { window.location.href = '/'; }} title="Zitting HQ — calendar, meals, groceries" style={{ flex: 'none', width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--surface-card)', border: '1px solid var(--border-hairline)', color: 'var(--accent)', cursor: 'pointer' }}>
               <Icon name="grid" size={18} />
             </button>
           </div>
@@ -1251,7 +1251,7 @@ function ZHQSpendable() {
               </div>
             </div>
             {window.ZHQPushPrompt ? <window.ZHQPushPrompt compact /> : null}
-            <Button variant="secondary" size="md" style={{ width: '100%' }} iconLeft={<Icon name="grid" size={16} />} onClick={() => { window.location.href = '/'; }}>Family HQ</Button>
+            <Button variant="secondary" size="md" style={{ width: '100%' }} iconLeft={<Icon name="grid" size={16} />} onClick={() => { window.location.href = '/'; }}>Zitting HQ</Button>
             <Button variant="secondary" size="md" style={{ width: '100%' }} iconLeft={<Icon name="logout" size={16} />} onClick={() => { if (window.ZHQ_LOGOUT) window.ZHQ_LOGOUT(); }}>Log out</Button>
           </div>
         </Modal>
