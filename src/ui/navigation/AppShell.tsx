@@ -33,7 +33,7 @@ export interface AppShellProps {
   onAction?: () => void;
   actionIcon?: string;
   actionLabel?: string;
-  /** Desktop/tablet sidebar footer slot (above the user row). */
+  /** Desktop/tablet sidebar footer slot (above the user row); on phones it sits at the bottom of the "Everything" sheet. */
   footer?: React.ReactNode;
   /** Tapping the user row (desktop) / avatar (phone). */
   onUser?: () => void;
@@ -127,6 +127,7 @@ export function AppShell({ modules = [], active, onNavigate, user = {}, brand, m
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px 0", paddingBottom: 8 }}>
             {modules.map((m, i) => <ModuleTile key={m.key} icon={m.icon} label={m.label} tint={m.tint} count={m.badge} muted={m.muted} onClick={() => go(m.key)} style={{ animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 25}ms both` }} />)}
           </div>
+          {footer ? <div style={{ display: "flex", justifyContent: "center", paddingTop: 4 }}>{footer}</div> : null}
         </BottomSheet>
       </div>
     </div>

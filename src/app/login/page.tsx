@@ -2,6 +2,7 @@ import { LoginForm } from "./login-form";
 import { Icon } from "@/ui";
 import { loginQuote } from "@/db/quotes";
 import { familyTodayISO } from "@/db/dashboard";
+import { BuildStamp } from "@/components/build-stamp";
 
 export const metadata = { title: "Sign in · Zitting HQ" };
 export const dynamic = "force-dynamic";
@@ -38,7 +39,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <p style={{ margin: "16px 0 0", font: "var(--type-caption)", color: "var(--text-tertiary)", lineHeight: 1.55 }}><a href="/login/forgot" className="zh-link" style={{ color: "var(--accent)", fontWeight: 600 }}>Forgot your password?</a> · Invited but no password yet? Use the link in your invite email to set one.</p>
           </div>
         </div>
-        <p style={{ margin: 0, font: "var(--type-caption)", color: "var(--text-tertiary)" }}>A private app for the Zitting household. Read-only bank access — it never moves money.</p>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "0 16px" }}>
+          <p style={{ margin: 0, font: "var(--type-caption)", color: "var(--text-tertiary)" }}>A private app for the Zitting household. Read-only bank access — it never moves money.</p>
+          <BuildStamp />
+        </div>
       </div>
     </div>
   );
