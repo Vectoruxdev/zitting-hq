@@ -52,9 +52,10 @@ export function daypartFor(hour: number): HomeData["daypart"] {
 
 /** A read that can neither throw nor hang: its fallback after `ms`, and on error. */
 function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000): Promise<T> {
+  const t0 = Date.now();
   return new Promise((resolve) => {
     const t = setTimeout(() => { console.error(`[home] ${label} timed out after ${ms}ms — using its empty state`); resolve(fallback()); }, ms);
-    p.then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback()); });
+    p.then((v) => { clearTimeout(t); console.log(`[home] ${label} ${Date.now() - t0}ms`); resolve(v); }, (e) => { clearTimeout(t); console.error(`[home] ${label} failed after ${Date.now() - t0}ms:`, e instanceof Error ? e.message : e); resolve(fallback()); });
   });
 }
 
@@ -65,7 +66,9 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
   // that postgres.js pipelines when many run at once — a Promise.all here is
   // exactly what hung Home on the first preview deploy. Each read is also
   // fenced so one slow module renders as its empty state, never a hung page.
+  const tHome = Date.now();
   const dashboard = await getDashboardData(viewer);
+  console.log(`[home] dashboard ${Date.now() - tHome}ms`);
   const people = await guarded("people", getPeople(), () => [] as Person[]);
   const quote = await guarded("quote", quoteOfTheDay(av, todayISO), () => null);
   const unread = await guarded("unread", unreadCount(av), () => 0);

@@ -10,6 +10,7 @@ import { AppShell, BottomSheet, Card, IconButton, type ShellModule } from "@/ui"
 import { modulesFor, moduleForPath } from "@/lib/modules";
 import type { FrameUser } from "@/lib/frame-user";
 import { signOut } from "@/app/login/actions";
+import { tickRemindersAction } from "@/app/actions/reminders";
 
 export type { FrameUser } from "@/lib/frame-user";
 
@@ -43,11 +44,24 @@ function useThemeSync(theme?: "light" | "dark" | "system") {
   }, [theme]);
 }
 
+/** Fire the reminder tick once per app open (at most every 5 minutes per device); never blocks anything. */
+function useReminderTick() {
+  React.useEffect(() => {
+    try {
+      const last = Number(sessionStorage.getItem("zhq-reminder-tick") || 0);
+      if (Date.now() - last < 5 * 60 * 1000) return;
+      sessionStorage.setItem("zhq-reminder-tick", String(Date.now()));
+    } catch { /* storage blocked — tick anyway */ }
+    tickRemindersAction().catch(() => {});
+  }, []);
+}
+
 export function AppFrame({ user, children, bare = false }: { user: FrameProps; children: React.ReactNode; bare?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const [add, setAdd] = React.useState(false);
   useThemeSync(user.theme);
+  useReminderTick();
   if (bare) return <>{children}</>;
   const allowed = user.modules?.length ? new Set(user.modules) : null;
   const modules: ShellModule[] = modulesFor(user.role).filter((m) => !allowed || allowed.has(m.slug)).map((m) => ({

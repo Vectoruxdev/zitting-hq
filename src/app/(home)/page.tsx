@@ -1,5 +1,3 @@
-import { after } from "next/server";
-import { tickReminders } from "@/db/reminders";
 import { redirect } from "next/navigation";
 import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
@@ -14,8 +12,6 @@ export const dynamic = "force-dynamic";
 /* Home — the per-person dashboard. Owner sees the household; a wife sees her
    Spendable; everyone sees the family, today, and what needs them. */
 export default async function Home() {
-  // Reminders piggyback on Home visits (Vercel Hobby crons run once a day).
-  after(() => tickReminders());
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login");
   const role = (user?.role ?? "owner") as "owner" | "partner" | "member";
