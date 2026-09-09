@@ -6,6 +6,11 @@ import { Button } from "../core/Button";
 
 export interface PhotoHeroProps {
   src?: string | null;
+  /** Responsive candidates for `src` (e.g. Commons thumbs at several widths). */
+  srcSet?: string;
+  sizes?: string;
+  /** Above the fold: fetch at high priority. */
+  priority?: boolean;
   alt?: string;
   ratio?: string;
   eyebrow?: string;
@@ -15,7 +20,7 @@ export interface PhotoHeroProps {
   topRight?: React.ReactNode;
   height?: string | number;
   radius?: string;
-  /** Slow 6% zoom over 18s (off under reduced motion via the tokens). */
+  /** Slow 6% zoom over 18s — phones and tablets only (see base.css); off under reduced motion. */
   drift?: boolean;
   emptyTitle?: string;
   emptyBody?: string;
@@ -26,12 +31,15 @@ export interface PhotoHeroProps {
 }
 
 /** Full-bleed photo with text over a bottom scrim: photo of the day on the hub, album and goal headers, login. Text is always pure white on the scrim. When there is no photo it becomes a warm, honest invitation, not a broken hero. */
-export function PhotoHero({ src, alt = "", ratio = "var(--ratio-hero)", eyebrow, title, subtitle, actions, topRight, height, radius = "var(--radius-card)", drift = true, emptyTitle = "Your photo of the day will live here", emptyBody = "Add a few photos and one of them will greet the family every morning.", emptyAction, onAddPhoto, style, children }: PhotoHeroProps) {
+export function PhotoHero({ src, srcSet, sizes, priority = false, alt = "", ratio = "var(--ratio-hero)", eyebrow, title, subtitle, actions, topRight, height, radius = "var(--radius-card)", drift = true, emptyTitle = "Your photo of the day will live here", emptyBody = "Add a few photos and one of them will greet the family every morning.", emptyAction, onAddPhoto, style, children }: PhotoHeroProps) {
   const [err, setErr] = React.useState(false);
   const has = !!src && !err;
   return (
-    <section className="zh-photo" style={{ position: "relative", aspectRatio: height ? undefined : ratio, height, width: "100%", minWidth: 0, borderRadius: radius, overflow: "hidden", background: has ? "var(--text-primary)" : "var(--photo-placeholder)", color: has ? "#fff" : "var(--text-primary)", boxShadow: has ? "var(--shadow-photo)" : "var(--photo-ring)", ...style }}>
-      {has ? <img src={src as string} alt={alt} onError={() => setErr(true)} style={{ position: "absolute", inset: 0, animation: `zh-fade-in var(--dur-slow) var(--ease-out) both${drift ? ", zh-drift 18s linear infinite alternate" : ""}`, transformOrigin: "center" }} /> : null}
+    // isolation + translateZ: the rounded, clipped box composites as its own
+    // layer, so an animating child never makes the compositor re-clip and
+    // flash black frames (seen on a large Retina window, 2026-09-09).
+    <section className="zh-photo" style={{ position: "relative", aspectRatio: height ? undefined : ratio, height, width: "100%", minWidth: 0, borderRadius: radius, overflow: "hidden", isolation: "isolate", transform: "translateZ(0)", background: has ? "var(--text-primary)" : "var(--photo-placeholder)", color: has ? "#fff" : "var(--text-primary)", boxShadow: has ? "var(--shadow-photo)" : "var(--photo-ring)", ...style }}>
+      {has ? <img src={src as string} srcSet={srcSet} sizes={srcSet ? sizes : undefined} alt={alt} decoding="async" loading={priority ? "eager" : undefined} fetchPriority={priority ? "high" : undefined} onError={() => setErr(true)} className={drift ? "zh-drift" : undefined} style={{ position: "absolute", inset: 0, transformOrigin: "center", backfaceVisibility: "hidden" }} /> : null}
       {has ? <div aria-hidden style={{ position: "absolute", inset: 0, background: "var(--scrim-bottom)" }} /> : null}
       {has && topRight ? <div aria-hidden style={{ position: "absolute", inset: 0, background: "var(--scrim-top)", pointerEvents: "none" }} /> : null}
       {topRight ? <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 6, zIndex: 1 }}>{topRight}</div> : null}
