@@ -8,8 +8,8 @@
  * never a broken dashboard.
  */
 import { getFinanceData, type Viewer } from "./queries";
-import { getGroceriesData, getMealsData, getCalendarConfig, addDaysISO } from "./household";
-import { expandIcs } from "@/lib/ics";
+import { getGroceriesData, getMealsData, addDaysISO } from "./household";
+import { getCalendar } from "./calendar";
 
 const TZ = "America/Denver";
 
@@ -84,7 +84,6 @@ export interface DashboardData {
   needsAttention: { key: string; label: string; href: string; tone: "warn" | "accent" }[];
 }
 
-const FEED_COLORS = ["var(--accent)", "var(--indigo-500)", "var(--amber-500)", "var(--data-2, #7c8cf8)", "var(--gray-500)"];
 
 /** Resolve `p`, or the section's empty state after `ms` — a hung section
  *  (e.g. an external calendar feed that never responds) must degrade to its
@@ -117,7 +116,7 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   const t0 = Date.now();
   const meals = await sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals");
   const groceries = await sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries");
-  const calendar = await sectionWithTimeout<DashboardData["calendar"]>(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar");
+  const calendar = await sectionWithTimeout<DashboardData["calendar"]>(calendarSection(viewer, todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar");
   const finance = await sectionWithTimeout<DashboardData["finance"]>(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance");
   const took = Date.now() - t0;
   if (took > 6000) console.log(`[dashboard] sections slow: ${took}ms`);
@@ -232,44 +231,20 @@ async function groceriesSection(): Promise<DashboardData["groceries"]> {
   return groceries;
 }
 
-// The next 7 days across feeds + family events. Feeds fetch IN PARALLEL —
-// sequential external fetches were the dashboard's slowest path.
-async function calendarSection(todayISO: string): Promise<DashboardData["calendar"]> {
+// The next 7 days — feeds, family events, appointments and trips — through the
+// same visibility-aware read the Calendar page uses (a person's private feed
+// stays theirs; one broken feed never hides the rest).
+async function calendarSection(viewer: Viewer, todayISO: string): Promise<DashboardData["calendar"]> {
   const calendar: DashboardData["calendar"] = { events: [], feedCount: 0 };
   try {
-    const cfg = await getCalendarConfig();
     const windowEnd = addDaysISO(todayISO, 7);
-    const enabled = cfg.feeds.filter((f: any) => f.enabled);
-    calendar.feedCount = enabled.length;
-    const perFeed = await Promise.all(
-      enabled.map(async (feed: any) => {
-        try {
-          // Hard timeout: an ICS host that accepts the connection but never
-          // responds would otherwise hang this render forever (the catch only
-          // sees rejections — a hang never rejects).
-          const res = await fetch(feed.url, { next: { revalidate: 900 }, signal: AbortSignal.timeout(4000) });
-          if (!res.ok) return [];
-          const color = feed.color || FEED_COLORS[(feed.id - 1) % FEED_COLORS.length];
-          return expandIcs(await res.text(), todayISO, windowEnd).map((ev) => ({
-            chip: dayChip(ev.dateISO, todayISO),
-            dateISO: ev.dateISO,
-            title: ev.title,
-            time: ev.time ?? null,
-            color,
-          }));
-        } catch {
-          return []; // one broken feed never hides the rest
-        }
-      })
-    );
-    const events: DashboardData["calendar"]["events"] = perFeed.flat();
-    for (const ev of cfg.events) {
-      const date = String(ev.date);
-      if (date < todayISO || date > windowEnd) continue;
-      events.push({ chip: dayChip(date, todayISO), dateISO: date, title: ev.title, time: ev.time ?? null, color: "var(--accent)" });
-    }
-    events.sort((a, b) => a.dateISO.localeCompare(b.dateISO) || String(a.time ?? "99").localeCompare(String(b.time ?? "99")));
-    calendar.events = events.slice(0, 5);
+    const cal = await getCalendar(viewer, todayISO, windowEnd, { dinners: false });
+    calendar.feedCount = cal.feeds.filter((f) => f.enabled).length;
+    calendar.events = cal.items
+      .filter((i) => i.kind !== "dinner" && i.dateISO >= todayISO && i.dateISO <= windowEnd)
+      .sort((a, b) => a.dateISO.localeCompare(b.dateISO) || String(a.time ?? "99").localeCompare(String(b.time ?? "99")))
+      .slice(0, 5)
+      .map((i) => ({ chip: dayChip(i.dateISO, todayISO), dateISO: i.dateISO, title: i.title, time: i.time, color: i.color ?? "var(--accent)" }));
   } catch {
     /* empty calendar card */
   }

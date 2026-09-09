@@ -6,13 +6,13 @@
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Avatar, Badge, BottomSheet, Button, EmptyState, IconButton, InlineAlert, Input, Reveal, Row, Section, SegmentedControl, Stagger, Tag, Toggle, WeekStrip, ToastProvider, useToast, type Tint } from "@/ui";
+import { Avatar, Badge, BottomSheet, Button, Checkbox, EmptyState, IconButton, InlineAlert, Input, RadioGroup, Reveal, Row, Section, SegmentedControl, Stagger, Tag, Toggle, WeekStrip, ToastProvider, useToast, type Tint } from "@/ui";
 import type { CalItem, FeedInfo } from "@/db/calendar";
 import { WEEKDAYS_SHORT, fmtNight } from "@/lib/dates";
 import { EventSheet, type PersonLite } from "./event-sheet";
 import * as actions from "./actions";
 
-interface Props { configured: boolean; items: CalItem[]; feeds: FeedInfo[]; people: PersonLite[]; todayISO: string; fromISO: string; toISO: string; viewer: { memberId: string | null; role: "owner" | "partner" | "member" }; openEventId: number | null; initialDate: string | null; initialView: string }
+interface Props { configured: boolean; items: CalItem[]; feeds: FeedInfo[]; people: PersonLite[]; todayISO: string; fromISO: string; toISO: string; viewer: { memberId: string | null; role: "owner" | "partner" | "member" }; viewerKind: "adult" | "child"; openEventId: number | null; initialDate: string | null; initialView: string; initialFeedsOpen: boolean }
 
 const addDays = (iso: string, d: number) => { const x = new Date(iso + "T00:00:00"); x.setDate(x.getDate() + d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
 const KIND_ICON: Record<string, string> = { event: "calendar", appointment: "stethoscope", trip: "plane", feed: "calendar-days", dinner: "chef-hat" };
@@ -26,7 +26,7 @@ function Inner(p: Props) {
   const [day, setDay] = React.useState(p.initialDate || p.todayISO);
   const [person, setPerson] = React.useState<string>("");
   const [sheet, setSheet] = React.useState<{ event?: CalItem | null; date: string; kind?: "event" | "appointment" } | null>(() => { const ev = p.openEventId ? p.items.find((i) => i.familyEventId === p.openEventId) : null; return ev ? { event: ev, date: ev.dateISO } : null; });
-  const [feedsOpen, setFeedsOpen] = React.useState(false);
+  const [feedsOpen, setFeedsOpen] = React.useState(p.initialFeedsOpen);
   const who = (id: string | null | undefined) => p.people.find((x) => x.id === id) || null;
   const items = p.items.filter((i) => !person || i.forMemberId === person || i.driverMemberId === person || i.cookMemberId === person);
   const dayItems = (d: string) => items.filter((i) => i.dateISO === d);
@@ -52,7 +52,7 @@ function Inner(p: Props) {
           <div><p style={{ margin: "0 0 6px", font: "var(--type-overline)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>Calendar</p><h1 style={{ margin: 0, font: "var(--type-greeting)", fontSize: "clamp(var(--fs-3xl), 5vw, var(--fs-4xl))", letterSpacing: "var(--ls-display)" }}>{view === "month" ? new Date(monthStart + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }) : view === "week" ? "This week" : "Coming up"}</h1></div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <SegmentedControl size="sm" items={[{ key: "agenda", label: "Agenda" }, { key: "week", label: "Week" }, { key: "month", label: "Month" }]} value={view} onChange={setView} />
-            {p.viewer.role === "owner" ? <IconButton icon="link" label="Google Calendar feeds" variant="outline" onClick={() => setFeedsOpen(true)} /> : null}
+            {p.viewerKind === "adult" ? <IconButton icon="link" label="Google Calendars" variant="outline" onClick={() => setFeedsOpen(true)} /> : null}
             <Button iconLeft="plus" onClick={() => setSheet({ date: day })}>Add</Button>
           </div>
         </div>
@@ -99,25 +99,57 @@ function Inner(p: Props) {
       ) : null}
 
       {sheet ? <EventSheet open onClose={() => { setSheet(null); if (p.openEventId) router.replace("/calendar", { scroll: false }); }} event={sheet.event} people={p.people} me={p.viewer.memberId} defaultDate={sheet.date} defaultKind={sheet.kind} onSaved={(m) => { toast({ title: m, tone: "positive" }); router.refresh(); }} /> : null}
-      <FeedsSheet open={feedsOpen} onClose={() => setFeedsOpen(false)} feeds={p.feeds} onChanged={() => router.refresh()} />
+      <FeedsSheet open={feedsOpen} onClose={() => { setFeedsOpen(false); if (p.initialFeedsOpen) router.replace("/calendar", { scroll: false }); }} feeds={p.feeds} people={p.people} me={p.viewer.memberId} isOwner={p.viewer.role === "owner"} onChanged={() => router.refresh()} />
       {p.people.length === 0 ? null : <span style={{ display: "none" }}><Avatar name="" /></span>}
     </div>
   );
 }
 
-function FeedsSheet({ open, onClose, feeds, onChanged }: { open: boolean; onClose: () => void; feeds: FeedInfo[]; onChanged: () => void }) {
+const VIS_LABEL: Record<string, string> = { family: "Shared with the family", private: "Just you (and the owner)", custom: "Some people" };
+
+function FeedsSheet({ open, onClose, feeds, people, me, isOwner, onChanged }: { open: boolean; onClose: () => void; feeds: FeedInfo[]; people: PersonLite[]; me: string | null; isOwner: boolean; onChanged: () => void }) {
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
+  const [visibility, setVisibility] = React.useState("family");
+  const [shared, setShared] = React.useState<string[]>([]);
+  const [household, setHousehold] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [editVis, setEditVis] = React.useState<number | null>(null);
+  const person = (id: string | null) => people.find((x) => x.id === id) || null;
+  const mine = feeds.filter((f) => f.memberId && f.memberId === me);
+  const others = feeds.filter((f) => !(f.memberId && f.memberId === me));
+  const run = async (key: string, fn: () => Promise<{ ok: boolean; error?: string } | void>) => { setBusy(key); try { const r = await fn(); if (r && !r.ok) setError(r.error || "That didn't save"); else onChanged(); } finally { setBusy(null); } };
+  const others_label = (f: FeedInfo) => { const p = person(f.memberId); return f.memberId ? `${p?.greetingName ?? "Someone"}’s · ${f.visibility === "family" ? "shared with the family" : f.visibility === "custom" ? "shared with some people" : "private"}` : "Household calendar"; };
+  const FeedRow = ({ f, editable }: { f: FeedInfo; editable: boolean }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <Row icon="calendar-days" tint="sky" title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: f.color ?? "var(--data-2)", flex: "none" }} />{f.name}</span>} meta={f.error ? `Couldn’t load: ${f.error}` : `${f.enabled ? "On" : "Off"} · ${f.memberId === me ? VIS_LABEL[f.visibility] ?? f.visibility : others_label(f)}`}
+        trailing={editable ? <><Toggle size="sm" checked={f.enabled} onChange={(v) => run(`f-${f.id}`, () => actions.setCalendarFeedEnabled(f.id, v))} style={{ minHeight: 32 }} />{f.memberId ? <IconButton icon="eye" label="Who can see it" size="sm" active={editVis === f.id} onClick={() => setEditVis(editVis === f.id ? null : f.id)} /> : null}<IconButton icon="x" label={`Remove ${f.name}`} size="sm" onClick={() => run(`d-${f.id}`, () => actions.deleteCalendarFeed(f.id))} /></> : undefined} chevron={false} />
+      {editable && editVis === f.id && f.memberId ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 44px" }}>
+          <RadioGroup layout="cards" columns={3} value={f.visibility} onChange={(v) => run(`v-${f.id}`, () => actions.setCalendarFeedVisibility(f.id, v, f.sharedWith))} options={[{ value: "family", label: "Family" }, { value: "custom", label: "Some people" }, { value: "private", label: "Just me" }]} />
+          {f.visibility === "custom" ? <div style={{ display: "flex", flexWrap: "wrap", gap: "0 14px" }}>{people.filter((x) => x.id !== f.memberId).map((x) => <Checkbox key={x.id} label={x.greetingName} checked={f.sharedWith.includes(x.id)} onChange={(v) => run(`v-${f.id}`, () => actions.setCalendarFeedVisibility(f.id, "custom", v ? [...f.sharedWith, x.id] : f.sharedWith.filter((i) => i !== x.id)))} style={{ minHeight: 36, padding: "6px 0" }} />)}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
   return (
-    <BottomSheet open={open} onClose={onClose} title="Google Calendar feeds" footer={<Button size="lg" fullWidth variant="ghost" onClick={onClose}>Done</Button>}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>Paste a calendar’s private “Secret address in iCal format” (Google Calendar → Settings → Integrate calendar). Read-only; events appear within 15 minutes.</p>
-        {feeds.map((f) => <Row key={f.id} icon="calendar-days" tint="sky" title={f.name} meta={f.error ? `Couldn’t load: ${f.error}` : f.enabled ? "On" : "Off"} trailing={<><Toggle size="sm" checked={f.enabled} onChange={async (v) => { setBusy(`f-${f.id}`); await actions.setCalendarFeedEnabled(f.id, v); setBusy(null); onChanged(); }} style={{ minHeight: 32 }} /><IconButton icon="x" label={`Remove ${f.name}`} size="sm" onClick={async () => { setBusy(`d-${f.id}`); await actions.deleteCalendarFeed(f.id); setBusy(null); onChanged(); }} /></>} chevron={false} />)}
-        <Input label="Name" placeholder="Jared’s work" value={name} onChange={(e) => setName(e.target.value)} />
-        <Input label="Secret iCal address" type="url" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" value={url} onChange={(e) => setUrl(e.target.value)} error={error ?? undefined} />
-        <Button loading={busy === "add"} disabled={!name.trim() || !url.trim()} iconLeft="plus" onClick={async () => { setBusy("add"); setError(null); const r = await actions.addCalendarFeed({ name, url }); setBusy(null); if (r.ok) { setName(""); setUrl(""); onChanged(); } else setError(r.error || "Couldn't add"); }}>Add feed</Button>
+    <BottomSheet open={open} onClose={onClose} title="Google Calendars" footer={<Button size="lg" fullWidth variant="ghost" onClick={onClose}>Done</Button>}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>Each person can connect their own Google Calendar and decide who sees it. In Google Calendar on a computer: Settings → your calendar → Integrate calendar → copy the <b>Secret address in iCal format</b>. Read-only; changes show up within 15 minutes.</p>
+        {mine.length ? <Section title="Your calendars"><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{mine.map((f) => <FeedRow key={f.id} f={f} editable />)}</div></Section> : null}
+        <Section title={mine.length ? "Add another" : "Connect your calendar"}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Input label="Name" placeholder="Work" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label="Secret iCal address" type="url" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" value={url} onChange={(e) => setUrl(e.target.value)} error={error ?? undefined} />
+            {!household ? <RadioGroup label="Who can see it" layout="cards" columns={3} value={visibility} onChange={setVisibility} options={[{ value: "family", label: "Family" }, { value: "custom", label: "Some people" }, { value: "private", label: "Just me" }]} /> : null}
+            {!household && visibility === "custom" ? <div style={{ display: "flex", flexWrap: "wrap", gap: "0 14px" }}>{people.filter((x) => x.id !== me).map((x) => <Checkbox key={x.id} label={x.greetingName} checked={shared.includes(x.id)} onChange={(v) => setShared((s) => (v ? [...s, x.id] : s.filter((i) => i !== x.id)))} style={{ minHeight: 36, padding: "6px 0" }} />)}</div> : null}
+            {isOwner ? <Checkbox label="This is a household calendar, not anyone’s own" checked={household} onChange={setHousehold} /> : null}
+            <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>{household ? "Household calendars are shared with everyone." : visibility === "private" ? "Only you see these events on the calendar and Home. The owner can see everything, as always." : visibility === "custom" ? "Only the people you pick see these events." : "Everyone in the family sees these events, in your color."}</span>
+            <Button loading={busy === "add"} disabled={!name.trim() || !url.trim()} iconLeft="plus" onClick={() => run("add", async () => { setError(null); const r = await actions.addCalendarFeed({ name, url, visibility, sharedWith: shared, household }); if (r.ok) { setName(""); setUrl(""); setShared([]); setHousehold(false); } return r; })}>Connect</Button>
+          </div>
+        </Section>
+        {others.length ? <Section title={isOwner ? "Everyone’s calendars" : "Shared with you"}><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{others.map((f) => <FeedRow key={f.id} f={f} editable={isOwner} />)}</div>{isOwner ? <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Switch anyone’s calendar off here and it disappears for everyone until it’s switched back on.</span> : null}</Section> : null}
       </div>
     </BottomSheet>
   );

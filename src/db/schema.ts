@@ -774,7 +774,12 @@ export const calendarFeeds = pgTable("calendar_feeds", {
   color: text("color"),
   url: text("url").notNull(), // private "secret address in iCal format"
   enabled: boolean("enabled").notNull().default(true),
+  // Whose calendar (null = a household feed added by the owner) and who may see it:
+  // family | private | custom (shares.entity_type = 'calendar_feed').
+  memberId: text("member_id").references(() => familyMembers.id, { onDelete: "cascade" }),
+  visibility: text("visibility").notNull().default("family"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
 export const familyEvents = pgTable(
