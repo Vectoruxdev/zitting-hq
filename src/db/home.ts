@@ -10,6 +10,7 @@ import { getPeople, type Person } from "./profiles";
 import { quoteOfTheDay, type Quote } from "./quotes";
 import { unreadCount } from "./notifications";
 import { getNights, listSwaps } from "./kitchen";
+import { photoOfTheDay, recentPhotos } from "./photos";
 import type { Viewer } from "./queries";
 
 export interface HomeData {
@@ -21,7 +22,7 @@ export interface HomeData {
   viewer: { memberId: string | null; role: Viewer["role"]; kind: "adult" | "child"; hue: number; avatarUrl: string | null };
   people: Pick<Person, "id" | "name" | "greetingName" | "hue" | "avatarUrl" | "kind">[];
   quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn"> | null;
-  photoOfDay: { src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
+  photoOfDay: { id?: string; src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
   recentPhotos: { id: string | number; src: string }[];
   goals: { id: string; title: string; value: number; current?: number; target?: number; money: boolean; people: number[] }[];
   unread: number;
@@ -49,6 +50,8 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     getNights(todayISO, 1).catch(() => []),
     listSwaps("pending").catch(() => []),
   ]);
+  const av = { memberId: viewer.memberId, role: viewer.role };
+  const [pod, recent] = await Promise.all([photoOfTheDay(av, todayISO).catch(() => null), recentPhotos(av, 6).catch(() => [])]);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
   return {
@@ -59,8 +62,8 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     viewer: { memberId: viewer.memberId, role: viewer.role, kind: me?.kind ?? "adult", hue: me?.hue ?? 1, avatarUrl: me?.avatarUrl ?? null },
     people: people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind })),
     quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn } : null,
-    photoOfDay: null,
-    recentPhotos: [],
+    photoOfDay: pod && pod.src ? { id: pod.id, src: pod.src, title: pod.caption, by: people.find((x) => x.id === pod.uploadedBy)?.greetingName ?? null, album: null, count: 0 } : null,
+    recentPhotos: recent.filter((x) => x.thumb || x.src).map((x) => ({ id: x.id, src: (x.thumb || x.src) as string })),
     goals: [],
     unread,
     tonight: tonightPlan ? { cook: tonightPlan.cook, dish: tonightPlan.dish, note: tonightPlan.note } : null,

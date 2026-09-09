@@ -24,7 +24,7 @@ const ADD_ACTIONS: { icon: string; title: string; body: string; href: string }[]
   { icon: "shopping-cart", title: "To the list", body: "Groceries", href: "/groceries" },
   { icon: "utensils", title: "Plan dinner", body: "This week's meals", href: "/meals" },
   { icon: "calendar-plus", title: "An event", body: "On the family calendar", href: "/calendar" },
-  { icon: "image", title: "A photo", body: "To the family library", href: "/photos" },
+  { icon: "image", title: "A photo", body: "To the family library", href: "/photos?add=1" },
 ];
 
 /** Apply a saved theme preference on the client (mirrors what the server did from the cookie). */

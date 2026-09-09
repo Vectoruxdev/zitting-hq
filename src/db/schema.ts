@@ -999,3 +999,74 @@ export const mealIdeaReactions = pgTable(
   },
   (t) => [primaryKey({ columns: [t.ideaId, t.memberId] })]
 );
+
+// ---- Phase 3 (2026-09 revamp): photos — supabase-phase3-photos.sql ----
+
+export const photos = pgTable(
+  "photos",
+  {
+    id: text("id").primaryKey(), // uuid from the app
+    storagePath: text("storage_path").notNull(), // full-size (≤2048px) in the private 'photos' bucket
+    thumbPath: text("thumb_path"), // square ~400px
+    width: integer("width"),
+    height: integer("height"),
+    takenAt: timestamp("taken_at", { withTimezone: true }),
+    uploadedBy: text("uploaded_by").references(() => familyMembers.id, { onDelete: "set null" }),
+    caption: text("caption"),
+    visibility: text("visibility").notNull().default("family"), // family | private | custom
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_photos_taken").on(t.takenAt), index("idx_photos_uploader").on(t.uploadedBy)]
+);
+
+export const albums = pgTable("albums", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  coverPhotoId: text("cover_photo_id").references(() => photos.id, { onDelete: "set null" }),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  visibility: text("visibility").notNull().default("family"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const albumPhotos = pgTable(
+  "album_photos",
+  {
+    albumId: text("album_id").notNull().references(() => albums.id, { onDelete: "cascade" }),
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    sort: integer("sort").notNull().default(0),
+    addedAt: timestamp("added_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.albumId, t.photoId] }), index("idx_album_photos_photo").on(t.photoId)]
+);
+
+export const photoPeople = pgTable(
+  "photo_people",
+  {
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.photoId, t.memberId] }), index("idx_photo_people_member").on(t.memberId)]
+);
+
+export const photoFavorites = pgTable(
+  "photo_favorites",
+  {
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.photoId, t.memberId] })]
+);
+
+/** A photo attached to something else: recipe | event | goal | trip | quote | night. */
+export const attachments = pgTable(
+  "attachments",
+  {
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    sort: integer("sort").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.photoId] })]
+);

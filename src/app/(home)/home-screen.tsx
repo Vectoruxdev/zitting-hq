@@ -8,7 +8,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Avatar, Badge, Button, EmptyState, Icon, IconButton, ModuleTile, Money, PhotoHero, ProgressBar, Reveal, Row, Section, Skeleton, Stagger,
+  Avatar, Badge, Button, EmptyState, Icon, IconButton, ImageCard, ModuleTile, Money, PhotoHero, ProgressBar, Reveal, Row, Section, Skeleton, Stagger,
 } from "@/ui";
 import { modulesFor } from "@/lib/modules";
 import type { HomeData } from "@/db/home";
@@ -63,8 +63,8 @@ function PhotoOfDay({ data, narrow }: { data: HomeData; narrow: boolean }) {
     <PhotoHero
       src={pod?.src} ratio={narrow ? "var(--ratio-hero-mobile)" : "var(--ratio-hero)"} eyebrow="Photo of the day" title={pod?.title ?? undefined}
       subtitle={pod ? [pod.by && `Added by ${pod.by}`, pod.album && `${pod.count} more in “${pod.album}”`].filter(Boolean).join(" · ") : undefined}
-      actions={pod ? <Button variant="onPhoto" size="sm" iconLeft="image" onClick={() => router.push("/photos")}>Open album</Button> : undefined}
-      onAddPhoto={() => router.push("/photos")} style={{ width: "100%", minWidth: 0 }}
+      actions={pod ? <Button variant="onPhoto" size="sm" iconLeft="image" onClick={() => router.push(pod.id ? `/photos?photo=${pod.id}` : "/photos")}>Open</Button> : undefined}
+      onAddPhoto={() => router.push("/photos?add=1")} style={{ width: "100%", minWidth: 0 }}
     />
   );
 }
@@ -193,7 +193,12 @@ function RecentPhotos({ data }: { data: HomeData }) {
   const router = useRouter();
   return (
     <Section title="Recent photos" onAction={() => router.push("/photos")} actionLabel="All photos">
-      {data.recentPhotos.length ? null : <EmptyState compact icon="camera" title="Nothing here yet" body="Add the first photo from your phone and everyone sees it here." action={<Button size="sm" iconLeft="upload" onClick={() => router.push("/photos")}>Add a photo</Button>} style={{ padding: "4px 0" }} />}
+      {data.recentPhotos.length ? (
+        <div className="zhq-hscroll" style={{ display: "flex", gap: 8, overflowX: "auto", margin: "0 -16px", padding: "0 16px 4px" }}>
+          {data.recentPhotos.map((ph, i) => <ImageCard key={ph.id} src={ph.src} ratio="1 / 1" onClick={() => router.push(`/photos?photo=${ph.id}`)} style={{ width: 104, flex: "none", borderRadius: "var(--radius-photo-sm)", animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 40}ms both` }} />)}
+          <button type="button" onClick={() => router.push("/photos?add=1")} style={{ width: 104, aspectRatio: "1 / 1", flex: "none", borderRadius: "var(--radius-photo-sm)", border: "1.5px dashed var(--border-strong)", background: "transparent", color: "var(--text-secondary)", display: "grid", placeItems: "center", cursor: "pointer", font: "var(--type-caption)" }}><span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}><Icon name="plus" size={20} />Add</span></button>
+        </div>
+      ) : <EmptyState compact icon="camera" title="Nothing here yet" body="Add the first photo from your phone and everyone sees it here." action={<Button size="sm" iconLeft="upload" onClick={() => router.push("/photos?add=1")}>Add a photo</Button>} style={{ padding: "4px 0" }} />}
     </Section>
   );
 }

@@ -5,7 +5,8 @@
  * and normalizes HEIC from iOS (the browser decodes it; we re-encode).
  */
 export async function resizeImage(file: File, { max = 1024, quality = 0.86, square = false }: { max?: number; quality?: number; square?: boolean } = {}): Promise<Blob> {
-  const bitmap = await createImageBitmap(file).catch(() => null);
+  // `from-image` bakes the EXIF orientation into the pixels, so the re-encoded JPEG needs no orientation tag.
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(file).catch(() => null));
   if (!bitmap) return file;
   let { width: w, height: h } = bitmap;
   let sx = 0, sy = 0, sw = w, sh = h;
