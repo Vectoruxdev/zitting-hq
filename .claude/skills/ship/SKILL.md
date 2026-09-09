@@ -26,7 +26,7 @@ pnpm build
 
 ## 2. Browser QA (when UI changed)
 
-The dev server runs on **port 3002**. For member-facing changes, QA the member
+The dev server runs on **port 3000** (`pnpm dev`; the Browser pane starts it as `zitting-hq` from `.claude/launch.json`). For member-facing changes, QA the member
 experience via `/dev-preview` → "View as member" using the chrome-devtools MCP,
 and check `list_console_messages` for errors. Screenshots go in `.gstack/`
 (already gitignored-ish; never commit leaked financial numbers — see below).

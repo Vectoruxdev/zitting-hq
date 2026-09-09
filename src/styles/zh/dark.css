@@ -1,0 +1,60 @@
+/* Dark theme — phones at night. Same token names as light; scoped to data-zh-theme="dark" (a dedicated attribute so host UIs that set data-theme never flip cards by accident). Cards in dark sit on a slightly lifted surface; elevation comes from a 1px hairline, not shadow. */
+[data-zh-theme="dark"] {
+  color-scheme: dark;
+  --hue-coral: #F07A64; --hue-coral-soft: rgba(240, 122, 100, 0.18);
+  --hue-sky: #6FA8E8; --hue-sky-soft: rgba(111, 168, 232, 0.18);
+  --hue-mint: #5FC7A2; --hue-mint-soft: rgba(95, 199, 162, 0.18);
+  --hue-butter: #F2C46A; --hue-butter-soft: rgba(242, 196, 106, 0.18);
+  --hue-lilac: #B48BEA; --hue-lilac-soft: rgba(180, 139, 234, 0.18);
+  --hue-rose: #EE95BD; --hue-rose-soft: rgba(238, 149, 189, 0.18);
+  --bg-app: #15141A;
+  --surface-card: #1F1E25;
+  --surface-raised: #2A2931;
+  --surface-sunken: #0F0E13;
+  --surface-hover: #26252D;
+  --card-border: 1px solid rgba(244, 242, 240, 0.06); /* @kind other */
+  --border-hairline: rgba(244, 242, 240, 0.07);
+  --border-strong: rgba(244, 242, 240, 0.20);
+  --text-primary: #F4F2F0;
+  --text-secondary: #B3AFB8;
+  --text-tertiary: #7E7A86;
+  --text-on-accent: #1E0E0A;
+  --text-on-photo: #FFFFFF;
+  --accent: #F07A64;
+  --accent-hover: #F58F7C;
+  --accent-active: #D9634E;
+  --accent-soft: rgba(240, 122, 100, 0.16);
+  --positive: #5FC08A;
+  --positive-soft: rgba(95, 192, 138, 0.16);
+  --negative: #F0796A;
+  --negative-soft: rgba(240, 121, 106, 0.16);
+  --warning: #E5B04A;
+  --warning-soft: rgba(229, 176, 74, 0.16);
+  --info: #7FAAE0;
+  --info-soft: rgba(127, 170, 224, 0.16);
+  --data-1: var(--hue-coral);
+  --data-2: var(--hue-sky);
+  --data-3: var(--hue-butter);
+  --data-4: var(--hue-mint);
+  --data-track: #2A2930;
+  --data-grid: rgba(244, 242, 240, 0.08);
+  --control-bg: #1B1A20;
+  --control-border: var(--border-strong);
+  --control-placeholder: #7E7A86;
+  --overlay-scrim: rgba(0, 0, 0, 0.6);
+  --skeleton-base: #2A2930;
+  --skeleton-shine: rgba(244, 242, 240, 0.08);
+}
+
+[data-zh-theme="dark"] {
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.65);
+  --shadow-photo: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-zh-theme="dark"] {
+--photo-ring: none; /* @kind other */
+--photo-placeholder: linear-gradient(135deg, #2A2930, #201F25); /* @kind other */
+--scrim-full: rgba(0, 0, 0, 0.4); /* @kind other */
+}

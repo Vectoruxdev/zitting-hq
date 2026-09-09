@@ -1,0 +1,9 @@
+:root {
+  /* z-index scale — never use a raw number */
+--z-base: 0; /* @kind other */ --z-raised: 10; /* @kind other */ --z-sticky: 100; /* @kind other */ --z-tabbar: 200; /* @kind other */ --z-drawer: 300; /* @kind other */
+--z-sheet: 400; /* @kind other */ --z-modal: 500; /* @kind other */ --z-toast: 600; /* @kind other */ --z-tooltip: 700; /* @kind other */
+  /* canonical breakpoints — CSS media queries cannot read vars; these are the reference values.
+     sm 480 · md 768 · lg 1024 · xl 1280. Both family and finance surfaces use these and only these. */
+  --bp-sm: 480px; --bp-md: 768px; --bp-lg: 1024px; --bp-xl: 1280px;
+  --phone-frame: 392px;
+}

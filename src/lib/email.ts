@@ -12,7 +12,7 @@ export const isEmailConfigured = Boolean(resend);
 /** "Display Name <addr@verified-domain>". Sends from archaflow.com, which is
  *  already verified in Resend — so RESEND_API_KEY must be a key from that same
  *  Resend account. Override via EMAIL_FROM if you verify another domain. */
-export const EMAIL_FROM = process.env.EMAIL_FROM || "Family HQ <noreply@archaflow.com>";
+export const EMAIL_FROM = process.env.EMAIL_FROM || "Zitting HQ <noreply@archaflow.com>";
 export const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || "jared@vectorux.com";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://zitting-hq.vercel.app";
 

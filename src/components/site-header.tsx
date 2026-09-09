@@ -18,7 +18,7 @@ export function SiteHeader() {
           the cards are the navigation. */}
       <Link
         href="/"
-        title="Family HQ home"
+        title="Zitting HQ home"
         style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, whiteSpace: "nowrap" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}

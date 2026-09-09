@@ -56,3 +56,6 @@ next-env.d.ts
 
 # Eval gold set generated from real bank data — never commit
 src/db/fixtures/*.local.jsonl
+
+# Claude Design system bundle (vendored via DesignSync; source of truth is the Claude Design project — not committed, repo is public)
+/ds-bundle/

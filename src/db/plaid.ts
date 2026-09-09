@@ -1,5 +1,5 @@
 /**
- * Plaid → Family HQ bridge. Connecting a bank and syncing transactions both
+ * Plaid → Zitting HQ bridge. Connecting a bank and syncing transactions both
  * funnel into the EXISTING import pipeline (`commitImport`): each Plaid
  * transaction becomes an ImportRow whose `externalId` is Plaid's stable
  * `transaction_id`, so dedup, auto-categorization, transfer-linking, and
@@ -30,7 +30,7 @@ export async function createLinkToken(clientUserId: string): Promise<string> {
   try {
     const res = await plaid.linkTokenCreate({
       user: { client_user_id: clientUserId },
-      client_name: "Family HQ",
+      client_name: "Zitting HQ",
       products: PLAID_PRODUCTS,
       country_codes: PLAID_COUNTRY_CODES,
       language: "en",
@@ -304,6 +304,7 @@ async function syncItemInner(itemId: string) {
       .catch(() => [] as (typeof s.accountMembers.$inferSelect)[]);
     const managersByAcct = new Map<string, string[]>();
     for (const am of acctMemberRows) {
+      if (am.access === "view") continue; // Phase 6: viewers never receive attribution
       const arr = managersByAcct.get(am.accountId) || [];
       arr.push(am.memberId);
       managersByAcct.set(am.accountId, arr);
@@ -496,6 +497,7 @@ async function emitSyncNotifications(
     if (!memberRows.length) return;
     const managersByAccount = new Map<string, string[]>();
     for (const am of memberRows) {
+      if ((am as { access?: string }).access === "view") continue; // viewers don't categorize — no nudge
       managersByAccount.set(am.accountId, [...(managersByAccount.get(am.accountId) || []), am.memberId]);
     }
     const labelById = new Map<string, string>();

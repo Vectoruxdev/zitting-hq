@@ -142,7 +142,7 @@ export default function SetPasswordPage() {
             <p style={{ margin: "8px 0 0", fontSize: 13.5, color: "var(--text-secondary)" }}>Checking your invite link…</p>
           ) : status === "ready" ? (
             <>
-              <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "var(--text-secondary)" }}>Choose a password to finish setting up your Family HQ login.</p>
+              <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "var(--text-secondary)" }}>Choose a password to finish setting up your Zitting HQ login.</p>
               <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <PasswordInput placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} style={field} autoComplete="new-password" />
                 <PasswordInput placeholder="Confirm password" value={pw2} onChange={(e) => setPw2(e.target.value)} style={field} autoComplete="new-password" />

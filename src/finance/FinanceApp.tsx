@@ -74,6 +74,8 @@ const ALIASES: Record<string, { route: string; tab: string }> = {
 // kept in sessionStorage so a refresh re-opens the same screen instead of
 // resetting to Overview; a brand-new tab/session still lands on the default.
 // "member" is the owner's view-as-member preview.
+const SECTION_TITLES: Record<string, string> = { overview: "Overview", accounts: "Accounts", transactions: "Transactions", budgets: "Budgets", transfers: "Transfers", savings: "Savings", income: "Income & Bills", notifications: "Notifications", ask: "Ask AI", settings: "Settings" };
+
 const RESTORABLE_ROUTES = new Set([
   "overview", "accounts", "transactions", "budgets", "transfers", "savings",
   "income", "notifications", "ask", "settings", "member", "onboarding",
@@ -98,18 +100,20 @@ if (typeof window !== "undefined") {
 
   // Theme bootstrap (ported from the prototype's index.html inline script).
   if (!w.__zhqSetTheme) {
-    w.__zhqTheme = localStorage.getItem("zhq-theme") || "dark";
-    if (w.__zhqTheme === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
+    // Light is the default (design system, 2026-09); dark is opt-in via the
+    // guide's dedicated data-zh-theme attribute (see src/styles/zh/dark.css).
+    w.__zhqTheme = localStorage.getItem("zhq-theme") || "light";
+    if (w.__zhqTheme === "dark") {
+      document.documentElement.setAttribute("data-zh-theme", "dark");
     }
     w.__zhqSetTheme = (t: string) => {
       w.__zhqTheme = t;
       localStorage.setItem("zhq-theme", t);
-      if (t === "light") document.documentElement.setAttribute("data-theme", "light");
-      else document.documentElement.removeAttribute("data-theme");
+      if (t === "dark") document.documentElement.setAttribute("data-zh-theme", "dark");
+      else document.documentElement.removeAttribute("data-zh-theme");
       // Keep the browser chrome (notch/status bar) matched to the theme.
       const m = document.querySelector('meta[name="theme-color"]');
-      if (m) m.setAttribute("content", t === "light" ? "#FFFFFF" : "#0E0E10");
+      if (m) m.setAttribute("content", t === "dark" ? "#15141A" : "#FBFAF7");
     };
   }
 }
@@ -118,10 +122,18 @@ export default function FinanceApp({
   data,
   role = "owner",
   name,
+  embedded = false,
+  initialRoute = null,
+  initialTab = null,
 }: {
   data?: any;
   role?: "owner" | "partner" | "member";
   name?: string;
+  /** Rendered inside the app frame (AppShell supplies primary navigation). */
+  embedded?: boolean;
+  /** From the URL (/finance/<section>[?tab=]) — wins over the remembered position. */
+  initialRoute?: string | null;
+  initialTab?: string | null;
 }) {
   // Make the finance data available to the window-global screens before they
   // render. Falls back to the curated mock when no server data was supplied.
@@ -133,7 +145,7 @@ export default function FinanceApp({
   const router = useRouter();
   const isMember = role === "member";
   // Restore the pre-refresh position (sessionStorage); see savedPosition().
-  const saved = savedPosition(isMember);
+  const saved = !isMember && initialRoute && RESTORABLE_ROUTES.has(initialRoute) ? { route: initialRoute, tab: initialTab } : savedPosition(isMember);
   const [route, setRoute] = React.useState(saved.route);
   // Active tab within a hub screen (Transactions/Transfers/Income/Settings).
   // Owned here (not in the hub) so alias navigations land on a specific tab.
@@ -154,8 +166,12 @@ export default function FinanceApp({
   // unhandledrejection listener turns all of those into a visible toast.
   const [appError, setAppError] = React.useState<string | null>(null);
 
+  // Fresh `data` arrival time — screens call ZHQ_REFRESH() right after their
+  // server action returns, but the action's revalidatePath already delivered
+  // new data; skipping a refresh within that window kills the double fetch.
+  const lastDataAt = React.useRef(0);
   if (typeof window !== "undefined") {
-    w.ZHQ_REFRESH = () => startRefresh(() => router.refresh());
+    w.ZHQ_REFRESH = () => { if (Date.now() - lastDataAt.current < 1200) return; startRefresh(() => router.refresh()); };
     w.ZHQ_LOGOUT = () => signOut();
     // Any surface (feed, bell, push) opens the notification detail via this.
     w.ZHQ_OPEN_NOTIF = (x: number | string | Record<string, unknown>) => setOpenNotif(x);
@@ -225,6 +241,7 @@ export default function FinanceApp({
   React.useEffect(() => {
     if (typeof window !== "undefined") {
       w.ZHQ_DATA = data || MOCK_FINANCE_DATA;
+      lastDataAt.current = Date.now();
       setDataVersion((v) => v + 1);
     }
   }, [data]);
@@ -254,7 +271,9 @@ export default function FinanceApp({
     setHubTab(next.tab);
   }, []);
 
-  // Remember where the user is, so a refresh lands back on the same screen.
+  // Remember where the user is, so a refresh lands back on the same screen —
+  // and mirror it into the URL (/finance/<section>?tab=) so sections deep-link
+  // and the back button works like the rest of the app.
   React.useEffect(() => {
     if (isMember) return; // a member is always on Spendable (its own tab persists there)
     try {
@@ -262,16 +281,42 @@ export default function FinanceApp({
       if (hubTab) sessionStorage.setItem("zhq-hub-tab", hubTab);
       else sessionStorage.removeItem("zhq-hub-tab");
     } catch { /* storage blocked — losing the position on refresh is fine */ }
-  }, [isMember, route, hubTab]);
+    if (!embedded || route === "member" || route === "onboarding") return;
+    try {
+      const u = new URL(window.location.href);
+      if (!u.pathname.startsWith("/finance")) return;
+      const nextPath = route === "overview" ? "/finance" : `/finance/${route}`;
+      if (hubTab) u.searchParams.set("tab", hubTab); else u.searchParams.delete("tab");
+      const next = nextPath + (u.searchParams.toString() ? `?${u.searchParams}` : "") + u.hash;
+      if (next !== u.pathname + u.search + u.hash) window.history.pushState({}, "", next);
+      document.title = `${SECTION_TITLES[route] ?? "Finance"} · Zitting HQ`;
+    } catch { /* no-op */ }
+  }, [isMember, embedded, route, hubTab]);
 
-  // boot splash sequence — long enough to cover the window-global bootstrap
-  // and font swap on first paint, short enough not to feel like a gate.
+  // Back/forward between sections.
   React.useEffect(() => {
-    const t1 = setTimeout(() => setBootFade(true), 250);
-    const t2 = setTimeout(() => setBooting(false), 550);
+    if (!embedded || isMember) return;
+    const onPop = () => {
+      const seg = window.location.pathname.replace(/^\/finance\/?/, "").split("/")[0];
+      const r = seg && RESTORABLE_ROUTES.has(seg) ? seg : "overview";
+      const tab = new URL(window.location.href).searchParams.get("tab");
+      posRef.current = { route: r, tab };
+      setRoute(r);
+      setHubTab(tab);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [embedded, isMember]);
+
+  // Boot splash: readiness-based — it lifts on the first frame after the
+  // screens have mounted (the window-global bootstrap is done by then), with a
+  // short fade so it never reads as a flash. No fixed gate.
+  React.useEffect(() => {
+    let t2: ReturnType<typeof setTimeout> | undefined;
+    const t1 = requestAnimationFrame(() => { setBootFade(true); t2 = setTimeout(() => setBooting(false), 220); });
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+      cancelAnimationFrame(t1);
+      if (t2) clearTimeout(t2);
     };
   }, []);
 
@@ -421,7 +466,7 @@ export default function FinanceApp({
   return (
     <>
       {splash}
-      <ShellC active={route} onNavigate={navigate} title={r.title} loading={refreshing} onLogout={() => signOut()}>
+      <ShellC active={route} onNavigate={navigate} title={r.title} loading={refreshing} onLogout={() => signOut()} embedded={embedded}>
         <div key={`${route}:${dataVersion}`} className="zt-enter">
           <ErrorBoundary key={route} label={route} onReset={() => setDataVersion((v) => v + 1)}>
             {r.render(navigate)}

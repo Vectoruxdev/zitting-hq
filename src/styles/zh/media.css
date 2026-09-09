@@ -1,0 +1,20 @@
+:root {
+  /* aspect ratios */
+--ratio-hero: 3 / 2; /* @kind other */ /* desktop hero, photo of the day */
+--ratio-hero-mobile: 5 / 4; /* @kind other */ /* phone hero */
+--ratio-card: 4 / 3; /* @kind other */ /* image card, recipe photo */
+--ratio-square: 1 / 1; /* @kind other */ /* grid tiles, thumbs, avatars */
+--ratio-banner: 21 / 9; /* @kind other */ /* album header, goal header */
+--ratio-portrait: 3 / 4; /* @kind other */ /* single photo view fallback */
+  /* scrims for text over photos — always full-opacity white text on top */
+--scrim-bottom: linear-gradient(to top, rgba(20, 16, 24, 0.78) 0%, rgba(20, 16, 24, 0.35) 45%, rgba(20, 16, 24, 0) 70%); /* @kind other */
+--scrim-top: linear-gradient(to bottom, rgba(20, 16, 24, 0.55) 0%, rgba(20, 16, 24, 0) 40%); /* @kind other */
+--scrim-full: rgba(20, 16, 24, 0.32); /* @kind other */
+--photo-tint: transparent; /* @kind other */ /* no wash — photos are themselves */
+--photo-ring: none; /* @kind other */
+--photo-placeholder: linear-gradient(135deg, var(--paper-3, #EEEBE4), var(--paper-2, #F5F3EE)); /* @kind other */
+  /* avatar sizes */
+  --avatar-xs: 24px; --avatar-sm: 32px; --avatar-md: 40px; --avatar-lg: 56px; --avatar-xl: 80px; --avatar-2xl: 120px;
+--avatar-stack-overlap: -8px; /* @kind other */
+--avatar-ring: 2px solid var(--surface-card); /* @kind other */
+}

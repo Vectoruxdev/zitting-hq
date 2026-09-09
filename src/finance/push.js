@@ -55,7 +55,7 @@
       }
       if (isIOS() && !isStandalone()) {
         alert(
-          "On iPhone: tap the Share icon, choose “Add to Home Screen,” then open Family HQ from your home screen and turn on notifications there."
+          "On iPhone: tap the Share icon, choose “Add to Home Screen,” then open Zitting HQ from your home screen and turn on notifications there."
         );
         return false;
       }

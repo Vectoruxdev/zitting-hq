@@ -10,10 +10,13 @@ const SUPABASE_ANON_KEY =
 const PUBLIC_PATHS = [
   "/login",
   "/auth",
+  "/offline", // service-worker offline shell (static, no data)
+  "/api/health/db", // DB reachability probe (no data)
   "/api/plaid/webhook",
   "/api/plaid/cron-sync",
   "/api/transfers/cron", // daily transfers job (CRON_SECRET-guarded)
   "/api/digest/cron", // email digests (CRON_SECRET-guarded)
+  "/api/reminders/cron", // event/appointment reminders every 15 min (CRON_SECRET-guarded)
   "/api/push/vapid", // public VAPID key (safe to expose)
   "/api/mcp", // remote MCP server — guarded by its own MCP_TOKEN, not a session
   "/api/nest/events", // Pub/Sub push (NEST_EVENTS_TOKEN-guarded)

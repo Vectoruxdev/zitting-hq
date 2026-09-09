@@ -63,13 +63,13 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
   );
 }
 
-function ZHQTopbar({ title, onNavigate }) {
+function ZHQTopbar({ title, onNavigate, embedded = false }) {
   const { Icon, IconButton, SegmentedControl } = window.ZittingHQDesignSystem_c9e528;
   // Count only real (DB-backed, numeric-id) unread alerts. Derived/synthetic
   // alerts use string ids and can't be marked read, so excluding them lets the
   // badge reach zero once everything's been viewed.
   const unread = ((window.ZHQ_DATA && window.ZHQ_DATA.notifications) || []).filter((n) => n.unread && typeof n.id === 'number').length;
-  const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'dark');
+  const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'light');
   const toggleTheme = () => {
     const t = theme === 'light' ? 'dark' : 'light';
     window.__zhqSetTheme && window.__zhqSetTheme(t);
@@ -83,12 +83,12 @@ function ZHQTopbar({ title, onNavigate }) {
     }}>
       <h1 style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
       <div style={{ flex: 1 }} />
-      <button className="zhq-desktop-only" onClick={() => onNavigate && onNavigate('transactions')}
+      {embedded ? null : <button className="zhq-desktop-only" onClick={() => onNavigate && onNavigate('transactions')}
         style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px 0 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 200, font: 'inherit', cursor: 'pointer' }}>
         <Icon name="search" size={16} />
         <span style={{ fontSize: 13 }}>Search transactions…</span>
-      </button>
-      <SegmentedControl className="zhq-desktop-only" options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />
+      </button>}
+      {embedded ? null : <SegmentedControl className="zhq-desktop-only" options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />}
       <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />
       <IconButton icon="sparkles" label="Ask AI" variant="solid" onClick={() => onNavigate && onNavigate('ask')} />
       <div style={{ position: 'relative' }}>
@@ -164,8 +164,35 @@ function ZHQBottomNav({ active, onNavigate, onLogout }) {
   );
 }
 
-function ZHQShell({ active, onNavigate, title, children, loading, onLogout }) {
+/* Finance section switcher when the app frame supplies primary navigation:
+   the sections as underline Tabs (scrolls on phones), plus Settings. */
+function ZHQSubnav({ active, onNavigate }) {
+  const { Tabs } = window.ZittingHQDesignSystem_c9e528;
+  const D = window.ZHQ_DATA;
+  const nav = (D && D.nav) || [];
+  const options = [...nav.map((n) => ({ value: n.id, label: n.label })), { value: 'settings', label: 'Settings' }];
+  const value = options.some((o) => o.value === active) ? active : undefined;
+  return (
+    <div className="zhq-hscroll" style={{ overflowX: 'auto', flex: 'none', padding: '0 20px' }}>
+      <Tabs options={options} value={value} onChange={(v) => onNavigate && onNavigate(v)} style={{ minWidth: 'max-content' }} />
+    </div>
+  );
+}
+
+function ZHQShell({ active, onNavigate, title, children, loading, onLogout, embedded = false }) {
   const { LoadingBar } = window.ZittingHQDesignSystem_c9e528;
+  if (embedded) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-app)' }}>
+        <ZHQSubnav active={active} onNavigate={onNavigate} />
+        <ZHQTopbar title={title} onNavigate={onNavigate} embedded />
+        <div style={{ height: 2, flex: 'none' }}>{loading && LoadingBar ? <LoadingBar /> : null}</div>
+        <main className="zhq-main" style={{ flex: 1, overflowY: 'auto', padding: '26px 20px' }}>
+          <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>{children}</div>
+        </main>
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--bg-app)' }}>
       <ZHQSidebar active={active} onNavigate={onNavigate} onLogout={onLogout} />
@@ -181,4 +208,4 @@ function ZHQShell({ active, onNavigate, title, children, loading, onLogout }) {
   );
 }
 
-Object.assign(window, { ZHQSidebar, ZHQTopbar, ZHQShell });
+Object.assign(window, { ZHQSidebar, ZHQTopbar, ZHQShell, ZHQSubnav });

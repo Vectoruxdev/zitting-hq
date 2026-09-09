@@ -1,28 +1,76 @@
-/* Family HQ service worker — receives push and shows notifications. */
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+/* Zitting HQ service worker — push notifications + an offline shell.
+   App data is authenticated and live, so it is never cached: pages go to the
+   network first and fall back to /offline when there is none. Static assets
+   (Next chunks, icons, self-hosted fonts) are cached stale-while-revalidate. */
+const VERSION = "zhq-v2";
+const STATIC = `${VERSION}-static`;
+const PAGES = `${VERSION}-pages`;
+const OFFLINE_URL = "/offline";
 
-// A fetch handler is REQUIRED for the app to be installable as a PWA (Android
-// Chrome won't offer "Add to Home Screen" without one). We don't cache app data
-// (it's authenticated + live), so this is a pass-through that lets the network
-// handle every request normally.
-self.addEventListener("fetch", () => {});
+self.addEventListener("install", (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(PAGES);
+    await cache.addAll([OFFLINE_URL, "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"]).catch(() => {});
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
+});
+
+const isStatic = (url) => url.origin === self.location.origin && (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/") || url.pathname === "/manifest.webmanifest" || /\.(woff2?|png|svg|ico)$/.test(url.pathname));
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // Supabase, Plaid, fonts CDN: untouched
+  if (url.pathname.startsWith("/api/")) return;     // live, authenticated
+
+  if (isStatic(url)) {
+    // Stale-while-revalidate: instant from cache, refreshed in the background.
+    event.respondWith((async () => {
+      const cache = await caches.open(STATIC);
+      const hit = await cache.match(req);
+      const refresh = fetch(req).then((res) => { if (res && res.ok) cache.put(req, res.clone()); return res; }).catch(() => null);
+      return hit || (await refresh) || Response.error();
+    })());
+    return;
+  }
+
+  if (req.mode === "navigate") {
+    // Network first; the offline shell only when the network is truly gone.
+    event.respondWith((async () => {
+      try {
+        return await fetch(req);
+      } catch {
+        const cache = await caches.open(PAGES);
+        return (await cache.match(OFFLINE_URL)) || new Response("You're offline.", { status: 503, headers: { "Content-Type": "text/plain" } });
+      }
+    })());
+  }
+});
 
 self.addEventListener("push", (event) => {
   let data = {};
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: "Family HQ", body: event.data ? event.data.text() : "" };
+    data = { title: "Zitting HQ", body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "Family HQ";
+  const title = data.title || "Zitting HQ";
   const options = {
     body: data.body || "",
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     tag: data.tag || undefined,
     renotify: Boolean(data.tag),
-    data: { url: data.url || "/finance", linkTo: data.linkTo || null, notifId: data.notifId || null },
+    data: { url: data.url || "/notifications", linkTo: data.linkTo || null, notifId: data.notifId || null },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -30,7 +78,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const d = event.notification.data || {};
-  const url = d.url || "/finance";
+  const url = d.url || "/notifications";
   const notifId = d.notifId || null;
   event.waitUntil(
     (async () => {

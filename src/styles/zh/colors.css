@@ -1,0 +1,57 @@
+/* Zitting HQ — color. Light is the primary theme (kitchen tablet in daylight). Dark (tokens/dark.css) is a complete peer set, scoped to [data-zh-theme="dark"]. */
+:root {
+  color-scheme: light;
+  /* base palette */
+  --paper-0: #FFFFFF; --paper-1: #FBFAF7; --paper-2: #F5F3EE; --paper-3: #EEEBE4;
+  --ink-0: #26232B; --ink-1: #45414C; --ink-2: #6A6672; --ink-3: #9A96A1; --ink-4: #C9C6CE;
+  --coral-5: #E8604C; --coral-6: #C8452F; --coral-7: #A93A27; --coral-8: #8E3120; --coral-1: #FDEBE6;
+  /* friendly family tints — used for people, module launcher icons and chart series */
+  --hue-coral: #E8604C; --hue-coral-soft: #FDEBE6;
+  --hue-sky: #4A90D9; --hue-sky-soft: #E6F0FB;
+  --hue-mint: #3FB08A; --hue-mint-soft: #E2F5EE;
+  --hue-butter: #E9A93A; --hue-butter-soft: #FCF1DA;
+  --hue-lilac: #9B6BD9; --hue-lilac-soft: #F0E9FB;
+  --hue-rose: #E07AA6; --hue-rose-soft: #FBE8F1;
+  /* semantic — required names */
+  --bg-app: var(--paper-1);
+  --surface-card: var(--paper-0);
+  --surface-raised: #FFFFFF;
+  --surface-sunken: var(--paper-2);
+  --surface-hover: var(--paper-2);
+  --border-hairline: rgba(38, 35, 43, 0.06);
+  --border-strong: rgba(38, 35, 43, 0.16);
+  --text-primary: var(--ink-0);
+  --text-secondary: var(--ink-2);
+  --text-tertiary: var(--ink-3);
+  --text-on-accent: #FFFFFF;
+  --text-on-photo: #FFFFFF;
+  --accent: var(--coral-6);
+  --accent-hover: var(--coral-7);
+  --accent-active: var(--coral-8);
+  --accent-soft: var(--coral-1);
+  --positive: #2E8B5B;
+  --positive-soft: #E3F3EA;
+  --negative: #B4382D;
+  --negative-soft: #FBE5E2;
+  --warning: #B9770E;
+  --warning-soft: #FBF0D9;
+  --info: #3F6FB5;
+  --info-soft: #E6EEF9;
+  --data-1: var(--hue-coral);
+  --data-2: var(--hue-sky);
+  --data-3: var(--hue-butter);
+  --data-4: var(--hue-mint);
+  --data-track: var(--paper-3);
+  --data-grid: rgba(38, 35, 43, 0.07);
+  /* controls */
+  --control-bg: #FFFFFF;
+  --control-border: var(--border-strong);
+  --control-placeholder: var(--ink-3);
+  --overlay-scrim: rgba(38, 35, 43, 0.40);
+  --skeleton-base: var(--paper-2);
+  --skeleton-shine: rgba(255, 255, 255, 0.8);
+  --card-border: 1px solid transparent; /* @kind other */ /* dark theme swaps in a hairline */
+  /* per-person tints (fallback when no photo) — alias the family hues */
+  --person-1: var(--hue-coral); --person-2: var(--hue-sky); --person-3: var(--hue-mint); --person-4: var(--hue-butter); --person-5: var(--hue-lilac); --person-6: var(--hue-rose);
+  --person-1-soft: var(--hue-coral-soft); --person-2-soft: var(--hue-sky-soft); --person-3-soft: var(--hue-mint-soft); --person-4-soft: var(--hue-butter-soft); --person-5-soft: var(--hue-lilac-soft); --person-6-soft: var(--hue-rose-soft);
+}

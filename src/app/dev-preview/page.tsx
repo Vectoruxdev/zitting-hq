@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import FinanceClient from "@/finance/FinanceClient";
+import { AppFrame } from "@/components/app-frame";
 
 export const metadata = {
-  title: "Dev preview · Family HQ",
+  title: "Dev preview · Zitting HQ",
 };
 
 export const dynamic = "force-dynamic";
@@ -15,5 +16,11 @@ export const dynamic = "force-dynamic";
 // enough locally: .env.local pulled via `vercel env pull` defines VERCEL.)
 export default function DevPreviewPage() {
   if (process.env.NODE_ENV !== "development") notFound();
-  return <FinanceClient role="owner" name="Preview" />;
+  // Inside the app frame, as the owner sees it in production (?bare=1 for the
+  // standalone finance shell).
+  return (
+    <AppFrame user={{ name: "Preview", role: "owner", person: 1 }}>
+      <FinanceClient role="owner" name="Preview" embedded />
+    </AppFrame>
+  );
 }

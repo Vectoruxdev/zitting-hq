@@ -1,0 +1,17 @@
+:root {
+  --space-1: 2px; --space-2: 4px; --space-3: 8px; --space-4: 12px; --space-5: 16px; --space-6: 20px;
+  --space-7: 24px; --space-8: 32px; --space-9: 40px; --space-10: 48px; --space-11: 64px;
+  /* two intensities: family surfaces are generous, finance is tight */
+  --pad-card-family: var(--space-6);
+  --pad-card-finance: var(--space-5);
+  --gap-family: var(--space-5);
+  --gap-finance: var(--space-4);
+  --section-gap: var(--space-9); /* between sections on a page */
+  --row-h-family: 56px;
+  --row-h-finance: 40px;
+  --hit-min: 44px;
+  --page-gutter-mobile: var(--space-5);
+  --page-gutter-desktop: var(--space-8);
+  --content-max: 1120px;
+  --content-max-narrow: 640px;
+}

@@ -107,8 +107,10 @@ function MemberCategoryPicker({ onPick, onClose }) {
 
 // One transaction row. `review` mode shows Transfer + Approve actions; browse
 // mode shows an approved checkmark. The category chip is always tappable.
-function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onReceipt }) {
+function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onReceipt, readOnly = false }) {
   const { Icon, Button, Tag } = window.ZittingHQDesignSystem_c9e528;
+  // readOnly: a transaction on an account shared with this member as a viewer
+  // (Phase 6) — visible, never editable or approvable from here.
   return (
     <div style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 16, opacity: busy ? 0.5 : 1, border: review && !t.reviewed ? '1px solid var(--border-hairline)' : '1px solid transparent' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
@@ -124,11 +126,17 @@ function MemberTxnRow({ t, review, busy, onEditCat, onConfirm, onTransfer, onRec
         <span className="zt-num" style={{ fontSize: 17, fontWeight: 700, color: t.amt >= 0 ? 'var(--accent)' : 'var(--text-primary)', whiteSpace: 'nowrap' }}>{t.amt >= 0 ? '+' : '−'}${Math.abs(t.amt).toFixed(2)}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={onEditCat} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', minHeight: 36 }}>
-          <Tag color={t.color} size="md">{t.cat} ✎</Tag>
-        </button>
+        {readOnly ? (
+          <Tag color={t.color} size="md">{t.cat}</Tag>
+        ) : (
+          <button onClick={onEditCat} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', minHeight: 36 }}>
+            <Tag color={t.color} size="md">{t.cat} ✎</Tag>
+          </button>
+        )}
         <span style={{ flex: 1 }} />
-        {review && !t.reviewed ? (
+        {readOnly ? (
+          <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>View only</span>
+        ) : review && !t.reviewed ? (
           <>
             <Button variant="ghost" size="md" onClick={onTransfer} disabled={busy}>Transfer</Button>
             <Button variant="primary" size="md" onClick={onConfirm} disabled={busy}>Approve</Button>
@@ -517,6 +525,7 @@ function ZHQSpendable() {
   };
 
   const accounts = (H && H.managedAccounts) || [];
+  const viewAccounts = (H && H.viewAccounts) || []; // shared with this member as a viewer (Phase 6)
   const rawQueue = (H && H.reviewQueue) || [];
   const queue = rawQueue.filter((t) => !optimistic[t.id]);
   const myReceipts = (H && H.receipts) || [];
@@ -961,6 +970,26 @@ function ZHQSpendable() {
                 <div style={{ padding: '16px 0', fontSize: 14, color: 'var(--text-tertiary)' }}>You're not in charge of any accounts yet. Ask the account owner to add you.</div>
               )}
 
+              {/* accounts shared with you as a viewer — balance + activity, nothing to approve */}
+              {viewAccounts.length ? (
+                <>
+                  {sectionTitle('Shared with you')}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {viewAccounts.map((a) => (
+                      <button key={a.id} onClick={() => { setAcctFilter(a.id); setTab('activity'); }} style={{ textAlign: 'left', width: '100%', background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', padding: 16, border: '1px solid var(--border-hairline)', cursor: 'pointer', font: 'inherit' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 15.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, textTransform: 'capitalize' }}>{a.type}{a.mask ? ` ••${a.mask}` : ''} · view only</div>
+                          </div>
+                          <span className="zt-num" style={{ fontSize: 19, fontWeight: 700, color: a.balance < 0 ? 'var(--negative)' : 'var(--text-primary)', whiteSpace: 'nowrap', flex: 'none' }}>{a.balance < 0 ? '−' : ''}{a.balanceLabel.replace('-', '')}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+
               {/* savings goals — progress when they exist, encouragement when not */}
               {sectionTitle('Savings goals')}
               {goals.length ? (
@@ -1004,9 +1033,9 @@ function ZHQSpendable() {
             /* ========================== ACTIVITY ========================== */
             <>
               {/* account filter chips */}
-              {accounts.length > 1 ? (
+              {accounts.length + viewAccounts.length > 1 ? (
                 <div className="zhq-hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 6 }}>
-                  {[{ id: 'all', name: 'All' }, ...accounts].map((a) => (
+                  {[{ id: 'all', name: 'All' }, ...accounts, ...viewAccounts].map((a) => (
                     <button key={a.id} onClick={() => setAcctFilter(a.id)} style={{ flex: 'none', padding: '9px 15px', borderRadius: 999, border: '1px solid var(--border-hairline)', background: acctFilter === a.id ? 'var(--accent)' : 'var(--surface-card)', color: acctFilter === a.id ? 'var(--text-on-accent)' : 'var(--text-secondary)', font: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>{a.name}</button>
                   ))}
                 </div>
@@ -1022,7 +1051,7 @@ function ZHQSpendable() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {filteredActivity.map((t) => (
-                    <MemberTxnRow key={t.id} t={withOverlay(t)} review={false} busy={busy === t.id}
+                    <MemberTxnRow key={t.id} t={withOverlay(t)} review={false} busy={busy === t.id} readOnly={!!t.readOnly}
                       onEditCat={() => setPicker(t.id)}
                       onConfirm={() => confirmOne(t.id)}
                       onTransfer={() => markTransfer(t.id)}

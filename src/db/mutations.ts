@@ -6,7 +6,7 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, gte, inArray, or, isNull, lt, like, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, or, isNull, lt, like, sql, ne } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
@@ -337,11 +337,14 @@ export async function reorderAccounts(idsInOrder: string[]) {
 /** Accounts a member is "in charge of". Fail-closed (empty set) on any error. */
 export async function managedAccountIds(memberId: string): Promise<Set<string>> {
   try {
+    // Phase 6: only `manage` rows grant edit rights; `view` rows are read-only.
+    // Pre-migration (no `access` column) the second select falls back to "all rows manage".
     const rows = await requireDb()
-      .select({ accountId: s.accountMembers.accountId })
+      .select({ accountId: s.accountMembers.accountId, access: s.accountMembers.access })
       .from(s.accountMembers)
-      .where(eq(s.accountMembers.memberId, memberId));
-    return new Set(rows.map((r) => r.accountId));
+      .where(eq(s.accountMembers.memberId, memberId))
+      .catch(async () => (await requireDb().select({ accountId: s.accountMembers.accountId }).from(s.accountMembers).where(eq(s.accountMembers.memberId, memberId))).map((r) => ({ ...r, access: "manage" })));
+    return new Set(rows.filter((r) => r.access !== "view").map((r) => r.accountId));
   } catch {
     return new Set();
   }
@@ -363,8 +366,11 @@ export async function setAccountMembers(accountId: string, memberIds: string[]) 
   const database = requireDb();
   const unique = Array.from(new Set(memberIds)).slice(0, 2);
   await database.transaction(async (tx) => {
-    await tx.delete(s.accountMembers).where(eq(s.accountMembers.accountId, accountId));
-    if (unique.length) await tx.insert(s.accountMembers).values(unique.map((memberId) => ({ accountId, memberId })));
+    // Replace the managers only; viewer grants (Phase 6) are set from People & permissions.
+    // Requires supabase-phase6-money-v2.sql (migrate before deploy).
+    await tx.delete(s.accountMembers).where(and(eq(s.accountMembers.accountId, accountId), ne(s.accountMembers.access, "view")));
+    // A member who already had a viewer grant is promoted to manager.
+    if (unique.length) await tx.insert(s.accountMembers).values(unique.map((memberId) => ({ accountId, memberId, access: "manage" }))).onConflictDoUpdate({ target: [s.accountMembers.accountId, s.accountMembers.memberId], set: { access: "manage" } });
   });
   return { ok: true as const };
 }
@@ -1936,6 +1942,7 @@ export async function createNotification(args: {
   entityType?: string | null; // what it's about: transaction | transaction-group | transfer | account | member | route
   entityRef?: string | null; // matching ref (txn externalId, transfer id, account/member id, joined ids, route id)
   dedupeKey?: string | null; // idempotency — skip if one already exists
+  module?: string; // which module it belongs to (hub grouping); default finance
 }) {
   const database = requireDb();
   // Owner preferences: a disabled event fires nothing; channel toggles gate the
@@ -1943,6 +1950,21 @@ export async function createNotification(args: {
   // table isn't there yet (pre-migration) or the type isn't tunable.
   const ch = channelsFor(args.type, await loadNotifPrefRows());
   if (!ch.enabled) return { ok: true as const, skipped: true as const };
+  // Per-member channels (Phase 1): a member-addressed alert also respects that
+  // member's own in-app / push toggles for the event. Missing row = on.
+  if (args.audience === "member" && args.memberId) {
+    const mine = await database
+      .select({ inApp: s.memberNotificationPrefs.inApp, push: s.memberNotificationPrefs.push })
+      .from(s.memberNotificationPrefs)
+      .where(and(eq(s.memberNotificationPrefs.memberId, args.memberId), eq(s.memberNotificationPrefs.event, args.type)))
+      .limit(1)
+      .catch(() => [] as { inApp: boolean; push: boolean }[]);
+    if (mine[0]) {
+      ch.inApp = ch.inApp && mine[0].inApp;
+      ch.push = ch.push && mine[0].push;
+      if (!ch.inApp && !ch.push) return { ok: true as const, skipped: true as const };
+    }
+  }
   // Idempotency: never double-post the same logical alert (webhook + cron, etc.)
   if (args.dedupeKey) {
     const dup = await database
@@ -1960,6 +1982,7 @@ export async function createNotification(args: {
       .insert(s.notifications)
       .values({
         type: args.type,
+        module: args.module ?? "finance",
         tone: args.tone ?? "info",
         title: args.title,
         body: args.body ?? null,

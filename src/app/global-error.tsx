@@ -19,7 +19,7 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 420, padding: 24 }}>
-          <div style={{ fontSize: 26, marginBottom: 10 }}>Family HQ</div>
+          <div style={{ fontSize: 26, marginBottom: 10 }}>Zitting HQ</div>
           <p style={{ fontSize: 14.5, color: "#A0A0A8", marginBottom: 18, lineHeight: 1.5 }}>
             The app hit an unexpected error. Refresh to get back to it — your
             data is safe.

@@ -95,9 +95,18 @@ export const accountMembers = pgTable(
   {
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
     memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    // Phase 6: manage (categorize, in charge) | view (sees balances + activity, read-only).
+    access: text("access").notNull().default("manage"),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.memberId] }), index("idx_acctmem_member").on(t.memberId)]
 );
+
+/** Phase 6: per-member module switches (missing row = allowed). Owner ignores this. */
+export const memberModuleAccess = pgTable("member_module_access", {
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  module: text("module").notNull(),
+  allowed: boolean("allowed").notNull().default(true),
+}, (t) => [primaryKey({ columns: [t.memberId, t.module] })]);
 
 // ---- Import batches -----------------------------------------------------
 
@@ -485,6 +494,7 @@ export const notifications = pgTable(
   {
     id: serial("id").primaryKey(),
     type: text("type").notNull(),
+    module: text("module").notNull().default("finance"), // hub grouping (supabase-phase1-profiles-quotes.sql)
     icon: text("icon"),
     tone: text("tone").notNull().default("info"),
     title: text("title").notNull(),
@@ -697,6 +707,9 @@ export const shoppingItems = pgTable(
     addedBy: text("added_by").references(() => familyMembers.id),
     checked: boolean("checked").notNull().default(false),
     source: text("source").notNull().default("manual"), // manual | meal | pantry
+    // Phase 2: who's grabbing it / who asked for it
+    assigneeMemberId: text("assignee_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    requestedBy: text("requested_by").references(() => familyMembers.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -724,11 +737,18 @@ export const pantryItems = pgTable(
 export const recipes = pgTable("recipes", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  emoji: text("emoji"),
+  emoji: text("emoji"), // legacy; the UI shows a cover photo instead
   ingredients: jsonb("ingredients").$type<{ name: string; qty?: string }[]>().notNull().default([]),
   notes: text("notes"),
   lastMadeOn: date("last_made_on"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  // Phase 2 (supabase-phase2-kitchen.sql)
+  coverPhotoPath: text("cover_photo_path"), // key in the private 'recipes' bucket
+  servings: integer("servings"),
+  prepMinutes: integer("prep_minutes"),
+  tags: text("tags").array().notNull().default([]),
+  sourceUrl: text("source_url"),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
 });
 
 /** The week grid: one row per date+slot, pointing at a recipe or free text. */
@@ -769,8 +789,29 @@ export const familyEvents = pgTable(
     note: text("note"),
     createdBy: text("created_by").references(() => familyMembers.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    // Phase 4 (supabase-phase4-calendar-trips.sql): unified events + appointments
+    kind: text("kind").notNull().default("event"), // event | appointment
+    endTime: text("end_time"),
+    forMemberId: text("for_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    driverMemberId: text("driver_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    location: text("location"),
+    prepNotes: text("prep_notes"),
+    visibility: text("visibility").notNull().default("family"),
+    tripId: text("trip_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
-  (t) => [index("idx_family_events_date").on(t.date)]
+  (t) => [index("idx_family_events_date").on(t.date), index("idx_family_events_kind").on(t.kind, t.date)]
+);
+
+export const eventReminders = pgTable(
+  "event_reminders",
+  {
+    id: serial("id").primaryKey(),
+    eventId: integer("event_id").notNull().references(() => familyEvents.id, { onDelete: "cascade" }),
+    minutesBefore: integer("minutes_before").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_event_reminders_event").on(t.eventId)]
 );
 
 // ---- Nest (cameras → Govee lights) ---------------------------------------
@@ -870,3 +911,318 @@ export const nestEvents = pgTable(
     index("idx_nest_events_created").on(t.createdAt),
   ]
 );
+
+// ---- Phase 1 (2026-09 revamp): profiles, member prefs, quotes, sharing ----
+// supabase-phase1-profiles-quotes.sql. All reads are defensive (pre-migration
+// DB → defaults). Kept off family_members so `select *` there never breaks.
+
+export const memberProfiles = pgTable("member_profiles", {
+  memberId: text("member_id").primaryKey().references(() => familyMembers.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("adult"), // adult | child
+  hue: integer("hue"), // 1..6 family hue; null = derived from id
+  avatarPath: text("avatar_path"), // key in the private 'avatars' bucket
+  birthday: date("birthday"),
+  greetingName: text("greeting_name"),
+  theme: text("theme").notNull().default("system"), // light | dark | system
+  homeLayout: jsonb("home_layout").$type<{ order: string[]; hidden: string[] }>(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const memberNotificationPrefs = pgTable(
+  "member_notification_prefs",
+  {
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    inApp: boolean("in_app").notNull().default(true),
+    push: boolean("push").notNull().default(true),
+    email: boolean("email").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.memberId, t.event] })]
+);
+
+export const quotes = pgTable(
+  "quotes",
+  {
+    id: serial("id").primaryKey(),
+    text: text("text").notNull(),
+    saidByMemberId: text("said_by_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    saidByName: text("said_by_name"),
+    saidOn: date("said_on"),
+    addedBy: text("added_by").references(() => familyMembers.id, { onDelete: "set null" }),
+    visibility: text("visibility").notNull().default("family"), // family | private | custom
+    favorite: boolean("favorite").notNull().default(false),
+    showOnLogin: boolean("show_on_login").notNull().default(false),
+    source: text("source").notNull().default("user"), // user | seed
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_quotes_said_on").on(t.saidOn)]
+);
+
+/** Per-item sharing for visibility = "custom". */
+export const shares = pgTable(
+  "shares",
+  {
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.memberId] }), index("idx_shares_member").on(t.memberId)]
+);
+
+// ---- Phase 2 (2026-09 revamp): the kitchen — supabase-phase2-kitchen.sql ----
+
+/** Default cook / dish duty per weekday (0 = Sunday … 6 = Saturday). */
+export const dinnerRotation = pgTable("dinner_rotation", {
+  weekday: integer("weekday").primaryKey(),
+  cookMemberId: text("cook_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  dishMemberIds: text("dish_member_ids").array().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+/** Per-date override of the rotation (a swap, a one-off, a note). */
+export const dinnerAssignments = pgTable("dinner_assignments", {
+  date: date("date").primaryKey(),
+  cookMemberId: text("cook_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  dishMemberIds: text("dish_member_ids").array().notNull().default([]),
+  note: text("note"),
+  source: text("source").notNull().default("override"), // override | swap
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const dinnerSwaps = pgTable(
+  "dinner_swaps",
+  {
+    id: serial("id").primaryKey(),
+    fromMemberId: text("from_member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    toMemberId: text("to_member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    fromDate: date("from_date").notNull(),
+    toDate: date("to_date").notNull(),
+    status: text("status").notNull().default("pending"), // pending | accepted | declined | cancelled
+    message: text("message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_dinner_swaps_status").on(t.status)]
+);
+
+export const mealIdeas = pgTable("meal_ideas", {
+  id: serial("id").primaryKey(),
+  url: text("url").notNull(),
+  platform: text("platform").notNull().default("web"), // tiktok | instagram | youtube | web
+  title: text("title"),
+  imageUrl: text("image_url"),
+  author: text("author"),
+  notes: text("notes"),
+  postedBy: text("posted_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("idea"), // idea | planned | made
+  recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const mealIdeaReactions = pgTable(
+  "meal_idea_reactions",
+  {
+    ideaId: integer("idea_id").notNull().references(() => mealIdeas.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull().default("heart"),
+  },
+  (t) => [primaryKey({ columns: [t.ideaId, t.memberId] })]
+);
+
+// ---- Phase 3 (2026-09 revamp): photos — supabase-phase3-photos.sql ----
+
+export const photos = pgTable(
+  "photos",
+  {
+    id: text("id").primaryKey(), // uuid from the app
+    storagePath: text("storage_path").notNull(), // full-size (≤2048px) in the private 'photos' bucket
+    thumbPath: text("thumb_path"), // square ~400px
+    width: integer("width"),
+    height: integer("height"),
+    takenAt: timestamp("taken_at", { withTimezone: true }),
+    uploadedBy: text("uploaded_by").references(() => familyMembers.id, { onDelete: "set null" }),
+    caption: text("caption"),
+    visibility: text("visibility").notNull().default("family"), // family | private | custom
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_photos_taken").on(t.takenAt), index("idx_photos_uploader").on(t.uploadedBy)]
+);
+
+export const albums = pgTable("albums", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  coverPhotoId: text("cover_photo_id").references(() => photos.id, { onDelete: "set null" }),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  visibility: text("visibility").notNull().default("family"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const albumPhotos = pgTable(
+  "album_photos",
+  {
+    albumId: text("album_id").notNull().references(() => albums.id, { onDelete: "cascade" }),
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    sort: integer("sort").notNull().default(0),
+    addedAt: timestamp("added_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.albumId, t.photoId] }), index("idx_album_photos_photo").on(t.photoId)]
+);
+
+export const photoPeople = pgTable(
+  "photo_people",
+  {
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.photoId, t.memberId] }), index("idx_photo_people_member").on(t.memberId)]
+);
+
+export const photoFavorites = pgTable(
+  "photo_favorites",
+  {
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.photoId, t.memberId] })]
+);
+
+/** A photo attached to something else: recipe | event | goal | trip | quote | night. */
+export const attachments = pgTable(
+  "attachments",
+  {
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    photoId: text("photo_id").notNull().references(() => photos.id, { onDelete: "cascade" }),
+    sort: integer("sort").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.photoId] })]
+);
+
+// ---- Phase 4 (2026-09 revamp): trips — supabase-phase4-calendar-trips.sql ----
+
+export const trips = pgTable("trips", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  destination: text("destination"),
+  startsOn: date("starts_on"),
+  endsOn: date("ends_on"),
+  coverPhotoId: text("cover_photo_id").references(() => photos.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  visibility: text("visibility").notNull().default("family"),
+  goalId: text("goal_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const tripParticipants = pgTable(
+  "trip_participants",
+  {
+    tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.tripId, t.memberId] })]
+);
+
+export const tripItems = pgTable(
+  "trip_items",
+  {
+    id: serial("id").primaryKey(),
+    tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    day: date("day"),
+    time: text("time"),
+    title: text("title").notNull(),
+    location: text("location"),
+    notes: text("notes"),
+    url: text("url"),
+    sort: integer("sort").notNull().default(0),
+  },
+  (t) => [index("idx_trip_items_trip").on(t.tripId, t.day, t.sort)]
+);
+
+export const tripDocuments = pgTable("trip_documents", {
+  id: text("id").primaryKey(),
+  tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+  storagePath: text("storage_path").notNull(),
+  name: text("name").notNull(),
+  mime: text("mime"),
+  sizeBytes: integer("size_bytes"),
+  uploadedBy: text("uploaded_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const tripPacking = pgTable("trip_packing", {
+  id: serial("id").primaryKey(),
+  tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  assigneeMemberId: text("assignee_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  checked: boolean("checked").notNull().default(false),
+  sort: integer("sort").notNull().default(0),
+});
+
+// ── Phase 5: goals & chores ─────────────────────────────────────────────────
+/** Family and personal goals; savings goals link to the finance module's savings_goals. */
+export const goals = pgTable("goals", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  kind: text("kind").notNull().default("family"), // family | personal
+  progressKind: text("progress_kind").notNull().default("checkoff"), // checkoff | count | streak | savings
+  target: numeric("target", { precision: 14, scale: 2 }),
+  unit: text("unit"),
+  savingsGoalId: text("savings_goal_id").references(() => savingsGoals.id, { onDelete: "set null" }),
+  coverPhotoId: text("cover_photo_id").references(() => photos.id, { onDelete: "set null" }),
+  dueOn: date("due_on"),
+  hue: integer("hue"),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  visibility: text("visibility").notNull().default("family"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedBy: text("completed_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const goalParticipants = pgTable("goal_participants", {
+  goalId: text("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.goalId, t.memberId] })]);
+
+export const goalCheckins = pgTable("goal_checkins", {
+  id: serial("id").primaryKey(),
+  goalId: text("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
+  memberId: text("member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  day: date("day").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull().default("1"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("idx_goal_checkins_goal").on(t.goalId, t.day)]);
+
+/** A recurring chore: who, which weekdays (digits, Sunday = 0), when in the day, points, whether an adult checks it. */
+export const chores = pgTable("chores", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  icon: text("icon"),
+  assigneeMemberId: text("assignee_member_id").references(() => familyMembers.id, { onDelete: "set null" }), // null = anyone
+  days: text("days").notNull().default("0123456"),
+  timeOfDay: text("time_of_day").notNull().default("any"), // morning | afternoon | evening | any
+  points: integer("points").notNull().default(1),
+  needsCheck: boolean("needs_check").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const choreCompletions = pgTable("chore_completions", {
+  id: serial("id").primaryKey(),
+  choreId: text("chore_id").notNull().references(() => chores.id, { onDelete: "cascade" }),
+  memberId: text("member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  day: date("day").notNull(),
+  doneAt: timestamp("done_at", { withTimezone: true }).defaultNow(),
+  checkedBy: text("checked_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  checkedAt: timestamp("checked_at", { withTimezone: true }),
+}, (t) => [uniqueIndex("chore_completions_chore_id_day_key").on(t.choreId, t.day), index("idx_chore_completions_day").on(t.day)]);

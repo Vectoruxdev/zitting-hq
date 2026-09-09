@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
-import { SiteHeader } from "@/components/site-header";
+import { AppFrame } from "@/components/app-frame";
+import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getGroceriesData } from "@/db/household";
+import { getPeople } from "@/db/profiles";
 import { GroceriesClient } from "./groceries-client";
 
 export const metadata = { title: "Groceries · Zitting HQ" };
@@ -11,34 +14,17 @@ export const dynamic = "force-dynamic";
 export default async function GroceriesPage() {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/groceries");
-
-  const data = await getGroceriesData();
-
+  await guardModule(user, "groceries");
+  const [ctx, data, people] = await Promise.all([frameContext(user), getGroceriesData(), getPeople().catch(() => [])]);
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <SiteHeader />
-      <main style={{ flex: 1, padding: "clamp(20px, 4vw, 40px) 18px 56px" }}>
-        <div style={{ maxWidth: 760, margin: "0 auto" }}>
-          <GroceriesClient
-            configured={data.configured}
-            items={data.items.map((i) => ({
-              id: i.id,
-              name: i.name,
-              note: i.note,
-              category: i.category,
-              checked: i.checked,
-              source: i.source,
-            }))}
-            pantry={data.pantry.map((p) => ({
-              id: p.id,
-              name: p.name,
-              category: p.category,
-              level: p.level,
-              staple: p.staple,
-            }))}
-          />
-        </div>
-      </main>
-    </div>
+    <AppFrame user={ctx}>
+      <GroceriesClient
+        configured={data.configured}
+        items={data.items.map((i) => ({ id: i.id, name: i.name, note: i.note, category: i.category, checked: i.checked, source: i.source, assigneeMemberId: i.assigneeMemberId ?? null, requestedBy: i.requestedBy ?? null }))}
+        pantry={data.pantry.map((p) => ({ id: p.id, name: p.name, category: p.category, level: p.level, staple: p.staple }))}
+        people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl }))}
+        me={user?.memberId ?? null}
+      />
+    </AppFrame>
   );
 }

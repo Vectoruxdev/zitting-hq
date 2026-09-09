@@ -70,6 +70,7 @@ async function buildInput(runDate: string, cadence: DigestCadence): Promise<Dige
   // Unreviewed counts on each member's managed accounts (for the "to categorize" nudge).
   const managedByMember = new Map<string, Set<string>>();
   for (const am of acctMemRows) {
+    if ((am as { access?: string }).access === "view") continue; // Phase 6: view grants aren't managers
     const set = managedByMember.get(am.memberId) || new Set<string>();
     set.add(am.accountId);
     managedByMember.set(am.memberId, set);
