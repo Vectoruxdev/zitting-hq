@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getHomeData } from "@/db/home";
 import { HomeScreen } from "./home-screen";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 /* Home — the per-person dashboard. Owner sees the household; a wife sees her
    Spendable; everyone sees the family, today, and what needs them. */
 export default async function Home() {
-  const user = await getCurrentUser();
+  const user = await timed("/", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login");
   const role = (user?.role ?? "owner") as "owner" | "partner" | "member";
   // While the owner is "viewing as" someone, `user` is that person — but the

@@ -3,6 +3,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { timed } from "@/lib/timing";
 
 /**
  * The app shell (nav, header, add sheet, view-as banner) lives here, once, for
@@ -13,8 +14,8 @@ import { isAuthConfigured } from "@/lib/supabase/server";
  * the instant you tap. Finance keeps its own frame (members get its bare canvas).
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser();
+  const user = await timed("shell:user", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login");
-  const ctx = await frameContext(user);
+  const ctx = await timed("shell:frame", frameContext(user));
   return <AppFrame user={ctx}>{children}</AppFrame>;
 }

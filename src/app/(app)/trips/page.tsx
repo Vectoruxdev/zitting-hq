@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { listTrips } from "@/db/trips";
@@ -12,7 +13,7 @@ export const metadata = { title: "Trips · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ add?: string }> }) {
-  const user = await getCurrentUser();
+  const user = await timed("/trips", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/trips");
   await guardModule(user, "trips");
   const { add } = await searchParams;

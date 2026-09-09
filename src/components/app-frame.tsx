@@ -101,6 +101,10 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
   const active = moduleForPath(pathname);
   const go = (key: string) => { const m = modulesFor(user.role).find((x) => x.slug === key); if (m) router.push(m.href); };
   const bell = <IconButton icon="bell" label="Notifications" badge={user.unread ? (user.unread > 9 ? "9+" : user.unread) : undefined} active={pathname.startsWith("/notifications")} onClick={() => router.push("/notifications")} />;
+  // Screens you've seen in the last minute come back from memory; this pulls
+  // fresh data now (someone else's change, a bank sync) without a full reload.
+  const refresh = <IconButton icon="refresh-cw" label="Refresh" onClick={() => { router.refresh(); }} />;
+  const headerActions = <>{refresh}{bell}</>;
   return (
     <div style={{ height: "100dvh", background: "var(--bg-app)", display: "flex", flexDirection: "column" }}>
       {banner}
@@ -108,7 +112,7 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
         <AppShell
           modules={modules} active={active} onNavigate={go}
           user={{ name: user.name, person: user.person, src: user.src ?? undefined }}
-          onAction={() => setAdd(true)} actionIcon="plus" actionLabel="Add something" onSignOut={() => signOut()} onUser={() => router.push("/me")} headerActions={bell}
+          onAction={() => setAdd(true)} actionIcon="plus" actionLabel="Add something" onSignOut={() => signOut()} onUser={() => router.push("/me")} headerActions={headerActions}
         >
           <div ref={scroller} style={{ height: "100%", overflow: "auto", minWidth: 0 }}>{children}</div>
         </AppShell>

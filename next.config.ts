@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_TIME: buildTime,
   },
   experimental: {
+    // Client router cache: a tab you visited in the last minute comes straight
+    // back from memory (no request). Your own saves clear it — every server
+    // action revalidates — and the shell's Refresh button forces a re-read.
+    staleTimes: { dynamic: 60, static: 300 },
     serverActions: {
       // Receipt photos upload through a server action; the 1MB default
       // rejects any real camera photo. The client downscales to ~1MB first —

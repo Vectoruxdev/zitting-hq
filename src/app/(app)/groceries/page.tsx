@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { getGroceriesData } from "@/db/household";
@@ -10,7 +11,7 @@ export const metadata = { title: "Groceries · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function GroceriesPage() {
-  const user = await getCurrentUser();
+  const user = await timed("/groceries", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/groceries");
   await guardModule(user, "groceries");
   const [data, people] = await Promise.all([getGroceriesData(), getPeople().catch(() => [])]);

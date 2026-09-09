@@ -5,6 +5,7 @@ import { frameContext } from "@/lib/frame";
 import { getFinanceData } from "@/db/queries";
 import { touchMemberLastSeen } from "@/db/mutations";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 
 /** Sections that have their own URL (/finance/<section>). Old ids (bulk, import, allocations…) still work via FinanceApp's aliases. */
@@ -16,7 +17,7 @@ export const FINANCE_SECTIONS = ["overview", "accounts", "transactions", "budget
  * mock otherwise (so it also prerenders fine with no DB).
  */
 export async function FinancePage({ section, searchParams }: { section: string | null; searchParams: { as?: string; tab?: string } }) {
-  const user = await getCurrentUser();
+  const user = await timed("/finance", getCurrentUser());
   // When auth is configured, require a session. When it isn't (e.g. local dev
   // with no Supabase env), fall through as owner so the app stays usable.
   if (isAuthConfigured && !user) redirect(`/login?redirect=${encodeURIComponent(section ? `/finance/${section}` : "/finance")}`);

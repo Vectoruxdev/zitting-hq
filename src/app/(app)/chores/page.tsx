@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { listChores, listCompletions, weekOf } from "@/db/chores";
@@ -13,7 +14,7 @@ export const metadata = { title: "Chores · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function ChoresPage({ searchParams }: { searchParams: Promise<{ day?: string; tab?: string }> }) {
-  const user = await getCurrentUser();
+  const user = await timed("/chores", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/chores");
   await guardModule(user, "chores");
   const { day, tab } = await searchParams;

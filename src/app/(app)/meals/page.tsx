@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { getMealsData, addDaysISO, localISO } from "@/db/household";
@@ -13,7 +14,7 @@ export const metadata = { title: "Meals · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function MealsPage({ searchParams }: { searchParams: Promise<{ week?: string; tab?: string; swap?: string }> }) {
-  const user = await getCurrentUser();
+  const user = await timed("/meals", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/meals");
   await guardModule(user, "meals");
   const { week, tab, swap } = await searchParams;

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { getCalendar } from "@/db/calendar";
@@ -13,7 +14,7 @@ export const metadata = { title: "Calendar · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ event?: string; date?: string; view?: string; feeds?: string }> }) {
-  const user = await getCurrentUser();
+  const user = await timed("/calendar", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/calendar");
   await guardModule(user, "calendar");
   const { event, date, view, feeds } = await searchParams;
