@@ -119,7 +119,8 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   const groceries = await sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries");
   const calendar = await sectionWithTimeout<DashboardData["calendar"]>(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar");
   const finance = await sectionWithTimeout<DashboardData["finance"]>(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance");
-  console.log(`[dashboard] sections ${Date.now() - t0}ms`);
+  const took = Date.now() - t0;
+  if (took > 6000) console.log(`[dashboard] sections slow: ${took}ms`);
 
   // Today's glance — calendar events whose chip is "Today" + tonight's dinner.
   const today: DashboardData["today"] = {

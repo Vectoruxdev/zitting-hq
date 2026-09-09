@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db, isDbConfigured } from "@/db";
-import { probeHomeReads } from "@/db/probe";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +13,6 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   if (!isDbConfigured || !db) return NextResponse.json({ ok: false, configured: false });
   const u = new URL(req.url);
-  if (u.searchParams.get("deep") === "1") {
-    const t0 = Date.now();
-    const steps = await probeHomeReads(u.searchParams.get("viewer") === "owner" ? "owner" : "anon");
-    return NextResponse.json({ ok: steps.every((s) => s.ok), totalMs: Date.now() - t0, steps, region: process.env.VERCEL_REGION ?? null, env: process.env.VERCEL_ENV ?? null, node: process.version });
-  }
   const n = Math.max(1, Math.min(8, Number(u.searchParams.get("n") || 1)));
   const serial = u.searchParams.get("serial") === "1";
   const one = async (i: number) => {

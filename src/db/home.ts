@@ -55,7 +55,7 @@ function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000):
   const t0 = Date.now();
   return new Promise((resolve) => {
     const t = setTimeout(() => { console.error(`[home] ${label} timed out after ${ms}ms — using its empty state`); resolve(fallback()); }, ms);
-    p.then((v) => { clearTimeout(t); console.log(`[home] ${label} ${Date.now() - t0}ms`); resolve(v); }, (e) => { clearTimeout(t); console.error(`[home] ${label} failed after ${Date.now() - t0}ms:`, e instanceof Error ? e.message : e); resolve(fallback()); });
+    p.then((v) => { clearTimeout(t); const took = Date.now() - t0; if (took > 1500) console.log(`[home] ${label} slow: ${took}ms`); resolve(v); }, (e) => { clearTimeout(t); console.error(`[home] ${label} failed after ${Date.now() - t0}ms:`, e instanceof Error ? e.message : e); resolve(fallback()); });
   });
 }
 
@@ -68,7 +68,6 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
   // fenced so one slow module renders as its empty state, never a hung page.
   const tHome = Date.now();
   const dashboard = await getDashboardData(viewer);
-  console.log(`[home] dashboard ${Date.now() - tHome}ms`);
   const people = await guarded("people", getPeople(), () => [] as Person[]);
   const quote = await guarded("quote", quoteOfTheDay(av, todayISO), () => null);
   const unread = await guarded("unread", unreadCount(av), () => 0);
@@ -82,6 +81,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
   const pod = await guarded("photo of the day", photoOfTheDay(av, todayISO), () => null);
   const recent = await guarded("recent photos", recentPhotos(av, 6), () => []);
   const cal = await guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000);
+  console.log(`[home] reads ${Date.now() - tHome}ms`);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
   return {
