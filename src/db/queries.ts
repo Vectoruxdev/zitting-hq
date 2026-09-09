@@ -262,7 +262,14 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const receiptLineRows = await db.select().from(s.receiptLines).orderBy(asc(s.receiptLines.sortOrder)).catch(() => [] as (typeof s.receiptLines.$inferSelect)[]);
     // Member-managed accounts + per-member allowance (migration 0005) — defensive
     // so a pre-migration DB degrades to "no managers / no allowance" not a wipe.
-    const acctMemberRows = await db.select().from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[]);
+    // Phase 6: each grant carries an access level (manage | view). Pre-migration
+    // (no `access` column) the fallback read treats every row as `manage`.
+    const acctMemberRows: { accountId: string; memberId: string; access: string }[] = await db
+      .select({ accountId: s.accountMembers.accountId, memberId: s.accountMembers.memberId, access: s.accountMembers.access })
+      .from(s.accountMembers)
+      .catch(async () =>
+        (await db!.select({ accountId: s.accountMembers.accountId, memberId: s.accountMembers.memberId }).from(s.accountMembers).catch(() => [] as { accountId: string; memberId: string }[])).map((r) => ({ ...r, access: "manage" }))
+      );
     // Learned merchant→category memory (for the owner "What it's learned" view).
     const memoryRows = await db.select().from(s.merchantMemory).catch(() => []);
     // Owner notification preferences (defensive — empty before the migration).
@@ -339,8 +346,15 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     const digestOptInById = new Map(digestOptInRows.map((r) => [r.id, r.digestOptIn]));
     const celebrationById = new Map(celebrationRows.map((r) => [r.id, r.celebrationStyle]));
     const managersByAccount = new Map<string, { id: string; name: string; color: string | null }[]>();
-    const accountsByMember = new Map<string, Set<string>>();
+    const accountsByMember = new Map<string, Set<string>>();       // manage: in charge, may categorize
+    const viewAccountsByMember = new Map<string, Set<string>>();   // view: sees balance + activity, read-only
     for (const am of acctMemberRows) {
+      if (am.access === "view") {
+        const vs = viewAccountsByMember.get(am.memberId) || new Set<string>();
+        vs.add(am.accountId);
+        viewAccountsByMember.set(am.memberId, vs);
+        continue;
+      }
       const mem = memberById.get(am.memberId);
       const arr = managersByAccount.get(am.accountId) || [];
       arr.push({ id: am.memberId, name: mem?.name ?? "Member", color: mem?.color ?? null });
@@ -355,10 +369,13 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // full household data. (No viewer at all = trusted server/MCP context.)
     const isPrivileged = viewer?.role === "owner" || viewer?.role === "partner";
     const isMemberView = !!viewer && !isPrivileged;
+    // A member sees the accounts they manage plus the ones shared with them as a viewer.
     const visibleAcctIds = isMemberView
-      ? (viewer!.memberId ? accountsByMember.get(viewer!.memberId) ?? new Set<string>() : new Set<string>())
+      ? (viewer!.memberId ? new Set<string>([...(accountsByMember.get(viewer!.memberId) ?? []), ...(viewAccountsByMember.get(viewer!.memberId) ?? [])]) : new Set<string>())
       : null;
     const canSeeAccount = (id: string | null | undefined) => !visibleAcctIds || (id != null && visibleAcctIds.has(id));
+    // Editing (categorize / approve) is narrower than seeing: managed accounts only.
+    const canEditAccount = (id: string | null | undefined) => !isMemberView || (id != null && !!viewer?.memberId && !!accountsByMember.get(viewer.memberId)?.has(id));
 
     // --- taxonomy + roster (for Import / Categories / pickers) ---
     data.categoryGroups = groupRows.map((g) => ({ id: g.id, name: g.name, sortOrder: g.sortOrder }));
@@ -1393,7 +1410,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       const catKind = new Map(catRows.map((c) => [c.id, c.kind]));
       const nowMs = Date.now();
       const bulkInput = txnRows
-        .filter((t) => !t.isTransfer && canSeeAccount(t.accountId))
+        .filter((t) => !t.isTransfer && canEditAccount(t.accountId))
         .map((t) => ({ id: t.id, merchant: t.merchant, categoryId: t.categoryId, reviewed: t.reviewed, amount: n(t.amount), accountId: t.accountId, date: t.date as string | null }));
       const groups = buildMerchantGroups(bulkInput).slice(0, 250);
       const rangeLbl = (iso: string | null) => {
@@ -2048,6 +2065,15 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         now
       );
       const managedSet = new Set(managedIds);
+      // Accounts shared with this member as a viewer (Phase 6): balances and
+      // activity are visible, nothing is editable, nothing counts toward review.
+      const viewIds = [...(viewAccountsByMember.get(mid) ?? [])].filter((id) => !managedSet.has(id));
+      const visibleSet = new Set([...managedIds, ...viewIds]);
+      const viewAccounts = viewIds.map((id) => {
+        const a = acctById.get(id);
+        const bal = a ? liveBalance(a) : 0;
+        return { id, name: a?.name ?? "Account", label: a ? accountLabel(a) : "—", type: a?.type ?? "checking", mask: a?.mask ?? null, balance: bal, balanceLabel: money2(bal), readOnly: true as const };
+      });
       // Trend inputs: the member's managed-account transactions, ISO-dated.
       const managedTxns = txnRows
         .filter((t) => t.accountId != null && managedSet.has(t.accountId))
@@ -2145,8 +2171,8 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
       // data.txns is in id (insertion) order, which isn't date order, so a plain
       // .reverse() can mis-rank adjacent days; sort by isoDate desc, id desc.
       const myTxns = (data.txns as { id: number; reviewed: boolean; accountId: string | null; isoDate: string | null }[])
-        .filter((t) => t.accountId != null && managedSet.has(t.accountId))
-        .slice()
+        .filter((t) => t.accountId != null && visibleSet.has(t.accountId))
+        .map((t) => (managedSet.has(t.accountId as string) ? t : { ...t, readOnly: true }))
         .sort((a, b) => String(b.isoDate || "").localeCompare(String(a.isoDate || "")) || b.id - a.id);
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
@@ -2194,6 +2220,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         monthLabel: now.toLocaleString("en-US", { month: "long" }),
         prevMonthLabel: prevDate.toLocaleString("en-US", { month: "long" }),
         managedAccounts,
+        viewAccounts,
         // Trends for "see your money over time" on the member home.
         spendTrend,
         spentPrevMonth,
@@ -2208,7 +2235,7 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
         // member ever receives another member's style or lines.
         celebrationStyle: celebrationById.get(mid) ?? "spicy",
         // unreviewed txns (Categorize tab) and the full activity list (Activity tab).
-        reviewQueue: myTxns.filter((t) => !t.reviewed),
+        reviewQueue: myTxns.filter((t) => !t.reviewed && !("readOnly" in t && t.readOnly)),
         activity: myTxns,
         // Receipts this member may see: their own uploads + receipts attached
         // (or suggested) to transactions on their accounts. data.receipts is
@@ -2227,13 +2254,18 @@ export async function getFinanceData(viewer?: Viewer): Promise<FinanceData> {
     // Access screen's Preview buttons), else the first real member so the
     // preview lands on an actual person instead of hanging on "Loading…".
     let homeMemberId: string | null = viewer?.memberId ?? null;
-    if (!homeMemberId && viewer?.role === "owner") {
+    if (viewer?.role === "owner") {
+      // An explicit ?as=<id> wins even when the owner is on the roster
+      // (People → "Preview their money view"); otherwise fall back to the
+      // first real member so the preview lands on an actual person.
       const requested = viewer.previewMemberId
         ? memberRows.find((m) => m.id === viewer.previewMemberId)
         : undefined;
-      const preview =
-        requested || memberRows.find((m) => m.role === "member") || memberRows.find((m) => m.role !== "owner");
-      homeMemberId = preview?.id ?? null;
+      if (requested) homeMemberId = requested.id;
+      else if (!homeMemberId) {
+        const preview = memberRows.find((m) => m.role === "member") || memberRows.find((m) => m.role !== "owner");
+        homeMemberId = preview?.id ?? null;
+      }
     }
     data.memberHome = homeMemberId ? buildMemberHome(homeMemberId) : null;
 

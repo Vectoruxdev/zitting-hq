@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { listChores, listCompletions, weekOf } from "@/db/chores";
 import { addDaysISO } from "@/db/household";
 import { familyTodayISO } from "@/db/dashboard";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function ChoresPage({ searchParams }: { searchParams: Promise<{ day?: string; tab?: string }> }) {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/chores");
+  await guardModule(user, "chores");
   const { day, tab } = await searchParams;
   const todayISO = familyTodayISO();
   const dayISO = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : todayISO;

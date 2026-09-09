@@ -32,15 +32,19 @@ export default function FinanceClient({
   role = "owner",
   name,
   embedded = false,
+  initialRoute = null,
+  initialTab = null,
 }: {
   data?: unknown;
   role?: "owner" | "partner" | "member";
   name?: string;
   embedded?: boolean;
+  initialRoute?: string | null;
+  initialTab?: string | null;
 }) {
   return (
     <div style={{ height: embedded ? "100%" : "100vh", overflow: "hidden", background: "var(--bg-app)" }}>
-      <FinanceApp data={data} role={role} name={name} embedded={embedded} />
+      <FinanceApp data={data} role={role} name={name} embedded={embedded} initialRoute={initialRoute} initialTab={initialTab} />
     </div>
   );
 }

@@ -301,6 +301,8 @@ function ZHQTransactions({ onNavigate }) {
   const [selected, setSelected] = React.useState(() => new Set());
   const [picker, setPicker] = React.useState(null); // { kind:'category'|'person', ids:[] }
   const [busy, setBusy] = React.useState(false);
+  // Desktop table sort — real, not cosmetic. Date newest-first by default.
+  const [sort, setSort] = React.useState({ key: 'date', dir: 'desc' });
 
   // Newest-first: data.txns arrives ordered by id ASC (oldest first), so without
   // this the latest transactions sit at the very bottom of the list and the view
@@ -323,6 +325,14 @@ function ZHQTransactions({ onNavigate }) {
       .toLowerCase()
       .includes(needle)
   );
+  const sortedRows = React.useMemo(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const val = (t) => sort.key === 'amt' ? t.amt
+      : sort.key === 'date' ? `${t.isoDate || ''}|${String(t.id).padStart(12, '0')}`
+      : String(t[sort.key] ?? '').toLowerCase();
+    return [...rows].sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+  }, [rows, sort]);
+  const onSort = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
   const reviewCount = all.filter((t) => !t.reviewed).length;
   const refresh = () => window.ZHQ_REFRESH && window.ZHQ_REFRESH();
 
@@ -440,8 +450,8 @@ function ZHQTransactions({ onNavigate }) {
           onRowClick={setSel}
           columns={[
             { key: '_sel', header: '', render: (r) => <span onClick={(e) => { e.stopPropagation(); toggle(r.id); }}><Checkbox checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></span> },
-            { key: 'date', header: 'Date', render: (r) => <span style={{ color: 'var(--text-secondary)' }}>{r.date}</span> },
-            { key: 'merchant', header: 'Merchant', render: (r) => (
+            { key: 'date', header: 'Date', sortable: true, render: (r) => <span style={{ color: 'var(--text-secondary)' }}>{r.date}</span> },
+            { key: 'merchant', header: 'Merchant', sortable: true, render: (r) => (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 500 }}
                 title={[r.merchant, r.description].filter(Boolean).join(' · ')}>
                 <span style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.merchant}</span>
@@ -458,15 +468,15 @@ function ZHQTransactions({ onNavigate }) {
                 {r.categorizedBy ? <span title={`Categorized by ${r.categorizedBy}${r.categorizedAt ? ` · ${r.categorizedAt}` : ''}`} style={{ display: 'inline-flex', flex: 'none' }}><Avatar name={r.categorizedBy} size="xs" /></span> : null}
               </span>
             ) },
-            { key: 'who', header: 'Person', render: (r) => (
+            { key: 'who', header: 'Person', sortable: true, render: (r) => (
               <span onClick={(e) => { e.stopPropagation(); setPicker({ kind: 'person', ids: [r.id] }); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <Avatar name={r.who} size="xs" /><span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{r.who}</span>
               </span>
             ) },
-            { key: 'account', header: 'Account', render: (r) => <span className="zt-num" style={{ color: 'var(--text-tertiary)', fontSize: 12.5 }}>{r.account}</span> },
+            { key: 'account', header: 'Account', sortable: true, render: (r) => <span className="zt-num" style={{ color: 'var(--text-tertiary)', fontSize: 12.5 }}>{r.account}</span> },
             { key: 'amt', header: 'Amount', align: 'right', sortable: true, render: (r) => <AmountCell value={r.amt} income={r.income} /> },
           ]}
-          rows={rows} sortKey="amt" />
+          rows={sortedRows} sortKey={sort.key} sortDir={sort.dir} onSort={onSort} />
       </Card>
 
       {sel ? (

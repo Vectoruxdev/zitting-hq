@@ -3,6 +3,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getTrip } from "@/db/trips";
 import { recentPhotos } from "@/db/photos";
 import { familyTodayISO } from "@/db/dashboard";
@@ -15,6 +16,7 @@ export default async function TripPage({ params, searchParams }: { params: Promi
   const user = await getCurrentUser();
   const { id } = await params;
   if (isAuthConfigured && !user) redirect(`/login?redirect=/trips/${id}`);
+  await guardModule(user, "trips");
   const { tab } = await searchParams;
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const trip = await getTrip(id, viewer, familyTodayISO());

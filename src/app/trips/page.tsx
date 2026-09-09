@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { listTrips } from "@/db/trips";
 import { familyTodayISO } from "@/db/dashboard";
 import { getPeople } from "@/db/profiles";
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ add?: string }> }) {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/trips");
+  await guardModule(user, "trips");
   const { add } = await searchParams;
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const [ctx, trips, people] = await Promise.all([frameContext(user), listTrips(viewer, familyTodayISO()), getPeople().catch(() => [])]);

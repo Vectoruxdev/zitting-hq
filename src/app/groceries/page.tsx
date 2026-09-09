@@ -3,6 +3,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getGroceriesData } from "@/db/household";
 import { getPeople } from "@/db/profiles";
 import { GroceriesClient } from "./groceries-client";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function GroceriesPage() {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/groceries");
+  await guardModule(user, "groceries");
   const [ctx, data, people] = await Promise.all([frameContext(user), getGroceriesData(), getPeople().catch(() => [])]);
   return (
     <AppFrame user={ctx}>

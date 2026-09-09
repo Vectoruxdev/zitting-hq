@@ -22,7 +22,7 @@ function mock(variant: "owner" | "wife", state: "full" | "empty"): HomeData {
   const member = variant === "wife";
   return {
     todayISO: "2026-09-08", dateLabel: "Tuesday, September 8", daypart: "afternoon", greetingName: member ? "Jaelynn" : "Jared",
-    viewer: { memberId: member ? "jaelynn" : "jared", role: member ? "member" : "owner", kind: "adult", hue: member ? 2 : 1, avatarUrl: null },
+    viewer: { memberId: member ? "jaelynn" : "jared", role: member ? "member" : "owner", kind: "adult", hue: member ? 2 : 1, avatarUrl: null, modules: [] },
     people: PEOPLE,
     quote: full ? { id: 1, text: "Mom, can the moon come to dinner?", saidByMemberId: "jae", saidByName: null, saidOn: "2026-09-02" } : null,
     photoOfDay: full ? { src: "https://picsum.photos/seed/zh-lake/1200/800", title: "Saturday at the lake", by: "Katelynn", album: "Lake weekend", count: 42 } : null,

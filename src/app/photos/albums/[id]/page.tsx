@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getAlbum, listAlbums, listPhotos } from "@/db/photos";
 import { getPeople } from "@/db/profiles";
 import { familyTodayISO } from "@/db/dashboard";
@@ -15,6 +16,7 @@ export default async function AlbumPage({ params, searchParams }: { params: Prom
   const user = await getCurrentUser();
   const { id } = await params;
   if (isAuthConfigured && !user) redirect(`/login?redirect=/photos/albums/${id}`);
+  await guardModule(user, "photos");
   const { photo, add } = await searchParams;
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const album = await getAlbum(id, viewer);

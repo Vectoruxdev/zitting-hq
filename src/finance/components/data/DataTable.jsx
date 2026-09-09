@@ -4,7 +4,7 @@ import { Icon } from '../core/Icon.jsx';
 /**
  * DataTable — the transactions/bills workhorse. `columns` is
  * [{ key, header, align, width, sortable, render(row) }]; `rows` is your data.
- * Quiet hairline rows, hover highlight, optional sortable headers (cosmetic),
+ * Quiet hairline rows, hover highlight, optional sortable headers (real when onSort is given),
  * pending rows can dim via row.muted. Cells render custom nodes (Tag, Avatar,
  * amounts) via the column `render`.
  */

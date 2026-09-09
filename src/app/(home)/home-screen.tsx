@@ -255,7 +255,7 @@ function RecentPhotos({ data }: { data: HomeData }) {
 function Launcher({ data }: { data: HomeData }) {
   const router = useRouter();
   const g = data.dashboard.groceries;
-  const mods = modulesFor(data.viewer.role).filter((m) => !m.primary);
+  const mods = modulesFor(data.viewer.role).filter((m) => !m.primary && (!data.viewer.modules?.length || data.viewer.modules.includes(m.slug)));
   const counts: Record<string, number | undefined> = { groceries: g.listCount || undefined };
   return (
     <Section title="Everything">

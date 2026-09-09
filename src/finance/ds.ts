@@ -10,12 +10,11 @@
  */
 import {
   Icon, Button, IconButton, Avatar, Badge, Tag, Tabs, SegmentedControl, Select, TextInput, Toggle, Checkbox,
-  Modal, EmptyState, Skeleton, Sparkline, ProgressBar,
+  Modal, EmptyState, Skeleton, Sparkline, ProgressBar, AreaChart,
 } from "./ds-adapter";
 
 // Kept on the original implementation (no faithful src/ui equivalent yet — Phase 6).
 import { Card, SectionHeader } from "./components/core/Card";
-import { AreaChart } from "./components/data/AreaChart";
 import { ChecklistRow } from "./components/data/ChecklistRow";
 import { DataTable, AmountCell } from "./components/data/DataTable";
 import { DonutChart, DonutLegend } from "./components/data/DonutChart";

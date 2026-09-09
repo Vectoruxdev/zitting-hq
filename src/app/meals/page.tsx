@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getMealsData, addDaysISO, localISO } from "@/db/household";
 import { coverUrl, getNights, listIdeas, listSwaps, getRotation, weekStartOf } from "@/db/kitchen";
 import { getPeople } from "@/db/profiles";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function MealsPage({ searchParams }: { searchParams: Promise<{ week?: string; tab?: string; swap?: string }> }) {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/meals");
+  await guardModule(user, "meals");
   const ctx = await frameContext(user);
   const { week, tab, swap } = await searchParams;
   const todayISO = familyTodayISO();

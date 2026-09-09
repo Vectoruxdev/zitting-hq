@@ -16,6 +16,8 @@ export type { FrameUser } from "@/lib/frame-user";
 export interface FrameProps extends FrameUser {
   unread?: number;
   theme?: "light" | "dark" | "system";
+  /** Allowed module slugs (Phase 6 People & permissions); undefined/empty = all. */
+  modules?: string[];
 }
 
 const ADD_ACTIONS: { icon: string; title: string; body: string; href: string }[] = [
@@ -47,7 +49,8 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
   const [add, setAdd] = React.useState(false);
   useThemeSync(user.theme);
   if (bare) return <>{children}</>;
-  const modules: ShellModule[] = modulesFor(user.role).map((m) => ({
+  const allowed = user.modules?.length ? new Set(user.modules) : null;
+  const modules: ShellModule[] = modulesFor(user.role).filter((m) => !allowed || allowed.has(m.slug)).map((m) => ({
     key: m.slug, label: m.name, short: m.short, icon: m.icon, tint: m.tint, group: m.group, primary: m.primary, muted: m.status === "planned",
   }));
   const active = moduleForPath(pathname);

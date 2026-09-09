@@ -131,6 +131,13 @@ export function Skeleton({ width = "100%", height = 14, radius, circle = false, 
 }
 
 /* ---------- data ---------- */
+/** Old contract: data + optional compare series, colors, width/height. New chart adds hover tooltips and the guide's draw-in. */
+export function AreaChart({ data = [], compare = null, labels = [], height = 220, color = "var(--accent)", compareColor = "var(--data-2)", label, compareLabel, style }: any) {
+  const series = [{ label: label ?? (compare ? "Income" : "Amount"), color, values: data as number[] }];
+  if (compare) series.push({ label: compareLabel ?? "Spending", color: compareColor, values: compare as number[] });
+  return <UI.AreaChart series={series} labels={labels} height={height} formatY={(v: number) => UI.money(v, { cents: false })} style={{ width: "100%", ...style }} />;
+}
+
 export function Sparkline({ data = [], width = 88, height = 26, color, area = false, style }: any) {
   const c = String(color || "");
   const tone = /negative|red/.test(c) ? "negative" : /positive|green/.test(c) ? "positive" : /accent|coral/.test(c) ? "accent" : /tertiary|gray/.test(c) ? "neutral" : "auto";

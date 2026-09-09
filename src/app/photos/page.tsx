@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { listAlbums, listPhotos, photoCountsByPerson } from "@/db/photos";
 import { getPeople } from "@/db/profiles";
 import { familyTodayISO } from "@/db/dashboard";
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function PhotosPage({ searchParams }: { searchParams: Promise<{ tab?: string; person?: string; photo?: string; add?: string; trash?: string }> }) {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/photos");
+  await guardModule(user, "photos");
   const { tab, person, photo, add, trash } = await searchParams;
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const isTrash = trash === "1" && viewer.role === "owner";

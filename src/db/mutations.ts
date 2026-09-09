@@ -6,7 +6,7 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
-import { and, eq, gte, inArray, or, isNull, lt, like, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, or, isNull, lt, like, sql, ne } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
 import { computeMemberProgress } from "./allowance";
@@ -337,11 +337,14 @@ export async function reorderAccounts(idsInOrder: string[]) {
 /** Accounts a member is "in charge of". Fail-closed (empty set) on any error. */
 export async function managedAccountIds(memberId: string): Promise<Set<string>> {
   try {
+    // Phase 6: only `manage` rows grant edit rights; `view` rows are read-only.
+    // Pre-migration (no `access` column) the second select falls back to "all rows manage".
     const rows = await requireDb()
-      .select({ accountId: s.accountMembers.accountId })
+      .select({ accountId: s.accountMembers.accountId, access: s.accountMembers.access })
       .from(s.accountMembers)
-      .where(eq(s.accountMembers.memberId, memberId));
-    return new Set(rows.map((r) => r.accountId));
+      .where(eq(s.accountMembers.memberId, memberId))
+      .catch(async () => (await requireDb().select({ accountId: s.accountMembers.accountId }).from(s.accountMembers).where(eq(s.accountMembers.memberId, memberId))).map((r) => ({ ...r, access: "manage" })));
+    return new Set(rows.filter((r) => r.access !== "view").map((r) => r.accountId));
   } catch {
     return new Set();
   }
@@ -363,8 +366,11 @@ export async function setAccountMembers(accountId: string, memberIds: string[]) 
   const database = requireDb();
   const unique = Array.from(new Set(memberIds)).slice(0, 2);
   await database.transaction(async (tx) => {
-    await tx.delete(s.accountMembers).where(eq(s.accountMembers.accountId, accountId));
-    if (unique.length) await tx.insert(s.accountMembers).values(unique.map((memberId) => ({ accountId, memberId })));
+    // Replace the managers only; viewer grants (Phase 6) are set from People & permissions.
+    // Requires supabase-phase6-money-v2.sql (migrate before deploy).
+    await tx.delete(s.accountMembers).where(and(eq(s.accountMembers.accountId, accountId), ne(s.accountMembers.access, "view")));
+    // A member who already had a viewer grant is promoted to manager.
+    if (unique.length) await tx.insert(s.accountMembers).values(unique.map((memberId) => ({ accountId, memberId, access: "manage" }))).onConflictDoUpdate({ target: [s.accountMembers.accountId, s.accountMembers.memberId], set: { access: "manage" } });
   });
   return { ok: true as const };
 }

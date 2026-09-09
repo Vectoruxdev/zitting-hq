@@ -95,9 +95,18 @@ export const accountMembers = pgTable(
   {
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
     memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    // Phase 6: manage (categorize, in charge) | view (sees balances + activity, read-only).
+    access: text("access").notNull().default("manage"),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.memberId] }), index("idx_acctmem_member").on(t.memberId)]
 );
+
+/** Phase 6: per-member module switches (missing row = allowed). Owner ignores this. */
+export const memberModuleAccess = pgTable("member_module_access", {
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  module: text("module").notNull(),
+  allowed: boolean("allowed").notNull().default(true),
+}, (t) => [primaryKey({ columns: [t.memberId, t.module] })]);
 
 // ---- Import batches -----------------------------------------------------
 

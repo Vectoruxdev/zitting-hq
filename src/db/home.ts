@@ -15,6 +15,8 @@ import { getCalendar, type CalItem } from "./calendar";
 import { addDaysISO } from "./household";
 import { homeGoals } from "./goals";
 import { choreStreak, dayFor, listChores, listCompletions, type Chore, type Completion } from "./chores";
+import { getModuleAccess } from "./permissions";
+import { modulesFor } from "@/lib/modules";
 import type { Viewer } from "./queries";
 
 export interface HomeData {
@@ -23,7 +25,7 @@ export interface HomeData {
   /** morning | afternoon | evening | late */
   daypart: "morning" | "afternoon" | "evening" | "late";
   greetingName: string;
-  viewer: { memberId: string | null; role: Viewer["role"]; kind: "adult" | "child"; hue: number; avatarUrl: string | null };
+  viewer: { memberId: string | null; role: Viewer["role"]; kind: "adult" | "child"; hue: number; avatarUrl: string | null; modules: string[] };
   people: Pick<Person, "id" | "name" | "greetingName" | "hue" | "avatarUrl" | "kind">[];
   quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn"> | null;
   photoOfDay: { id?: string; src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
@@ -59,6 +61,8 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     listSwaps("pending").catch(() => []),
   ]);
   const av = { memberId: viewer.memberId, role: viewer.role };
+  const access: Record<string, boolean> = viewer.role !== "owner" && viewer.memberId ? await getModuleAccess(viewer.memberId).catch(() => ({} as Record<string, boolean>)) : {};
+  const allowedSlugs = modulesFor(viewer.role).map((m) => m.slug).filter((slug) => access[slug] !== false);
   const [goals, chores, completions] = await Promise.all([homeGoals(av, todayISO).catch(() => []), listChores().catch(() => [] as Chore[]), listCompletions(addDaysISO(todayISO, -60), todayISO).catch(() => [] as Completion[])]);
   const [pod, recent, cal] = await Promise.all([photoOfTheDay(av, todayISO).catch(() => null), recentPhotos(av, 6).catch(() => []), getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }).catch(() => ({ items: [] as CalItem[], feeds: [], configured: false }))]);
   const tonightPlan = nights[0];
@@ -68,7 +72,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     dateLabel: familyDateLabel(),
     daypart: daypartFor(familyHour()),
     greetingName: me?.greetingName || fallbackName.split(" ")[0] || "there",
-    viewer: { memberId: viewer.memberId, role: viewer.role, kind: me?.kind ?? "adult", hue: me?.hue ?? 1, avatarUrl: me?.avatarUrl ?? null },
+    viewer: { memberId: viewer.memberId, role: viewer.role, kind: me?.kind ?? "adult", hue: me?.hue ?? 1, avatarUrl: me?.avatarUrl ?? null, modules: allowedSlugs },
     people: people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind })),
     quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn } : null,
     photoOfDay: pod && pod.src ? { id: pod.id, src: pod.src, title: pod.caption, by: people.find((x) => x.id === pod.uploadedBy)?.greetingName ?? null, album: null, count: 0 } : null,

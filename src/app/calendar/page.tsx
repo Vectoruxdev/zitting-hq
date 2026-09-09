@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { getCalendar } from "@/db/calendar";
 import { addDaysISO } from "@/db/household";
 import { familyTodayISO } from "@/db/dashboard";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ event?: string; date?: string; view?: string }> }) {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/calendar");
+  await guardModule(user, "calendar");
   const { event, date, view } = await searchParams;
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const todayISO = familyTodayISO();

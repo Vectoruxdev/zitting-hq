@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/app-frame";
 import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
+import { guardModule } from "@/lib/module-access";
 import { listAppointments } from "@/db/calendar";
 import { familyTodayISO } from "@/db/dashboard";
 import { getPeople } from "@/db/profiles";
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function AppointmentsPage({ searchParams }: { searchParams: Promise<{ event?: string }> }) {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/appointments");
+  await guardModule(user, "appointments");
   const { event } = await searchParams;
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const todayISO = familyTodayISO();

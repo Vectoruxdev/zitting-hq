@@ -44,6 +44,7 @@ export const MODULES: HqModule[] = [
   { slug: "trips", name: "Trips", description: "Itineraries, documents, packing lists.", icon: "plane", tint: "sky", group: "Family", status: "active", href: "/trips" },
   { slug: "chores", name: "Chores", description: "Per-kid checklists and the weekly chart.", icon: "square-check", tint: "butter", group: "Family", status: "active", href: "/chores" },
   { slug: "finance", name: "Finance", description: "Accounts, spending, budgets, and where the money goes.", icon: "wallet", tint: "sky", group: "Money", status: "active", primary: true, href: "/finance" },
+  { slug: "people", name: "People", description: "Who's in the family and what each person can see.", icon: "users", tint: "lilac", group: "Home", status: "active", roles: ["owner"], href: "/people" },
   { slug: "nest", name: "Cameras", description: "Nest cameras trigger the Govee lights — person, motion, doorbell.", icon: "video", tint: "lilac", group: "Home", status: "active", roles: ["owner"], href: "/nest" },
 ];
 

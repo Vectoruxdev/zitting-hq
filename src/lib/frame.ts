@@ -7,18 +7,22 @@ import type { CurrentUser } from "@/lib/auth";
 import { frameUser, type FrameUser } from "@/lib/frame-user";
 import { getPerson } from "@/db/profiles";
 import { unreadCount } from "@/db/notifications";
+import { allowedModules } from "@/lib/module-access";
 
 export interface FrameContext extends FrameUser {
   unread: number;
   theme: "light" | "dark" | "system";
   kind: "adult" | "child";
+  /** Module slugs this person may open (Phase 6 People & permissions). */
+  modules: string[];
 }
 
 export async function frameContext(user: CurrentUser | null | undefined): Promise<FrameContext> {
   const base = frameUser(user);
-  const [person, unread] = await Promise.all([
+  const [person, unread, modules] = await Promise.all([
     getPerson(user?.memberId).catch(() => null),
     unreadCount({ memberId: user?.memberId ?? null, role: user?.role ?? "owner" }).catch(() => 0),
+    allowedModules(user).catch(() => [] as string[]),
   ]);
   return {
     ...base,
@@ -28,5 +32,6 @@ export async function frameContext(user: CurrentUser | null | undefined): Promis
     unread,
     theme: person?.theme ?? "system",
     kind: person?.kind ?? "adult",
+    modules,
   };
 }
