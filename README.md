@@ -56,3 +56,31 @@ override it per-section. To connect:
 Connection env vars are flexible: `DATABASE_URL` or the Vercel→Supabase
 `POSTGRES_URL` (pooled) are used at runtime; `DIRECT_URL` / `POSTGRES_URL_NON_POOLING`
 (direct) for migrations.
+
+## Revamp 2026-09 (family-first app)
+
+The app is now a family hub — Home, Photos, Meals, Groceries, Calendar,
+Appointments, Quotes, Goals, Trips, Chores — with Finance as one module inside
+it. Design system lives in `src/ui` (tokens in `src/styles/zh`); the module
+registry in `src/lib/modules.ts` drives every navigation surface.
+
+**Migrations** are hand-written, idempotent SQL run in the Supabase SQL Editor
+*before* deploying. Run in this order (each is safe to re-run):
+
+1. `supabase-phase1-profiles-quotes.sql` — member profiles, notification prefs, quotes, shares
+2. `supabase-phase2-kitchen.sql` — recipes/meal plan, dinner rotation + swaps, meal ideas
+3. `supabase-phase3-photos.sql` — photo library (private `photos` bucket), albums, attachments
+4. `supabase-phase4-calendar-trips.sql` — appointments, reminders, trips (private `documents` bucket)
+5. `supabase-phase5-goals-chores.sql` — goals, check-ins, chores, completions
+6. `supabase-phase6-money-v2.sql` — `account_members.access` (manage | view), per-member module switches
+
+**Env vars** (names only): `CRON_SECRET` also guards `/api/reminders/cron`
+(every 15 min, see `vercel.json`); `MCP_READONLY_TOKEN` enables the read-only
+MCP tier (`/api/mcp`) — set it to give agents a token that can't write.
+
+**Permissions:** the owner sees everything; every shareable item carries a
+`visibility` (family | private | custom + `shares`) checked by one predicate,
+`canView` in `src/lib/access.ts`. Finance access is per account from
+**People & permissions** (`/people`): *Manage* = in charge (categorize, approve),
+*View* = balance + activity, read-only.
+

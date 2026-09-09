@@ -10,6 +10,7 @@ const SUPABASE_ANON_KEY =
 const PUBLIC_PATHS = [
   "/login",
   "/auth",
+  "/offline", // service-worker offline shell (static, no data)
   "/api/plaid/webhook",
   "/api/plaid/cron-sync",
   "/api/transfers/cron", // daily transfers job (CRON_SECRET-guarded)

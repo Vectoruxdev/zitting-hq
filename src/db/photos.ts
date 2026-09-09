@@ -39,16 +39,31 @@ export { pickForDay, groupByDay, localDay } from "@/lib/photo-utils";
 
 /* ---------- signed urls ---------- */
 
+// Signed URLs live for an hour; reuse them for 45 minutes within a warm server
+// instance so Home, the grid and the lightbox don't re-sign the same photos on
+// every request. Keyed by storage path; misses are signed in batches of 100.
+const SIGN_TTL_MS = 45 * 60 * 1000;
+const signCache = new Map<string, { url: string; at: number }>();
+
 export async function signMany(paths: (string | null | undefined)[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const clean = Array.from(new Set(paths.filter((p): p is string => !!p)));
   if (!clean.length) return out;
+  const now = Date.now();
+  const misses: string[] = [];
+  for (const path of clean) {
+    const hit = signCache.get(path);
+    if (hit && now - hit.at < SIGN_TTL_MS) out.set(path, hit.url);
+    else misses.push(path);
+  }
+  if (!misses.length) return out;
   const admin = getAdminClient();
   if (!admin) return out;
-  for (let i = 0; i < clean.length; i += 100) {
-    const { data } = await admin.storage.from(PHOTOS_BUCKET).createSignedUrls(clean.slice(i, i + 100), 3600);
-    for (const d of data ?? []) if (d.path && d.signedUrl) out.set(d.path, d.signedUrl);
+  for (let i = 0; i < misses.length; i += 100) {
+    const { data } = await admin.storage.from(PHOTOS_BUCKET).createSignedUrls(misses.slice(i, i + 100), 3600);
+    for (const d of data ?? []) if (d.path && d.signedUrl) { out.set(d.path, d.signedUrl); signCache.set(d.path, { url: d.signedUrl, at: now }); }
   }
+  if (signCache.size > 5000) for (const [k, v] of signCache) if (now - v.at >= SIGN_TTL_MS) signCache.delete(k);
   return out;
 }
 

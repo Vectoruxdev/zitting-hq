@@ -3,6 +3,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Button, IconButton, Input, Reveal, Row, SegmentedControl, Section, Toggle, useToast, ToastProvider } from "@/ui";
 import { resizeImage } from "@/lib/image";
+import { InstallSection } from "@/components/install-prompt";
 import { signOut } from "@/app/login/actions";
 import type { Person } from "@/db/profiles";
 import { MEMBER_NOTIFICATION_EVENTS, type MemberPref } from "@/lib/notification-events";
@@ -97,6 +98,8 @@ function Inner({ person, prefs, canEdit }: { person: Person | null; prefs: Membe
           <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Light is made for the kitchen in daylight; dark for phones at night. Auto follows the device.</span>
         </Section>
       </Reveal>
+
+      <InstallSection />
 
       <Reveal index={3}>
         <Section title="Notifications" eyebrow="What reaches you">
