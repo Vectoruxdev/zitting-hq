@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import * as h from "@/db/household";
@@ -13,7 +13,7 @@ async function ensureFamily() {
   return u;
 }
 
-const refresh = () => { revalidatePath("/groceries"); revalidatePath("/"); };
+const refresh = () => { touched("groceries", "/groceries"); touched("groceries", "/"); };
 
 export async function addShoppingItem(args: { name: string; note?: string | null; category?: string | null; assigneeMemberId?: string | null }) {
   const u = await ensureFamily();

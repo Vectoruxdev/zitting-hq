@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as s from "@/db/schema";
 import { runScheduledTransfers, runMonthlyAllowances, reconcilePendingTransfers, createNotification, notifyTransferShortfall, notifyIncomeExpected, notifyCashRunway } from "@/db/mutations";
+import { touchedByJob } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,7 @@ export async function GET(req: Request) {
     // before the next income lands (idempotent per worst-account+day).
     const runway = await notifyCashRunway(today).catch(() => ({ ok: false as const, notified: false }));
 
+    touchedByJob(["finance", "notifications"]);
     return NextResponse.json({
       ok: true,
       generated: generated.created,

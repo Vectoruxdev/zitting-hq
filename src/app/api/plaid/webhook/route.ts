@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
+import { touchedByJob } from "@/lib/cache";
 import { db } from "@/db";
 import * as s from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     const [item] = await db.select({ id: s.plaidItems.id }).from(s.plaidItems).where(eq(s.plaidItems.itemId, item_id));
     if (!item) return NextResponse.json({ ok: true, unknown: true });
     const res = await syncItem(item_id);
-    revalidateTag("finance-home", "max"); // Home's Money card picks up the new numbers
+    touchedByJob(["finance", "notifications"]); // every money screen picks up the new numbers
     return NextResponse.json({ ok: true, ...res });
   } catch (e) {
     // Don't 500 — Plaid would retry. Log and ack.

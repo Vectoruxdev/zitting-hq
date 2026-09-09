@@ -4,7 +4,7 @@
  * adds events; editing/deleting is for the creator, the people involved, or
  * the owner. Feeds are owner-managed.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import * as cal from "@/db/calendar";
@@ -20,7 +20,7 @@ async function who() {
   if (!u) throw new Error("Not signed in");
   return { memberId: u.memberId, role: u.role, name: u.name };
 }
-const refresh = () => { revalidatePath("/calendar"); revalidatePath("/appointments"); revalidatePath("/"); };
+const refresh = () => { touched(["calendar"], "/calendar"); touched(["calendar"], "/appointments"); touched(["calendar"], "/"); };
 const VIS = ["family", "private", "custom"];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{1,2}:\d{2}$/;

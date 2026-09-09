@@ -4,7 +4,7 @@
  * anyone signed in can mark a chore done — on the kitchen tablet that's an
  * adult tapping for a kid until kid logins exist.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import * as c from "@/db/chores";
@@ -25,7 +25,7 @@ async function adult() {
   if (people.find((p) => p.id === u.memberId)?.kind === "child") throw new Error("Grown-ups only");
   return u;
 }
-const refresh = () => { revalidatePath("/chores"); revalidatePath("/"); };
+const refresh = () => { touched("chores", "/chores"); touched("chores", "/"); };
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const TIMES: c.TimeOfDay[] = ["morning", "afternoon", "evening", "any"];
 

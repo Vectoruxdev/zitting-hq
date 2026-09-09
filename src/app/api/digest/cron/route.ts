@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runDigests } from "@/db/digestSend";
 import { sendDueReminders } from "@/db/reminders";
+import { touchedByJob } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
     // daily crons; the live path is the Home-visit tick in src/db/reminders.ts).
     const reminders = await sendDueReminders(new Date()).catch((e) => { console.error("[reminders backstop]", e); return 0; });
     const res = await runDigests(new Date().toISOString().slice(0, 10));
+    touchedByJob("notifications");
     return NextResponse.json({ ok: true, reminders, ...res });
   } catch (e) {
     console.error("[digest cron] failed", e);

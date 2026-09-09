@@ -12,6 +12,7 @@ import { addDaysISO } from "./household";
 import { getNights } from "./kitchen";
 import { reminderDueAt } from "@/lib/zoned-time";
 import { personIndex } from "@/lib/frame-user";
+import { cached } from "@/lib/cache";
 
 export type CalKind = "event" | "appointment" | "trip" | "feed" | "dinner";
 export interface CalItem {
@@ -77,7 +78,7 @@ export function expandSpan<T extends { dateISO: string; endDateISO: string | nul
 type FeedRow = typeof s.calendarFeeds.$inferSelect;
 
 /** Feeds the viewer may see: household feeds (no person) always; a person's feed by its visibility — family, private (them and the owner), custom (shares). */
-export async function getFeeds(viewer: Viewer): Promise<(FeedInfo & { url: string })[]> {
+async function getFeeds__live(viewer: Viewer): Promise<(FeedInfo & { url: string })[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.calendarFeeds).orderBy(asc(s.calendarFeeds.id)).catch(() => [] as FeedRow[]);
   if (!rows.length) return [];
@@ -144,7 +145,7 @@ async function feedItems(viewer: Viewer, fromISO: string, toISO: string): Promis
   return { items: perFeed.flat(), feeds: info.sort((a, b) => a.id - b.id) };
 }
 
-async function familyItems(viewer: Viewer, fromISO: string, toISO: string): Promise<CalItem[]> {
+async function familyItems__live(viewer: Viewer, fromISO: string, toISO: string): Promise<CalItem[]> {
   if (!db) return [];
   const rows = await db.select().from(s.familyEvents).where(and(lte(s.familyEvents.date, toISO), gte(s.familyEvents.date, addDaysISO(fromISO, -60)))).orderBy(asc(s.familyEvents.date)).catch(() => [] as (typeof s.familyEvents.$inferSelect)[]);
   const ids = rows.map((r) => r.id);
@@ -165,7 +166,7 @@ async function familyItems(viewer: Viewer, fromISO: string, toISO: string): Prom
   return out;
 }
 
-async function tripItems(viewer: Viewer, fromISO: string, toISO: string): Promise<CalItem[]> {
+async function tripItems__live(viewer: Viewer, fromISO: string, toISO: string): Promise<CalItem[]> {
   if (!db) return [];
   const rows = await db.select().from(s.trips).where(and(lte(s.trips.startsOn, toISO), gte(s.trips.endsOn, fromISO))).catch(() => [] as (typeof s.trips.$inferSelect)[]);
   if (!rows.length) return [];
@@ -198,7 +199,7 @@ export async function getCalendar(viewer: Viewer, fromISO: string, toISO: string
   return { items: items.sort(sortItems), feeds, configured: true };
 }
 
-export async function getEvent(id: number, viewer: Viewer): Promise<CalItem | null> {
+async function getEvent__live(id: number, viewer: Viewer): Promise<CalItem | null> {
   if (!isDbConfigured || !db) return null;
   const [r] = await db.select().from(s.familyEvents).where(eq(s.familyEvents.id, id)).limit(1).catch(() => []);
   if (!r) return null;
@@ -207,7 +208,7 @@ export async function getEvent(id: number, viewer: Viewer): Promise<CalItem | nu
 }
 
 /** Upcoming appointments (from today), soonest first. */
-export async function listAppointments(viewer: Viewer, todayISO: string, days = 120): Promise<CalItem[]> {
+async function listAppointments__live(viewer: Viewer, todayISO: string, days = 120): Promise<CalItem[]> {
   const cal = await getCalendar(viewer, todayISO, addDaysISO(todayISO, days), { dinners: false });
   return cal.items.filter((i) => i.kind === "appointment");
 }
@@ -270,3 +271,10 @@ export async function dueReminders(now: Date): Promise<{ reminderId: number; eve
 export async function markReminderSent(ids: number[]): Promise<void> {
   if (ids.length) await requireDb().update(s.eventReminders).set({ sentAt: new Date() }).where(inArray(s.eventReminders.id, ids));
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const getFeeds = cached("calendar:getFeeds", ["calendar"], getFeeds__live);
+export const getEvent = cached("calendar:getEvent", ["calendar"], getEvent__live);
+export const listAppointments = cached("calendar:listAppointments", ["calendar"], listAppointments__live);
+const familyItems = cached("calendar:familyItems", ["calendar"], familyItems__live);
+const tripItems = cached("calendar:tripItems", ["trips", "calendar"], tripItems__live);

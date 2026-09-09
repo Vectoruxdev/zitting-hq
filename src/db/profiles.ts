@@ -46,7 +46,7 @@ function requireDb() {
 }
 
 /** Everyone in the household with their profile, roster order. */
-export async function getPeople(): Promise<Person[]> {
+async function getPeople__live(): Promise<Person[]> {
   if (!isDbConfigured || !db) return [];
   const members = await db
     .select({ id: s.familyMembers.id, name: s.familyMembers.name, role: s.familyMembers.role, email: s.familyMembers.email, status: s.familyMembers.status })
@@ -77,7 +77,7 @@ export async function getPeople(): Promise<Person[]> {
   return people;
 }
 
-export async function getPerson(memberId: string | null | undefined): Promise<Person | null> {
+async function getPerson__live(memberId: string | null | undefined): Promise<Person | null> {
   if (!memberId) return null;
   const all = await getPeople();
   return all.find((p) => p.id === memberId) ?? null;
@@ -94,8 +94,9 @@ export async function upsertProfile(memberId: string, patch: Partial<{ kind: Mem
 export { MEMBER_NOTIFICATION_EVENTS, type MemberPref } from "@/lib/notification-events";
 import { MEMBER_NOTIFICATION_EVENTS } from "@/lib/notification-events";
 import type { MemberPref } from "@/lib/notification-events";
+import { cached } from "@/lib/cache";
 
-export async function getMemberNotificationPrefs(memberId: string): Promise<MemberPref[]> {
+async function getMemberNotificationPrefs__live(memberId: string): Promise<MemberPref[]> {
   if (!isDbConfigured || !db) return MEMBER_NOTIFICATION_EVENTS.map((e) => ({ event: e.key, inApp: true, push: true, email: true }));
   const rows = await db.select().from(s.memberNotificationPrefs).where(eq(s.memberNotificationPrefs.memberId, memberId)).catch(() => [] as (typeof s.memberNotificationPrefs.$inferSelect)[]);
   const byEvent = new Map(rows.map((r) => [r.event, r]));
@@ -111,3 +112,8 @@ export async function setMemberNotificationPref(memberId: string, event: string,
     .values({ memberId, event, inApp: next.inApp, push: next.push, email: next.email, updatedAt: new Date() })
     .onConflictDoUpdate({ target: [s.memberNotificationPrefs.memberId, s.memberNotificationPrefs.event], set: { inApp: next.inApp, push: next.push, email: next.email, updatedAt: new Date() } });
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const getPeople = cached("profiles:getPeople", ["people"], getPeople__live);
+export const getPerson = cached("profiles:getPerson", ["people"], getPerson__live);
+export const getMemberNotificationPrefs = cached("profiles:getMemberNotificationPrefs", ["people"], getMemberNotificationPrefs__live);

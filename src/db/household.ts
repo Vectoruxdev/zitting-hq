@@ -9,6 +9,7 @@
 import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
+import { cached } from "@/lib/cache";
 
 function requireDb() {
   if (!isDbConfigured || !db) throw new Error("Database isn't configured");
@@ -19,7 +20,7 @@ function requireDb() {
 
 export const SHOPPING_CATEGORIES = ["produce", "dairy", "meat", "pantry", "frozen", "household", "other"] as const;
 
-export async function getGroceriesData() {
+async function getGroceriesData__live() {
   if (!isDbConfigured || !db) return { configured: false as const, items: [], pantry: [] };
   const items = await db
     .select()
@@ -133,7 +134,7 @@ export async function sendPantryItemToList(id: number) {
 
 // ---- Meals -----------------------------------------------------------------
 
-export async function getMealsData(weekStartISO: string) {
+async function getMealsData__live(weekStartISO: string) {
   if (!isDbConfigured || !db) return { configured: false as const, recipes: [], plan: [] };
   const weekEnd = addDaysISO(weekStartISO, 6);
   const recipeRows = await db
@@ -235,7 +236,7 @@ export async function sendRecipeToList(recipeId: number) {
 
 // ---- Calendar ----------------------------------------------------------------
 
-export async function getCalendarConfig() {
+async function getCalendarConfig__live() {
   if (!isDbConfigured || !db) return { configured: false as const, feeds: [], events: [] };
   const feeds = await db
     .select()
@@ -294,3 +295,8 @@ export async function deleteFamilyEvent(id: number) {
   await requireDb().delete(s.familyEvents).where(eq(s.familyEvents.id, id));
   return { ok: true as const };
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const getMealsData = cached("household:getMealsData", ["meals"], getMealsData__live);
+export const getGroceriesData = cached("household:getGroceriesData", ["groceries"], getGroceriesData__live);
+export const getCalendarConfig = cached("household:getCalendarConfig", ["calendar"], getCalendarConfig__live);

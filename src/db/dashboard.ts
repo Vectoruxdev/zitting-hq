@@ -7,7 +7,7 @@
  * Every section is defensive: a failing module renders as its empty state,
  * never a broken dashboard.
  */
-import { unstable_cache } from "next/cache";
+import { cached } from "@/lib/cache";
 import { getFinanceData, type Viewer } from "./queries";
 import { resetDb } from "@/db";
 import { getGroceriesData, getMealsData, addDaysISO } from "./household";
@@ -153,13 +153,9 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
  * Home's Money card, remembered for two minutes per viewer. It is by far the
  * slowest read on the page (it builds the whole finance model), and its
  * numbers only move when transactions sync or someone edits — both of which
- * call revalidateTag("finance-home") so the card is never stale after a change.
+ * touch the "finance" tag so the card is never stale after a change.
  */
-const financeSectionCached = unstable_cache(
-  (viewer: Viewer) => financeSection(viewer),
-  ["home-finance-section"],
-  { revalidate: 120, tags: ["finance-home"] }
-);
+const financeSectionCached = cached("dashboard:financeSection", ["finance"], (viewer: Viewer) => financeSection(viewer), { revalidate: 120 });
 
 async function financeSection(viewer: Viewer): Promise<DashboardData["finance"]> {
   const finance: DashboardData["finance"] = { role: viewer.role };

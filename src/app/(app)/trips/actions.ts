@@ -3,7 +3,7 @@
  * Trips actions. Anyone signed in creates trips and adds items; editing the
  * trip itself is for its creator, its participants, or the owner.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
@@ -18,7 +18,7 @@ async function who() {
   if (!u) throw new Error("Not signed in");
   return { memberId: u.memberId, role: u.role, name: u.name };
 }
-const refresh = (id?: string) => { revalidatePath("/trips"); revalidatePath("/calendar"); revalidatePath("/"); if (id) revalidatePath(`/trips/${id}`); };
+const refresh = (id?: string) => { touched(["trips", "calendar"], "/trips"); touched(["trips", "calendar"], "/calendar"); touched(["trips", "calendar"], "/"); if (id) touched(["trips", "calendar"], `/trips/${id}`); };
 const VIS = ["family", "private", "custom"];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 

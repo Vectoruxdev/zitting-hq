@@ -8,6 +8,7 @@ import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { canView, type Viewer } from "@/lib/access";
 import { signMany } from "./photos";
+import { cached } from "@/lib/cache";
 
 export type ProgressKind = "checkoff" | "count" | "streak" | "savings";
 export type GoalKind = "family" | "personal";
@@ -95,7 +96,7 @@ async function savingsSnapshot(ids: string[]): Promise<Map<string, { name: strin
   return out;
 }
 
-export async function listSavingsGoalOptions(): Promise<{ id: string; name: string; saved: number; target: number }[]> {
+async function listSavingsGoalOptions__live(): Promise<{ id: string; name: string; saved: number; target: number }[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select({ id: s.savingsGoals.id }).from(s.savingsGoals).where(isNull(s.savingsGoals.archivedAt)).orderBy(asc(s.savingsGoals.sortOrder)).catch(() => [] as { id: string }[]);
   const snap = await savingsSnapshot(rows.map((r) => r.id));
@@ -132,13 +133,13 @@ async function hydrate(rows: GoalRow[], viewer: Viewer, todayISO: string, withCh
   });
 }
 
-export async function listGoals(viewer: Viewer, todayISO: string): Promise<Goal[]> {
+async function listGoals__live(viewer: Viewer, todayISO: string): Promise<Goal[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db.select().from(s.goals).where(isNull(s.goals.archivedAt)).orderBy(asc(s.goals.sort), desc(s.goals.createdAt)).catch(() => [] as GoalRow[]);
   return hydrate(rows, viewer, todayISO, false);
 }
 
-export async function getGoal(id: string, viewer: Viewer, todayISO: string): Promise<GoalDetail | null> {
+async function getGoal__live(id: string, viewer: Viewer, todayISO: string): Promise<GoalDetail | null> {
   if (!isDbConfigured || !db) return null;
   const rows = await db.select().from(s.goals).where(eq(s.goals.id, id)).limit(1).catch(() => [] as GoalRow[]);
   const [g] = await hydrate(rows, viewer, todayISO, true);
@@ -146,7 +147,7 @@ export async function getGoal(id: string, viewer: Viewer, todayISO: string): Pro
 }
 
 /** Home: active goals the viewer is part of first, then the rest of the family's. */
-export async function homeGoals(viewer: Viewer, todayISO: string, n = 3): Promise<Goal[]> {
+async function homeGoals__live(viewer: Viewer, todayISO: string, n = 3): Promise<Goal[]> {
   const all = (await listGoals(viewer, todayISO)).filter((g) => !g.completedAt);
   const mine = all.filter((g) => viewer.memberId && g.participants.includes(viewer.memberId));
   const rest = all.filter((g) => !mine.includes(g) && g.kind === "family");
@@ -184,3 +185,9 @@ export async function addCheckin(c: { goalId: string; memberId: string | null; d
 export async function removeCheckin(id: number, goalId: string) {
   await requireDb().delete(s.goalCheckins).where(and(eq(s.goalCheckins.id, id), eq(s.goalCheckins.goalId, goalId)));
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const listGoals = cached("goals:listGoals", ["goals"], listGoals__live);
+export const homeGoals = cached("goals:homeGoals", ["goals"], homeGoals__live);
+export const getGoal = cached("goals:getGoal", ["goals"], getGoal__live);
+export const listSavingsGoalOptions = cached("goals:listSavingsGoalOptions", ["goals", "finance"], listSavingsGoalOptions__live);

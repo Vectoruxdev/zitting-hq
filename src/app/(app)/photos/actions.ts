@@ -3,7 +3,7 @@
  * Photos actions. Any signed-in member uploads and tags; editing/deleting a
  * photo is for its uploader or the owner. Visibility follows canView.
  */
-import { revalidatePath } from "next/cache";
+import { touched } from "@/lib/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
@@ -18,7 +18,7 @@ async function who() {
   return { memberId: u.memberId, role: u.role, name: u.name };
 }
 const viewerOf = (u: { memberId: string | null; role: "owner" | "partner" | "member" }) => ({ memberId: u.memberId, role: u.role });
-const refresh = () => { revalidatePath("/photos"); revalidatePath("/"); };
+const refresh = () => { touched("photos", "/photos"); touched("photos", "/"); };
 const VIS = ["family", "private", "custom"];
 const MAX = 12 * 1024 * 1024;
 
@@ -106,11 +106,11 @@ export async function updateAlbumAction(id: string, patch: { name?: string; desc
   if (patch.coverPhotoId !== undefined) clean.coverPhotoId = patch.coverPhotoId;
   if (patch.visibility !== undefined && VIS.includes(patch.visibility)) clean.visibility = patch.visibility;
   await ph.updateAlbum(id, clean, patch.visibility === "custom" ? sharedWith ?? [] : patch.visibility ? [] : undefined);
-  refresh(); revalidatePath(`/photos/albums/${id}`);
+  refresh(); touched("photos", `/photos/albums/${id}`);
   return { ok: true as const };
 }
 export async function deleteAlbumAction(id: string) { const u = await who(); const a = await ph.getAlbum(id, viewerOf(u)); if (!a) throw new Error("Album not found"); if (u.role !== "owner" && a.createdBy !== u.memberId) throw new Error("Not authorized"); await ph.deleteAlbum(id); refresh(); return { ok: true as const }; }
-export async function addPhotosToAlbum(albumId: string, photoIds: string[]) { await who(); await ph.addToAlbum(albumId, photoIds.slice(0, 200)); refresh(); revalidatePath(`/photos/albums/${albumId}`); return { ok: true as const }; }
-export async function removePhotoFromAlbum(albumId: string, photoId: string) { await who(); await ph.removeFromAlbum(albumId, photoId); refresh(); revalidatePath(`/photos/albums/${albumId}`); return { ok: true as const }; }
+export async function addPhotosToAlbum(albumId: string, photoIds: string[]) { await who(); await ph.addToAlbum(albumId, photoIds.slice(0, 200)); refresh(); touched("photos", `/photos/albums/${albumId}`); return { ok: true as const }; }
+export async function removePhotoFromAlbum(albumId: string, photoId: string) { await who(); await ph.removeFromAlbum(albumId, photoId); refresh(); touched("photos", `/photos/albums/${albumId}`); return { ok: true as const }; }
 export async function attachPhoto(entityType: string, entityId: string, photoId: string) { await who(); await ph.attach(entityType, entityId, photoId); refresh(); return { ok: true as const }; }
 export async function detachPhoto(entityType: string, entityId: string, photoId: string) { await who(); await ph.detach(entityType, entityId, photoId); refresh(); return { ok: true as const }; }

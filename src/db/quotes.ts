@@ -6,6 +6,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { canView, type Viewer } from "@/lib/access";
+import { cached } from "@/lib/cache";
 
 export interface Quote {
   id: number;
@@ -48,7 +49,7 @@ async function sharesFor(ids: number[]): Promise<Map<string, string[]>> {
 }
 
 /** Every quote the viewer may see, newest said first. */
-export async function listQuotes(viewer: Viewer): Promise<Quote[]> {
+async function listQuotes__live(viewer: Viewer): Promise<Quote[]> {
   if (!isDbConfigured || !db) return [];
   const rows = await db
     .select()
@@ -78,7 +79,7 @@ export function pickQuoteOfDay<T>(items: T[], dateISO: string): T | null {
   return items[h % items.length];
 }
 
-export async function quoteOfTheDay(viewer: Viewer, dateISO: string): Promise<Quote | null> {
+async function quoteOfTheDay__live(viewer: Viewer, dateISO: string): Promise<Quote | null> {
   // One pick a day from everything the viewer may see — the family's own words
   // and the seeded scripture and prophets alike (Jared, 2026-09-09).
   const all = await listQuotes(viewer);
@@ -86,7 +87,7 @@ export async function quoteOfTheDay(viewer: Viewer, dateISO: string): Promise<Qu
 }
 
 /** Pre-auth login page: only the curated subset flagged show_on_login. */
-export async function loginQuote(dateISO: string): Promise<{ text: string; who: string | null } | null> {
+async function loginQuote__live(dateISO: string): Promise<{ text: string; who: string | null } | null> {
   if (!isDbConfigured || !db) return null;
   const rows = await db
     .select({ text: s.quotes.text, who: s.quotes.saidByName })
@@ -136,3 +137,8 @@ export async function setQuoteSaved(quoteId: number, memberId: string, saved: bo
   if (saved) await database.insert(s.quoteSaves).values({ quoteId, memberId }).onConflictDoNothing();
   else await database.delete(s.quoteSaves).where(and(eq(s.quoteSaves.quoteId, quoteId), eq(s.quoteSaves.memberId, memberId)));
 }
+
+// ---- cached readers (see src/lib/cache.ts) ----
+export const listQuotes = cached("quotes:listQuotes", ["quotes"], listQuotes__live);
+export const quoteOfTheDay = cached("quotes:quoteOfTheDay", ["quotes"], quoteOfTheDay__live);
+export const loginQuote = cached("quotes:loginQuote", ["quotes"], loginQuote__live);
