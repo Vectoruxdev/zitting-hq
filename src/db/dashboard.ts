@@ -110,12 +110,16 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   // discipline lives INSIDE getFinanceData, unchanged). Each is fenced by a
   // watchdog: one slow/hung section renders as its empty card instead of
   // pinning the entire page to the skeleton.
-  const [finance, meals, groceries, calendar] = await Promise.all([
-    sectionWithTimeout<DashboardData["finance"]>(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance"),
-    sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals"),
-    sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
-    sectionWithTimeout<DashboardData["calendar"]>(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar"),
-  ]);
+  // Sequential since 2026-09-09: a burst of new pooler connections from one
+  // instance is what stalled Home on the preview deploy (the first couple
+  // authenticate, the rest never do). One section at a time keeps the pool to
+  // a connection or two; the watchdogs still fence each one.
+  const t0 = Date.now();
+  const meals = await sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals");
+  const groceries = await sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries");
+  const calendar = await sectionWithTimeout<DashboardData["calendar"]>(calendarSection(todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar");
+  const finance = await sectionWithTimeout<DashboardData["finance"]>(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance");
+  console.log(`[dashboard] sections ${Date.now() - t0}ms`);
 
   // Today's glance — calendar events whose chip is "Today" + tonight's dinner.
   const today: DashboardData["today"] = {

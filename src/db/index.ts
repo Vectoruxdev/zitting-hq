@@ -33,7 +33,9 @@ const client = connectionString
       // home-page render runs four sections concurrently — 6 keeps headroom.
       max: 6,
       idle_timeout: 20,
-      connect_timeout: 10,
+      // 5 s: a connection attempt the pooler never answers fails fast and the
+      // read renders its empty state instead of pinning the page.
+      connect_timeout: 5,
       // No pipelining: postgres.js normally sends the next query on a
       // connection before the previous reply arrives (max_pipeline 100). The
       // Supabase transaction pooler (Supavisor) scrambles or drops those
