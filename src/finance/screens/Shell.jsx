@@ -21,9 +21,9 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
       </a>
 
       {/* Back to the family dashboard (calendar, meals, groceries, …) */}
-      <a href="/" className="zhq-back-hq" title="Back to Family HQ">
+      <a href="/" className="zhq-back-hq" title="Back to Zitting HQ">
         <Icon name="chevronLeft" size={16} className="zhq-nav-icon" />
-        Family HQ
+        Zitting HQ
       </a>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto' }}>
@@ -63,7 +63,7 @@ function ZHQSidebar({ active, onNavigate, onLogout }) {
   );
 }
 
-function ZHQTopbar({ title, onNavigate, embedded = false }) {
+function ZHQTopbar({ title, onNavigate, embedded = false, active }) {
   const { Icon, IconButton, SegmentedControl } = window.ZittingHQDesignSystem_c9e528;
   // Count only real (DB-backed, numeric-id) unread alerts. Derived/synthetic
   // alerts use string ids and can't be marked read, so excluding them lets the
@@ -77,11 +77,15 @@ function ZHQTopbar({ title, onNavigate, embedded = false }) {
   };
   return (
     <header className="zhq-topbar" style={{
-      height: 'calc(var(--topbar-h) + env(safe-area-inset-top))', flex: 'none', boxSizing: 'border-box',
+      minHeight: 'calc(var(--topbar-h) + env(safe-area-inset-top))', flex: 'none', boxSizing: 'border-box',
+      paddingBottom: embedded ? 10 : 0,
       display: 'flex', alignItems: 'center', gap: 16,
-      padding: 'env(safe-area-inset-top) 26px 0', borderBottom: '1px solid var(--border-hairline)',
+      paddingTop: 'env(safe-area-inset-top)', paddingLeft: 26, paddingRight: 26, borderBottom: '1px solid var(--border-hairline)',
     }}>
-      <h1 style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <h1 style={{ margin: 0, fontSize: 19, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
+        {embedded && SECTION_HELP[active] ? <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{SECTION_HELP[active]}</p> : null}
+      </div>
       <div style={{ flex: 1 }} />
       {embedded ? null : <button className="zhq-desktop-only" onClick={() => onNavigate && onNavigate('transactions')}
         style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 14px 0 12px', background: 'var(--surface-sunken)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-pill)', color: 'var(--text-tertiary)', minWidth: 200, font: 'inherit', cursor: 'pointer' }}>
@@ -89,14 +93,15 @@ function ZHQTopbar({ title, onNavigate, embedded = false }) {
         <span style={{ fontSize: 13 }}>Search transactions…</span>
       </button>}
       {embedded ? null : <SegmentedControl className="zhq-desktop-only" options={['This month', 'Last month', 'Custom']} defaultValue="This month" size="sm" />}
-      <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />
-      <IconButton icon="sparkles" label="Ask AI" variant="solid" onClick={() => onNavigate && onNavigate('ask')} />
-      <div style={{ position: 'relative' }}>
+      {/* Inside the app frame the shell already has Refresh + the bell, and theme lives in Profile — so none of these here. */}
+      {embedded ? null : <IconButton icon={theme === 'light' ? 'moon' : 'sun'} label="Toggle theme" variant="solid" onClick={toggleTheme} />}
+      {embedded ? null : <IconButton icon="sparkles" label="Ask AI" variant="solid" onClick={() => onNavigate && onNavigate('ask')} />}
+      {embedded ? null : <div style={{ position: 'relative' }}>
         <IconButton icon="bell" label="Notifications" variant="solid" onClick={() => onNavigate && onNavigate('notifications')} />
         {unread > 0 ? (
           <span style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-on-accent)', background: 'var(--accent)', borderRadius: 999, border: '2px solid var(--bg-app)' }}>{unread}</span>
         ) : null}
-      </div>
+      </div>}
     </header>
   );
 }
@@ -143,7 +148,7 @@ function ZHQBottomNav({ active, onNavigate, onLogout }) {
             </div>
             <div style={{ height: 1, background: 'var(--border-hairline)', margin: '10px 4px' }} />
             <button type="button" className="zhq-nav-item" onClick={() => { window.location.href = '/'; }}>
-              <Icon name="grid" size={18} className="zhq-nav-icon" /> Family HQ
+              <Icon name="grid" size={18} className="zhq-nav-icon" /> Zitting HQ
             </button>
             <button type="button" className="zhq-nav-item" onClick={() => go('settings')}>
               <Icon name="settings" size={18} className="zhq-nav-icon" /> Settings
@@ -164,16 +169,35 @@ function ZHQBottomNav({ active, onNavigate, onLogout }) {
   );
 }
 
+/* What each section is for — one plain line under its title, so nobody has to
+   guess what "Transfers" or "Income & Bills" means before tapping in. */
+const SECTION_HELP = {
+  overview: "Where the money stands this month.",
+  accounts: "Every account, its balance, and who looks after it.",
+  transactions: "Everything in and out. Review it, sort it, import more.",
+  budgets: "What you plan to spend, by category, and how it's going.",
+  transfers: "Money moving between accounts: scheduled, due, done.",
+  savings: "The goals you're putting money toward.",
+  income: "Paychecks and recurring bills, and when they land.",
+  notifications: "Money alerts and reminders.",
+  ask: "Ask about your money in plain English.",
+  settings: "Rules, categories, bank sync, and who sees what.",
+};
+
 /* Finance section switcher when the app frame supplies primary navigation:
-   the sections as underline Tabs (scrolls on phones), plus Settings. */
+   the sections as icon tabs (scrolls on phones), then Ask AI and Settings. */
 function ZHQSubnav({ active, onNavigate }) {
   const { Tabs } = window.ZittingHQDesignSystem_c9e528;
   const D = window.ZHQ_DATA;
   const nav = (D && D.nav) || [];
-  const options = [...nav.map((n) => ({ value: n.id, label: n.label })), { value: 'settings', label: 'Settings' }];
+  const options = [
+    ...nav.map((n) => ({ value: n.id, label: n.label, icon: n.icon })),
+    { value: 'ask', label: 'Ask AI', icon: 'sparkles' },
+    { value: 'settings', label: 'Settings', icon: 'settings' },
+  ];
   const value = options.some((o) => o.value === active) ? active : undefined;
   return (
-    <div className="zhq-hscroll" style={{ overflowX: 'auto', flex: 'none', padding: '0 20px' }}>
+    <div className="zhq-hscroll" style={{ overflowX: 'auto', flex: 'none', padding: '0 20px', borderBottom: '1px solid var(--border-hairline)' }}>
       <Tabs options={options} value={value} onChange={(v) => onNavigate && onNavigate(v)} style={{ minWidth: 'max-content' }} />
     </div>
   );
@@ -185,7 +209,7 @@ function ZHQShell({ active, onNavigate, title, children, loading, onLogout, embe
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-app)' }}>
         <ZHQSubnav active={active} onNavigate={onNavigate} />
-        <ZHQTopbar title={title} onNavigate={onNavigate} embedded />
+        <ZHQTopbar title={title} onNavigate={onNavigate} embedded active={active} />
         <div style={{ height: 2, flex: 'none' }}>{loading && LoadingBar ? <LoadingBar /> : null}</div>
         <main className="zhq-main" style={{ flex: 1, overflowY: 'auto', padding: '26px 20px' }}>
           <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>{children}</div>

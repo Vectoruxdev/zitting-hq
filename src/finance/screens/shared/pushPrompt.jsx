@@ -51,7 +51,7 @@ function ZHQPushPrompt({ compact }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Get alerts on your iPhone</div>
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.5 }}>
-          Tap the <b>Share</b> icon, choose <b>Add to Home Screen</b>, then open Family HQ from your home screen and turn on notifications there.
+          Tap the <b>Share</b> icon, choose <b>Add to Home Screen</b>, then open Zitting HQ from your home screen and turn on notifications there.
         </div>
       </div>
     );
@@ -62,7 +62,7 @@ function ZHQPushPrompt({ compact }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications are blocked</div>
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.5 }}>
-          Allow notifications for Family HQ in your browser or phone settings, then come back and enable them here.
+          Allow notifications for Zitting HQ in your browser or phone settings, then come back and enable them here.
         </div>
       </div>
     );
