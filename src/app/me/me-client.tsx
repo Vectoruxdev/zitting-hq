@@ -101,7 +101,7 @@ function Inner({ person, prefs, canEdit }: { person: Person | null; prefs: Membe
 
       <Reveal index={3}>
         <Section title="Your Google Calendar" eyebrow="Calendar">
-          <Row icon="calendar-days" tint="sky" title="Connect a Google Calendar" meta="Paste its secret address and choose who sees it — the family, some people, or just you." onClick={() => router.push("/calendar?feeds=1")} />
+          <Row icon="calendar-days" tint="sky" title="Connect a Google Calendar" meta="A five-step walkthrough: copy the secret address from Google, check it, choose who sees it." onClick={() => router.push("/calendar?feeds=1")} />
         </Section>
       </Reveal>
 

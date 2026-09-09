@@ -11,6 +11,8 @@ import * as cal from "@/db/calendar";
 import { createNotification } from "@/db/mutations";
 import { getPeople } from "@/db/profiles";
 import { fmtNight } from "@/lib/dates";
+import { expandIcs } from "@/lib/ics";
+import { familyTodayISO } from "@/db/dashboard";
 
 async function who() {
   if (!isAuthConfigured) return { memberId: null as string | null, role: "owner" as const, name: "Preview" };
@@ -38,6 +40,31 @@ async function feedGuard(id: number) {
   if (u.role !== "owner" && (!feed.memberId || feed.memberId !== u.memberId)) throw new Error("Not authorized");
   return { u, feed };
 }
+
+/**
+ * Try a pasted address before it's saved: is it reachable, is it a calendar,
+ * what is it called, is it Google's PUBLIC address by mistake (private events
+ * would be missing). Returns nothing that isn't already in the person's hands.
+ */
+export async function checkCalendarFeed(rawUrl: string) {
+  await adultOrOwner();
+  const url = (rawUrl || "").trim();
+  if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) return { ok: false as const, error: "That isn't a web address. It should start with https://" };
+  const isPublicGoogle = /calendar\.google\.com\/calendar\/ical\/[^/]+\/public\//i.test(url);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return { ok: false as const, error: res.status === 404 ? "Google says that address doesn't exist. Copy it again — the whole thing, ending in basic.ics." : `Google answered ${res.status}. Copy the address again.` };
+    const text = await res.text();
+    if (!/BEGIN:VCALENDAR/i.test(text)) return { ok: false as const, error: "That address doesn't return a calendar. Make sure it's the “Secret address in iCal format”, not the calendar's web link." };
+    const name = (text.match(/^X-WR-CALNAME:(.+)$/m)?.[1] ?? "").trim().replace(/\\,/g, ",") || null;
+    const today = familyTodayISO();
+    const upcoming = expandIcs(text, today, addDays(today, 60)).length;
+    return { ok: true as const, name, upcoming, isPublicGoogle };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error && e.name === "TimeoutError" ? "Google didn't answer in time. Try again in a moment." : "Couldn't reach that address." };
+  }
+}
+const addDays = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
 /** Add a Google Calendar (its secret iCal address). Yours by default; the owner may add a household feed that belongs to nobody. */
 export async function addCalendarFeed(args: { name: string; url: string; visibility?: string; sharedWith?: string[]; household?: boolean }) {
