@@ -1,0 +1,140 @@
+/* Zitting HQ — legacy compatibility layer (Phase 0 of the 2026-09 revamp).
+ *
+ * The finance screens (src/finance/**) were written against the previous
+ * "Premium Dark Fintech" token set. Every token name that set defined and the
+ * guide does NOT is aliased here onto the new system, so those screens
+ * re-skin without edits. Numbered scales (--space-*, --radius-*, --fs-*,
+ * --dur-*) deliberately take the guide's values. Remove entries as screens
+ * are ported to src/ui in Phase 6. Loaded LAST in globals.css. */
+
+:root {
+  /* ---- surfaces / ink (old base palette → new semantics) ---- */
+  --black-true: var(--surface-sunken);
+  --bg-void: var(--surface-sunken);
+  --ink-900: var(--bg-app);
+  --ink-850: var(--surface-sunken);
+  --ink-800: var(--surface-card);
+  --ink-750: var(--surface-hover);
+  --ink-700: var(--surface-raised);
+  --ink-650: var(--border-hairline);
+  --ink-600: var(--border-hairline);
+  --ink-550: var(--border-strong);
+  --ink-500: var(--border-strong);
+  --hair: var(--border-hairline);
+  --paper-50: var(--text-primary);
+  --paper-200: var(--text-primary);
+  --gray-400: var(--text-secondary);
+  --gray-500: var(--text-secondary);
+  --gray-600: var(--text-tertiary);
+  --paper-tint: var(--surface-sunken);
+
+  /* ---- accents (green → coral; indigo → data-2) ---- */
+  --green-400: var(--accent-hover);
+  --green-500: var(--accent);
+  --green-600: var(--accent-active);
+  --green-glow: var(--accent-soft);
+  --green-tint: var(--accent-soft);
+  --indigo-400: var(--data-2);
+  --indigo-500: var(--data-2);
+  --indigo-tint: var(--info-soft);
+  --red-500: var(--negative);
+  --red-600: var(--negative);
+  --red-tint: var(--negative-soft);
+  --amber-500: var(--warning);
+  --amber-600: var(--warning);
+  --amber-tint: var(--warning-soft);
+  --amber-glow: var(--warning-soft);
+  --olive-fill: var(--positive-soft);
+  --olive-text: var(--positive);
+  --danger: var(--negative);
+
+  /* ---- semantic names the old set had and the guide renamed ---- */
+  --accent-press: var(--accent-active);
+  --border-shell: var(--border-hairline);
+  --border-focus: var(--accent);
+  --btn-primary-bg: var(--accent);
+  --btn-primary-fg: var(--text-on-accent);
+
+  /* ---- typography ---- */
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-num);      /* numbers are never monospace now */
+  --font-numeric: var(--font-num);
+  --font-serif: var(--font-display);
+  --numeric-feature: var(--num-features);
+  --fs-hero: var(--fs-6xl);
+  --fs-display: var(--fs-4xl);
+  --fs-title: var(--fs-3xl);
+  --fs-h1: var(--fs-2xl);
+  --fs-h2: var(--fs-xl);
+  --fs-h3: var(--fs-lg);
+  --fs-body: var(--fs-md);
+  --fw-light: 300;
+  --lh-normal: var(--lh-body);
+  --lh-relaxed: 1.6;
+  --ls-tighter: -0.03em;
+  --ls-tight: -0.015em;
+  --ls-normal: 0;
+  --ls-wide: 0.04em;
+  --text-eyebrow-size: var(--fs-2xs);
+  --text-eyebrow-spacing: var(--ls-caps);
+  --text-label-size: var(--fs-xs);
+  --text-body-size: var(--fs-md);
+
+  /* ---- spacing / shape / shadow / motion / layout ---- */
+  --space-0: 0;
+  --radius-xs: var(--radius-sm);
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
+  --shadow-pop: var(--shadow-3);
+  --shadow-glow: 0 0 0 1px var(--accent-soft), 0 0 24px var(--accent-soft);
+  --border-width: 1px;
+  --border: 1px solid var(--border-hairline);
+  --border-soft: 1px solid var(--border-hairline);
+  --transition: var(--dur-base) var(--ease-out);
+  --sidebar-w: 232px;
+  --sidebar-rail-w: 84px;
+  --topbar-h: 56px;
+}
+
+/* ---- element defaults the old base layer provided ---- */
+h1, h2, h3, h4, p { margin: 0; }
+/* The guide styles prose links coral; the app's Link cards and nav rely on
+   inheriting color. Opt in to the guide's link look with .zh-link. */
+a:not(.zh-link) { color: inherit; text-decoration: none; }
+a:not(.zh-link):hover { color: inherit; text-decoration: none; }
+::selection { background: var(--accent-soft); color: var(--text-primary); }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- old utility classes, restyled onto the new system ---- */
+.zt-num { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-feature-settings: var(--num-features); letter-spacing: normal; }
+.zt-eyebrow { font: var(--type-overline); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-tertiary); }
+.zt-wordmark { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; }
+
+/* ---- old keyframes + entrance helpers (finance screens still reference them) ---- */
+@keyframes zt-fade-up   { from { opacity: 0; transform: translateY(var(--enter-shift)); } to { opacity: 1; transform: none; } }
+@keyframes zt-fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zt-pop-in    { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes zt-draw      { to { stroke-dashoffset: 0; } }
+@keyframes zt-enter-up  { from { transform: translateY(var(--enter-shift)); } to { transform: translateY(0); } }
+@keyframes zt-shimmer   { from { background-position: 180% 0; } to { background-position: -180% 0; } }
+@keyframes zt-pulse     { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes zt-indeterminate { 0% { transform: translateX(-100%) scaleX(0.4); } 50% { transform: translateX(20%) scaleX(0.6); } 100% { transform: translateX(220%) scaleX(0.4); } }
+@keyframes zt-spin      { to { transform: rotate(360deg); } }
+.zt-enter      { animation: zt-enter-up var(--dur-slow) var(--ease-out) both; }
+.zt-enter-in   { animation: zt-fade-in var(--dur-slow) var(--ease-out) both; }
+.zt-stagger > * { animation: zt-enter-up var(--dur-slow) var(--ease-out) both; }
+.zt-stagger > *:nth-child(1) { animation-delay: calc(var(--stagger) * 0.5); }
+.zt-stagger > *:nth-child(2) { animation-delay: calc(var(--stagger) * 1.5); }
+.zt-stagger > *:nth-child(3) { animation-delay: calc(var(--stagger) * 2.5); }
+.zt-stagger > *:nth-child(4) { animation-delay: calc(var(--stagger) * 3.5); }
+.zt-stagger > *:nth-child(5) { animation-delay: calc(var(--stagger) * 4.5); }
+.zt-stagger > *:nth-child(6) { animation-delay: calc(var(--stagger) * 5.5); }
+.zt-skeleton { position: relative; background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-shine) 50%, var(--skeleton-base) 75%); background-size: 200% 100%; animation: zh-shimmer 1.4s linear infinite; border-radius: var(--radius-sm); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

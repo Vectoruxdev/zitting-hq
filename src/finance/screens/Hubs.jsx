@@ -100,7 +100,7 @@ function ZHQIncomeBillsHub({ onNavigate, tab, onTabChange }) {
 /* Appearance — theme switch + build info (lives only in the Settings hub). */
 function AppearancePanel() {
   const { Card, SegmentedControl } = window.ZittingHQDesignSystem_c9e528;
-  const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'dark');
+  const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'light');
   const pick = (label) => {
     const t = label === 'Light' ? 'light' : 'dark';
     window.__zhqSetTheme && window.__zhqSetTheme(t);

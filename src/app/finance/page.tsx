@@ -10,7 +10,7 @@ import { isAuthConfigured } from "@/lib/supabase/server";
 export const maxDuration = 300;
 
 export const metadata = {
-  title: "Finance · Family HQ",
+  title: "Finance · Zitting HQ",
 };
 
 // Read live data per request when a database is configured; falls back to the

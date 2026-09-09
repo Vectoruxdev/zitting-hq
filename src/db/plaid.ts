@@ -1,5 +1,5 @@
 /**
- * Plaid → Family HQ bridge. Connecting a bank and syncing transactions both
+ * Plaid → Zitting HQ bridge. Connecting a bank and syncing transactions both
  * funnel into the EXISTING import pipeline (`commitImport`): each Plaid
  * transaction becomes an ImportRow whose `externalId` is Plaid's stable
  * `transaction_id`, so dedup, auto-categorization, transfer-linking, and
@@ -30,7 +30,7 @@ export async function createLinkToken(clientUserId: string): Promise<string> {
   try {
     const res = await plaid.linkTokenCreate({
       user: { client_user_id: clientUserId },
-      client_name: "Family HQ",
+      client_name: "Zitting HQ",
       products: PLAID_PRODUCTS,
       country_codes: PLAID_COUNTRY_CODES,
       language: "en",

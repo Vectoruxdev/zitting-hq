@@ -1,9 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Newsreader, Figtree } from "next/font/google";
 import "./globals.css";
 
+// Design-system typefaces, self-hosted at build by next/font (no runtime
+// request to Google, no FOUT, works offline in the PWA). The CSS variables are
+// consumed by src/styles/zh/fonts.css → --font-display / --font-ui.
+const newsreader = Newsreader({ subsets: ["latin"], style: ["normal", "italic"], axes: ["opsz"], variable: "--font-newsreader", display: "swap" });
+const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", display: "swap" });
+
 export const metadata: Metadata = {
-  title: "Family HQ",
-  description: "The Zitting household command center.",
+  title: "Zitting HQ",
+  description: "The Zitting family's home base.",
 };
 
 // Mobile-critical: render at device width (not a zoomed-out desktop canvas),
@@ -12,7 +19,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0E0E10",
+  themeColor: "#FBFAF7",
 };
 
 export default function RootLayout({
@@ -21,16 +28,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className={`${newsreader.variable} ${figtree.variable} h-full`}>
       <head>
-        {/* Design-system webfonts: Geist (UI), Geist Mono (numbers),
-            Instrument Serif (wordmark). */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
-          rel="stylesheet"
-        />
         {/* Browser-tab favicon (PNG — modern browsers prefer the highest match). */}
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png" />
@@ -40,17 +39,16 @@ export default function RootLayout({
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Family HQ" />
-        <meta name="theme-color" content="#0E0E10" />
-        {/* Theme bootstrap: apply the saved light/dark choice BEFORE first
-            paint, on EVERY page (previously only the /finance client chunk set
-            data-theme, so family pages were dark-locked and /finance flashed
-            dark for light-theme users). Last in <head> so the theme-color
-            meta above exists when it runs; head scripts still run pre-paint. */}
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Zitting HQ" />
+        <meta name="theme-color" content="#FBFAF7" />
+        {/* Theme bootstrap: light is the default (design system, 2026-09); a
+            saved "dark" choice is applied BEFORE first paint on every page via
+            data-zh-theme (the guide's dedicated attribute — see tokens/dark.css).
+            Last in <head> so the theme-color meta above exists when it runs. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if(localStorage.getItem("zhq-theme")==="light"){document.documentElement.setAttribute("data-theme","light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#FFFFFF")}}catch(e){}`,
+            __html: `try{if(localStorage.getItem("zhq-theme")==="dark"){document.documentElement.setAttribute("data-zh-theme","dark");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#15141A")}}catch(e){}`,
           }}
         />
       </head>

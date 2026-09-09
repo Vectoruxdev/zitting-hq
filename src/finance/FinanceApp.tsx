@@ -98,18 +98,20 @@ if (typeof window !== "undefined") {
 
   // Theme bootstrap (ported from the prototype's index.html inline script).
   if (!w.__zhqSetTheme) {
-    w.__zhqTheme = localStorage.getItem("zhq-theme") || "dark";
-    if (w.__zhqTheme === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
+    // Light is the default (design system, 2026-09); dark is opt-in via the
+    // guide's dedicated data-zh-theme attribute (see src/styles/zh/dark.css).
+    w.__zhqTheme = localStorage.getItem("zhq-theme") || "light";
+    if (w.__zhqTheme === "dark") {
+      document.documentElement.setAttribute("data-zh-theme", "dark");
     }
     w.__zhqSetTheme = (t: string) => {
       w.__zhqTheme = t;
       localStorage.setItem("zhq-theme", t);
-      if (t === "light") document.documentElement.setAttribute("data-theme", "light");
-      else document.documentElement.removeAttribute("data-theme");
+      if (t === "dark") document.documentElement.setAttribute("data-zh-theme", "dark");
+      else document.documentElement.removeAttribute("data-zh-theme");
       // Keep the browser chrome (notch/status bar) matched to the theme.
       const m = document.querySelector('meta[name="theme-color"]');
-      if (m) m.setAttribute("content", t === "light" ? "#FFFFFF" : "#0E0E10");
+      if (m) m.setAttribute("content", t === "dark" ? "#15141A" : "#FBFAF7");
     };
   }
 }

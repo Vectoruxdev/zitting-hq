@@ -69,7 +69,7 @@ function ZHQTopbar({ title, onNavigate }) {
   // alerts use string ids and can't be marked read, so excluding them lets the
   // badge reach zero once everything's been viewed.
   const unread = ((window.ZHQ_DATA && window.ZHQ_DATA.notifications) || []).filter((n) => n.unread && typeof n.id === 'number').length;
-  const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'dark');
+  const [theme, setTheme] = React.useState((typeof window !== 'undefined' && window.__zhqTheme) || 'light');
   const toggleTheme = () => {
     const t = theme === 'light' ? 'dark' : 'light';
     window.__zhqSetTheme && window.__zhqSetTheme(t);

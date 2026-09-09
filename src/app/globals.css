@@ -1,12 +1,21 @@
 @import "tailwindcss";
-/* Design-system tokens. Imported individually (not via the styles.css @import
- * chain) so every @import stays consecutive and ahead of all rules — the
- * webfonts load via a <link> in the root layout instead of a nested @import. */
-@import "../styles/tokens/colors.css";
-@import "../styles/tokens/typography.css";
-@import "../styles/tokens/spacing.css";
-@import "../styles/tokens/base.css";
-@import "../styles/tokens/theme-light.css";
+/* Design-system tokens (Claude Design "Zitting HQ Design System", 2026-09).
+ * src/styles/zh/{colors..base}.css are verbatim copies of the guide's tokens/
+ * (synced via DesignSync); fonts.css bridges next/font, legacy.css aliases the
+ * old finance token names. Imported individually so every @import stays
+ * consecutive and ahead of all rules. */
+@import "../styles/zh/colors.css";
+@import "../styles/zh/dark.css";
+@import "../styles/zh/typography.css";
+@import "../styles/zh/fonts.css";
+@import "../styles/zh/spacing.css";
+@import "../styles/zh/radii.css";
+@import "../styles/zh/elevation.css";
+@import "../styles/zh/motion.css";
+@import "../styles/zh/layers.css";
+@import "../styles/zh/media.css";
+@import "../styles/zh/base.css";
+@import "../styles/zh/legacy.css";
 
 /* ---- Finance app chrome (ported from the design prototype's index.html) ---- */
 html,

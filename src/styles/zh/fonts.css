@@ -1,0 +1,11 @@
+/* Zitting HQ — font bridge.
+ * The guide loads Newsreader + Figtree from Google Fonts; here they are
+ * self-hosted through next/font (see src/app/layout.tsx), which exposes
+ * --font-newsreader and --font-figtree on <html>. This file points the
+ * guide's family tokens at those variables so tokens/typography.css stays a
+ * verbatim copy of the design system. Loaded AFTER typography.css. */
+:root {
+  --font-display: var(--font-newsreader, "Newsreader"), "Iowan Old Style", Georgia, serif;
+  --font-ui: var(--font-figtree, "Figtree"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-num: var(--font-ui);
+}

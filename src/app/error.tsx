@@ -19,7 +19,7 @@ export default function AppError({ reset }: { error: Error & { digest?: string }
     >
       <div style={{ textAlign: "center", maxWidth: 420 }}>
         <div className="zt-wordmark" style={{ fontSize: 28, marginBottom: 10 }}>
-          Family HQ
+          Zitting HQ
         </div>
         <p style={{ fontSize: 14.5, color: "var(--text-secondary, #A0A0A8)", marginBottom: 18, lineHeight: 1.5 }}>
           Something hiccuped loading this page. It’s almost always a momentary

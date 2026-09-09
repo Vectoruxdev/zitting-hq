@@ -1,0 +1,8 @@
+:root {
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 20px; --radius-xl: 28px; --radius-pill: 999px;
+  --radius-control: var(--radius-md);
+  --radius-card: var(--radius-lg);
+  --radius-sheet: var(--radius-xl);
+  --radius-photo: var(--radius-lg);
+  --radius-photo-sm: var(--radius-md);
+}

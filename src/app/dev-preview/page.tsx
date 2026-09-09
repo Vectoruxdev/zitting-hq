@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import FinanceClient from "@/finance/FinanceClient";
 
 export const metadata = {
-  title: "Dev preview · Family HQ",
+  title: "Dev preview · Zitting HQ",
 };
 
 export const dynamic = "force-dynamic";

@@ -111,19 +111,19 @@ export async function getInviteLink(email: string) {
 
 /** Branded invite email body. */
 function inviteEmailBody(link: string) {
-  const subject = "You're invited to Family HQ";
+  const subject = "You're invited to Zitting HQ";
   const html = `<!doctype html><html><body style="margin:0;background:#f4f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
   <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
-    <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:10px;">Family HQ</div>
+    <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:10px;">Zitting HQ</div>
     <div style="background:#fff;border:1px solid #e6e6ea;border-radius:16px;padding:28px;">
       <h1 style="margin:0 0 10px;font-size:20px;color:#111;">You're invited 👋</h1>
-      <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#444;">You've been added to your family's Family HQ. Tap below to set your password and sign in.</p>
+      <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#444;">You've been added to your family's Zitting HQ. Tap below to set your password and sign in.</p>
       <a href="${link}" style="display:inline-block;background:#3FD07F;color:#06281a;text-decoration:none;font-weight:600;font-size:15px;padding:13px 24px;border-radius:999px;">Set up my account</a>
       <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#888;">If the button doesn't work, copy and paste this link:<br><span style="word-break:break-all;color:#555;">${link}</span></p>
       <p style="margin:14px 0 0;font-size:12px;color:#aaa;">For security this link expires — if it has, you can request a fresh one right on the page it opens.</p>
     </div>
   </div></body></html>`;
-  const text = `You're invited to Family HQ.\n\nSet your password and sign in:\n${link}\n\nIf the link has expired, you can request a new one on the page it opens.`;
+  const text = `You're invited to Zitting HQ.\n\nSet your password and sign in:\n${link}\n\nIf the link has expired, you can request a new one on the page it opens.`;
   return { subject, html, text };
 }
 

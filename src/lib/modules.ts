@@ -1,7 +1,7 @@
 /**
- * Family HQ module registry.
+ * Zitting HQ module registry.
  *
- * Family HQ is a hub for the Zitting household. Each "module" is a top-level
+ * Zitting HQ is a hub for the Zitting household. Each "module" is a top-level
  * area of the app. Finance is the first one being built out; the rest are
  * placeholders that describe where the app is headed.
  */

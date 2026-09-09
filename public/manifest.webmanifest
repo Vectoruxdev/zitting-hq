@@ -1,12 +1,12 @@
 {
-  "name": "Family HQ",
-  "short_name": "Family HQ",
-  "description": "The Zitting household command center.",
+  "name": "Zitting HQ",
+  "short_name": "Zitting HQ",
+  "description": "The Zitting family's home base.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0E0E10",
-  "theme_color": "#0E0E10",
+  "background_color": "#FBFAF7",
+  "theme_color": "#FBFAF7",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
