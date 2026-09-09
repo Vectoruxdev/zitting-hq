@@ -84,6 +84,10 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
     const hrefs = [...modulesFor(user.role).filter((m) => !allow || allow.has(m.slug)).map((m) => m.href), "/notifications", "/me"];
     for (const h of hrefs) { try { router.prefetch(h); } catch { /* prefetch is best-effort */ } }
   }, [bare, router, user.role, moduleKey]);
+  // The content pane is the scroller (not the window), so start each screen at
+  // the top — otherwise a tab tap lands you mid-page where the last one was.
+  const scroller = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => { scroller.current?.scrollTo({ top: 0 }); }, [pathname]);
   const banner = user.viewingAs ? <ViewAsBanner name={user.viewingAs.name} /> : null;
   if (bare) return <>{banner}{children}</>;
   const allowed = user.modules?.length ? new Set(user.modules) : null;
@@ -100,7 +104,7 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
         user={{ name: user.name, person: user.person, src: user.src ?? undefined }}
         onAction={() => setAdd(true)} actionIcon="plus" actionLabel="Add something" onSignOut={() => signOut()} onUser={() => router.push("/me")} headerActions={bell}
       >
-        <div style={{ height: "100%", overflow: "auto", minWidth: 0 }}>{children}</div>
+        <div ref={scroller} style={{ height: "100%", overflow: "auto", minWidth: 0 }}>{children}</div>
       </AppShell>
       <BottomSheet open={add} onClose={() => setAdd(false)} title="Add">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, paddingBottom: 8 }}>
