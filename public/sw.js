@@ -22,7 +22,7 @@ self.addEventListener("push", (event) => {
     badge: "/icons/icon-192.png",
     tag: data.tag || undefined,
     renotify: Boolean(data.tag),
-    data: { url: data.url || "/finance", linkTo: data.linkTo || null, notifId: data.notifId || null },
+    data: { url: data.url || "/notifications", linkTo: data.linkTo || null, notifId: data.notifId || null },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -30,7 +30,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const d = event.notification.data || {};
-  const url = d.url || "/finance";
+  const url = d.url || "/notifications";
   const notifId = d.notifId || null;
   event.waitUntil(
     (async () => {

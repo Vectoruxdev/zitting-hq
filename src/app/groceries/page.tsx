@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppFrame } from "@/components/app-frame";
-import { frameUser } from "@/lib/frame-user";
+import { frameContext } from "@/lib/frame";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getGroceriesData } from "@/db/household";
@@ -12,11 +12,12 @@ export const dynamic = "force-dynamic";
 export default async function GroceriesPage() {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login?redirect=/groceries");
+  const ctx = await frameContext(user);
 
   const data = await getGroceriesData();
 
   return (
-    <AppFrame user={frameUser(user)}>
+    <AppFrame user={ctx}>
     <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <main style={{ flex: 1, padding: "clamp(20px, 4vw, 40px) 18px 56px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto" }}>

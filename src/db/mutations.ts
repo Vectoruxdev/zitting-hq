@@ -1936,6 +1936,7 @@ export async function createNotification(args: {
   entityType?: string | null; // what it's about: transaction | transaction-group | transfer | account | member | route
   entityRef?: string | null; // matching ref (txn externalId, transfer id, account/member id, joined ids, route id)
   dedupeKey?: string | null; // idempotency — skip if one already exists
+  module?: string; // which module it belongs to (hub grouping); default finance
 }) {
   const database = requireDb();
   // Owner preferences: a disabled event fires nothing; channel toggles gate the
@@ -1943,6 +1944,21 @@ export async function createNotification(args: {
   // table isn't there yet (pre-migration) or the type isn't tunable.
   const ch = channelsFor(args.type, await loadNotifPrefRows());
   if (!ch.enabled) return { ok: true as const, skipped: true as const };
+  // Per-member channels (Phase 1): a member-addressed alert also respects that
+  // member's own in-app / push toggles for the event. Missing row = on.
+  if (args.audience === "member" && args.memberId) {
+    const mine = await database
+      .select({ inApp: s.memberNotificationPrefs.inApp, push: s.memberNotificationPrefs.push })
+      .from(s.memberNotificationPrefs)
+      .where(and(eq(s.memberNotificationPrefs.memberId, args.memberId), eq(s.memberNotificationPrefs.event, args.type)))
+      .limit(1)
+      .catch(() => [] as { inApp: boolean; push: boolean }[]);
+    if (mine[0]) {
+      ch.inApp = ch.inApp && mine[0].inApp;
+      ch.push = ch.push && mine[0].push;
+      if (!ch.inApp && !ch.push) return { ok: true as const, skipped: true as const };
+    }
+  }
   // Idempotency: never double-post the same logical alert (webhook + cron, etc.)
   if (args.dedupeKey) {
     const dup = await database
@@ -1960,6 +1976,7 @@ export async function createNotification(args: {
       .insert(s.notifications)
       .values({
         type: args.type,
+        module: args.module ?? "finance",
         tone: args.tone ?? "info",
         title: args.title,
         body: args.body ?? null,

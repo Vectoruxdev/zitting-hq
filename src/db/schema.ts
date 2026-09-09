@@ -485,6 +485,7 @@ export const notifications = pgTable(
   {
     id: serial("id").primaryKey(),
     type: text("type").notNull(),
+    module: text("module").notNull().default("finance"), // hub grouping (supabase-phase1-profiles-quotes.sql)
     icon: text("icon"),
     tone: text("tone").notNull().default("info"),
     title: text("title").notNull(),
@@ -869,4 +870,62 @@ export const nestEvents = pgTable(
     index("idx_nest_events_device").on(t.nestDeviceId),
     index("idx_nest_events_created").on(t.createdAt),
   ]
+);
+
+// ---- Phase 1 (2026-09 revamp): profiles, member prefs, quotes, sharing ----
+// supabase-phase1-profiles-quotes.sql. All reads are defensive (pre-migration
+// DB → defaults). Kept off family_members so `select *` there never breaks.
+
+export const memberProfiles = pgTable("member_profiles", {
+  memberId: text("member_id").primaryKey().references(() => familyMembers.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("adult"), // adult | child
+  hue: integer("hue"), // 1..6 family hue; null = derived from id
+  avatarPath: text("avatar_path"), // key in the private 'avatars' bucket
+  birthday: date("birthday"),
+  greetingName: text("greeting_name"),
+  theme: text("theme").notNull().default("system"), // light | dark | system
+  homeLayout: jsonb("home_layout").$type<{ order: string[]; hidden: string[] }>(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const memberNotificationPrefs = pgTable(
+  "member_notification_prefs",
+  {
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    inApp: boolean("in_app").notNull().default(true),
+    push: boolean("push").notNull().default(true),
+    email: boolean("email").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.memberId, t.event] })]
+);
+
+export const quotes = pgTable(
+  "quotes",
+  {
+    id: serial("id").primaryKey(),
+    text: text("text").notNull(),
+    saidByMemberId: text("said_by_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    saidByName: text("said_by_name"),
+    saidOn: date("said_on"),
+    addedBy: text("added_by").references(() => familyMembers.id, { onDelete: "set null" }),
+    visibility: text("visibility").notNull().default("family"), // family | private | custom
+    favorite: boolean("favorite").notNull().default(false),
+    showOnLogin: boolean("show_on_login").notNull().default(false),
+    source: text("source").notNull().default("user"), // user | seed
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [index("idx_quotes_said_on").on(t.saidOn)]
+);
+
+/** Per-item sharing for visibility = "custom". */
+export const shares = pgTable(
+  "shares",
+  {
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.memberId] }), index("idx_shares_member").on(t.memberId)]
 );

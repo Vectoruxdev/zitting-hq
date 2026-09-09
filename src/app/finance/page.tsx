@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import FinanceClient from "@/finance/FinanceClient";
 import { AppFrame } from "@/components/app-frame";
-import { frameUser } from "@/lib/frame-user";
+import { frameContext } from "@/lib/frame";
 import { getFinanceData } from "@/db/queries";
 import { touchMemberLastSeen } from "@/db/mutations";
 import { getCurrentUser } from "@/lib/auth";
@@ -28,6 +28,7 @@ export default async function FinancePage({
   // When auth is configured, require a session. When it isn't (e.g. local dev
   // with no Supabase env), fall through as owner so the app stays usable.
   if (isAuthConfigured && !user) redirect("/login?redirect=/finance");
+  const ctx = await frameContext(user);
 
   // Record "last opened the app" (throttled + defensive) for the People & Access view.
   if (user?.memberId) await touchMemberLastSeen(user.memberId);
@@ -46,7 +47,7 @@ export default async function FinancePage({
   // the app frame with the sections as a sub-nav.
   const bare = role === "member" || !!as;
   return (
-    <AppFrame user={frameUser(user)} bare={bare}>
+    <AppFrame user={ctx} bare={bare}>
       <FinanceClient data={data} role={role} name={user?.name} embedded={!bare} />
     </AppFrame>
   );

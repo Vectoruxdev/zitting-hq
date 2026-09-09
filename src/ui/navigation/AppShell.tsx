@@ -38,6 +38,8 @@ export interface AppShellProps {
   /** Tapping the user row (desktop) / avatar (phone). */
   onUser?: () => void;
   onSignOut?: () => void;
+  /** Right side of the phone header (before the avatar) and the sidebar user row — e.g. the notifications bell. */
+  headerActions?: React.ReactNode;
   children?: React.ReactNode;
   style?: React.CSSProperties;
 }
@@ -80,7 +82,7 @@ export function Wordmark({ size = "var(--fs-xl)" }: { size?: string }) {
  * Tablet: 84px icon rail. Desktop: 232px sidebar grouped by `group`. Modules are data — adding a feature is one entry.
  * On phone a header (wordmark + avatar) renders above content. Content is keyed on `active` so screens fade on change.
  */
-export function AppShell({ modules = [], active, onNavigate, user = {}, brand, mode: force, onAction, actionIcon = "camera", actionLabel = "Add a photo or receipt", footer, onUser, onSignOut, children, style }: AppShellProps) {
+export function AppShell({ modules = [], active, onNavigate, user = {}, brand, mode: force, onAction, actionIcon = "camera", actionLabel = "Add a photo or receipt", footer, onUser, onSignOut, headerActions, children, style }: AppShellProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const mode = useShellMode(ref, force);
   const [more, setMore] = React.useState(false);
@@ -105,7 +107,8 @@ export function AppShell({ modules = [], active, onNavigate, user = {}, brand, m
           ))}
           <div style={{ flex: 1 }} />
           {footer}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: mode === "tablet" ? "8px 0" : "8px 6px", justifyContent: mode === "tablet" ? "center" : "flex-start" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: mode === "tablet" ? "8px 0" : "8px 6px", justifyContent: mode === "tablet" ? "center" : "flex-start", flexWrap: mode === "tablet" ? "wrap" : "nowrap" }}>
+            {headerActions}
             <Avatar {...user} size="sm" onClick={onUser} />
             {mode === "desktop" ? (
               <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -117,7 +120,7 @@ export function AppShell({ modules = [], active, onNavigate, user = {}, brand, m
         </aside>
       ) : null}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative", minHeight: 0 }}>
-        {mode === "phone" ? <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 56, flex: "none" }}>{Brand}<Avatar {...user} size="sm" onClick={onUser} /></header> : null}
+        {mode === "phone" ? <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 56, flex: "none" }}>{Brand}<span style={{ display: "flex", alignItems: "center", gap: 6 }}>{headerActions}<Avatar {...user} size="sm" onClick={onUser} /></span></header> : null}
         <main key={active} style={{ flex: 1, minHeight: 0, animation: "zh-fade-in var(--dur-base) var(--ease-out) both" }}>{children}</main>
         {mode === "phone" ? <TabBar position="sticky" value={activeInBar} onChange={(k) => (k === "more" ? setMore(true) : go(k))} items={barItems} action={onAction ? { icon: actionIcon, label: actionLabel, onClick: onAction } : undefined} /> : null}
         <BottomSheet open={more} onClose={() => setMore(false)} container="absolute" title="Everything">

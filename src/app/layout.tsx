@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Newsreader, Figtree } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 
 // Design-system typefaces, self-hosted at build by next/font (no runtime
@@ -22,13 +23,18 @@ export const viewport: Viewport = {
   themeColor: "#FBFAF7",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The profile's theme choice is mirrored into a cookie (see /me actions) so
+  // the server renders the right theme on first paint; the inline script below
+  // covers devices that only have the localStorage choice.
+  const themeCookie = (await cookies()).get("zhq-theme")?.value;
+  const dark = themeCookie === "dark";
   return (
-    <html lang="en" className={`${newsreader.variable} ${figtree.variable} h-full`}>
+    <html lang="en" className={`${newsreader.variable} ${figtree.variable} h-full`} data-zh-theme={dark ? "dark" : undefined}>
       <head>
         {/* Browser-tab favicon (PNG — modern browsers prefer the highest match). */}
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
@@ -41,14 +47,14 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Zitting HQ" />
-        <meta name="theme-color" content="#FBFAF7" />
-        {/* Theme bootstrap: light is the default (design system, 2026-09); a
+        <meta name="theme-color" content={dark ? "#15141A" : "#FBFAF7"} />
+        {/* Theme + hidden-document bootstrap: light is the default (design system, 2026-09); a
             saved "dark" choice is applied BEFORE first paint on every page via
             data-zh-theme (the guide's dedicated attribute — see tokens/dark.css).
             Last in <head> so the theme-color meta above exists when it runs. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if(localStorage.getItem("zhq-theme")==="dark"){document.documentElement.setAttribute("data-zh-theme","dark");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#15141A")}}catch(e){}`,
+            __html: `try{if(localStorage.getItem("zhq-theme")==="dark"){document.documentElement.setAttribute("data-zh-theme","dark");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#15141A")}}catch(e){};try{if(document.visibilityState==="hidden"){document.documentElement.classList.add("zh-no-anim");document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")document.documentElement.classList.remove("zh-no-anim")})}}catch(e){}`,
           }}
         />
       </head>

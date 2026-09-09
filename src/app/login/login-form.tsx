@@ -11,11 +11,11 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
     height: 44,
     width: "100%",
     padding: "0 14px",
-    background: "var(--surface-sunken)",
-    border: "1px solid var(--border-hairline)",
-    borderRadius: "var(--radius-md, 12px)",
+    background: "var(--control-bg)",
+    border: "1px solid var(--control-border)",
+    borderRadius: "var(--radius-control)",
     color: "var(--text-primary)",
-    fontSize: 14,
+    font: "var(--type-body)",
     outline: "none",
   };
 
@@ -23,7 +23,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
     <form action={formAction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <input type="hidden" name="redirect" value={redirectTo} />
       <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <span className="zt-eyebrow">Email</span>
+        <span style={{ font: "var(--type-label)", color: "var(--text-secondary)" }}>Email</span>
         <input
           name="email"
           type="email"
@@ -34,7 +34,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <span className="zt-eyebrow">Password</span>
+        <span style={{ font: "var(--type-label)", color: "var(--text-secondary)" }}>Password</span>
         <PasswordInput
           name="password"
           autoComplete="current-password"

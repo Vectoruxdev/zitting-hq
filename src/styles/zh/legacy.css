@@ -138,3 +138,11 @@ a:not(.zh-link):hover { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* ---- Hidden-document guard (app-level, not from the guide) ----
+   Entrance animations fade content in from opacity 0. If the page is loaded
+   while the document is hidden (a PWA opened from a background push, a tab
+   restored in the background), the animation clock doesn't advance and the
+   fill-mode would leave everything invisible. layout.tsx adds .zh-no-anim
+   while hidden; durations collapse so animations land on their end state. */
+.zh-no-anim *, .zh-no-anim *::before, .zh-no-anim *::after { animation-duration: 0s !important; animation-delay: 0s !important; }
