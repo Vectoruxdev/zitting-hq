@@ -25,7 +25,7 @@ function mock(variant: "owner" | "wife", state: "full" | "empty"): HomeData {
     todayISO: "2026-09-08", dateLabel: "Tuesday, September 8", daypart: "afternoon", greetingName: member ? "Jaelynn" : "Jared",
     viewer: { memberId: member ? "jaelynn" : "jared", role: member ? "member" : "owner", kind: "adult", hue: member ? 2 : 1, avatarUrl: null, modules: [] },
     people: PEOPLE,
-    quote: full ? { id: 1, text: "Mom, can the moon come to dinner?", saidByMemberId: "jae", saidByName: null, saidOn: "2026-09-02" } : null,
+    quote: full ? { id: 1, text: "Mom, can the moon come to dinner?", saidByMemberId: "jae", saidByName: null, saidOn: "2026-09-02", saved: false } : null,
     photoOfDay: full ? { src: "https://picsum.photos/seed/zh-lake/1200/800", title: "Saturday at the lake", by: "Katelynn", album: "Lake weekend", count: 42 } : null,
     recentPhotos: full ? [1, 2, 3, 4, 5, 6].map((i) => ({ id: i, src: `https://picsum.photos/seed/zh-r${i}/400/400` })) : [],
     photosEnabled: false,

@@ -11,6 +11,8 @@ import {
   Avatar, Badge, Button, Celebrate, Checkbox, EmptyState, Icon, IconButton, ImageCard, ModuleTile, Money, PhotoHero, ProgressBar, Reveal, Row, Section, Skeleton, Stagger,
 } from "@/ui";
 import { completeChoreAction, uncompleteChoreAction } from "@/app/chores/actions";
+import { toggleSaved } from "@/app/quotes/actions";
+import { viewAsAction } from "@/app/actions/view-as";
 import { modulesFor } from "@/lib/modules";
 import type { HomeData } from "@/db/home";
 import { HOME_PLACE } from "@/lib/weather";
@@ -41,14 +43,14 @@ function Greeting({ data }: { data: HomeData }) {
   );
 }
 
-/** The family, as people — tap yourself for your profile; the owner taps anyone to open their permissions (their photos when the library is on). */
+/** The family, as people — tap yourself for your profile; the owner taps anyone to see the app as they see it. */
 function FamilyRow({ data }: { data: HomeData }) {
   const router = useRouter();
   if (!data.people.length) return null;
   return (
     <div className="zhq-hscroll" style={{ display: "flex", gap: 4, overflowX: "auto", margin: "0 -8px", padding: "0 8px", flex: "0 1 auto", minWidth: 0 }}>
       {data.people.map((p, i) => (
-        <button key={p.id} type="button" onClick={() => router.push(p.id === data.viewer.memberId ? "/me" : data.photosEnabled ? `/photos?person=${encodeURIComponent(p.id)}` : data.viewer.role === "owner" ? `/people?who=${encodeURIComponent(p.id)}` : "/me")}
+        <button key={p.id} type="button" title={p.id === data.viewer.memberId ? "Your profile" : data.viewer.role === "owner" ? `See the app as ${p.greetingName}` : undefined} onClick={async () => { if (p.id === data.viewer.memberId) { router.push("/me"); return; } if (data.viewer.role === "owner") { const r = await viewAsAction(p.id); if (r.ok) { router.push("/"); router.refresh(); } return; } router.push("/me"); }}
           style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "6px 8px", border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-md)", color: "var(--text-primary)", font: "inherit", flex: "none", animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 40}ms both` }}>
           <Avatar name={p.name} src={p.avatarUrl} person={p.hue} size="lg" />
           <span style={{ font: "500 var(--fs-xs)/1 var(--font-ui)" }}>{p.greetingName}</span>
@@ -213,6 +215,15 @@ function SpendableSection({ data }: { data: HomeData }) {
 function QuoteBlock({ data }: { data: HomeData }) {
   const router = useRouter();
   const q = data.quote;
+  const [saved, setSaved] = React.useState(q?.saved ?? false);
+  const [busy, setBusy] = React.useState(false);
+  const canSave = !!data.viewer.memberId;
+  const save = async () => {
+    if (!q || busy) return;
+    setBusy(true); const next = !saved; setSaved(next);
+    try { await toggleSaved(q.id, next); } catch { setSaved(!next); } finally { setBusy(false); }
+    router.refresh();
+  };
   if (!q) return <Section eyebrow="Something someone said"><EmptyState compact icon="quote" title="No quotes yet" body="The next funny thing someone says — tap and keep it." action={<Button size="sm" variant="soft" iconLeft="plus" onClick={() => router.push("/quotes?add=1")}>Add a quote</Button>} style={{ padding: "4px 0" }} /></Section>;
   const who = data.people.find((p) => p.id === q.saidByMemberId);
   const name = who?.greetingName || q.saidByName;
@@ -224,8 +235,10 @@ function QuoteBlock({ data }: { data: HomeData }) {
         {who ? <Avatar name={who.name} src={who.avatarUrl} person={who.hue} size="sm" /> : null}
         {name ? <span style={{ font: "var(--type-label)" }}>{name}</span> : null}
         {q.saidOn ? <span style={T.cap}>· {new Date(q.saidOn + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span> : null}
+        {canSave ? <IconButton icon="heart" label={saved ? "Saved — remove from your quotes" : "Save to your quotes"} size="sm" active={saved} onClick={save} /> : null}
         <IconButton icon="plus" label="Add a quote" size="sm" onClick={() => router.push("/quotes?add=1")} />
       </figcaption>
+      {saved ? <span style={{ ...T.cap, color: "var(--accent)" }}>Saved to your quotes</span> : null}
     </figure>
   );
 }

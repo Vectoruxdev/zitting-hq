@@ -11,6 +11,7 @@ import { modulesFor, moduleForPath } from "@/lib/modules";
 import type { FrameUser } from "@/lib/frame-user";
 import { signOut } from "@/app/login/actions";
 import { tickRemindersAction } from "@/app/actions/reminders";
+import { viewAsAction } from "@/app/actions/view-as";
 
 export type { FrameUser } from "@/lib/frame-user";
 
@@ -19,6 +20,8 @@ export interface FrameProps extends FrameUser {
   theme?: "light" | "dark" | "system";
   /** Allowed module slugs (Phase 6 People & permissions); undefined/empty = all. */
   modules?: string[];
+  /** Owner looking at the app as this person (read-only). */
+  viewingAs?: { id: string; name: string } | null;
 }
 
 const ADD_ACTIONS: { icon: string; title: string; body: string; href: string }[] = [
@@ -55,13 +58,26 @@ function useReminderTick() {
   }, []);
 }
 
+/** Sticky strip while the owner is seeing the app as someone else. Exiting clears the cookie and goes Home. */
+function ViewAsBanner({ name }: { name: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <div role="status" style={{ position: "sticky", top: 0, zIndex: "var(--z-toast)", display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: "8px 16px", background: "var(--text-primary)", color: "var(--bg-app)", font: "var(--type-body-sm)" }}>
+      <span>You’re seeing Zitting HQ the way <b>{name}</b> sees it. Nothing you do here is done in their name.</span>
+      <button type="button" disabled={busy} onClick={async () => { setBusy(true); await viewAsAction(null); router.push("/"); router.refresh(); }} style={{ flex: "none", border: "1px solid currentColor", background: "transparent", color: "inherit", borderRadius: "var(--radius-pill)", padding: "4px 12px", font: "inherit", fontWeight: 600, cursor: "pointer" }}>Back to me</button>
+    </div>
+  );
+}
+
 export function AppFrame({ user, children, bare = false }: { user: FrameProps; children: React.ReactNode; bare?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const [add, setAdd] = React.useState(false);
   useThemeSync(user.theme);
   useReminderTick();
-  if (bare) return <>{children}</>;
+  const banner = user.viewingAs ? <ViewAsBanner name={user.viewingAs.name} /> : null;
+  if (bare) return <>{banner}{children}</>;
   const allowed = user.modules?.length ? new Set(user.modules) : null;
   const modules: ShellModule[] = modulesFor(user.role).filter((m) => !allowed || allowed.has(m.slug)).map((m) => ({
     key: m.slug, label: m.name, short: m.short, icon: m.icon, tint: m.tint, group: m.group, primary: m.primary, muted: m.status === "planned",

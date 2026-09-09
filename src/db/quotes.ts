@@ -2,7 +2,7 @@
  * Family quotes — read/write layer. Sequential, defensive reads (a
  * pre-migration DB returns []). Visibility via the shared canView predicate.
  */
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, isDbConfigured } from "./index";
 import * as s from "./schema";
 import { canView, type Viewer } from "@/lib/access";
@@ -19,6 +19,10 @@ export interface Quote {
   showOnLogin: boolean;
   source: string;
   sharedWith: string[];
+  /** Saved by the viewer (their own list on the Quotes page). */
+  saved: boolean;
+  /** When the viewer saved it, for ordering the Saved tab. */
+  savedAt: string | null;
 }
 
 function requireDb() {
@@ -52,11 +56,16 @@ export async function listQuotes(viewer: Viewer): Promise<Quote[]> {
     .orderBy(desc(s.quotes.saidOn), desc(s.quotes.id))
     .catch(() => [] as (typeof s.quotes.$inferSelect)[]);
   const shares = await sharesFor(rows.filter((r) => r.visibility === "custom").map((r) => r.id));
+  const saves = viewer.memberId
+    ? await db.select().from(s.quoteSaves).where(eq(s.quoteSaves.memberId, viewer.memberId)).catch(() => [] as (typeof s.quoteSaves.$inferSelect)[])
+    : [];
+  const savedAt = new Map(saves.map((x) => [x.quoteId, x.createdAt ? new Date(x.createdAt).toISOString() : null]));
   return rows
     .map((r) => ({
       id: r.id, text: r.text, saidByMemberId: r.saidByMemberId, saidByName: r.saidByName, saidOn: r.saidOn ? String(r.saidOn) : null,
       addedBy: r.addedBy, visibility: r.visibility, favorite: r.favorite, showOnLogin: r.showOnLogin, source: r.source,
       sharedWith: shares.get(String(r.id)) || [],
+      saved: savedAt.has(r.id), savedAt: savedAt.get(r.id) ?? null,
     }))
     .filter((q) => canView({ visibility: q.visibility, ownerId: q.addedBy, sharedWith: q.sharedWith }, viewer));
 }
@@ -119,4 +128,11 @@ export async function getQuote(id: number) {
   if (!isDbConfigured || !db) return null;
   const [row] = await db.select().from(s.quotes).where(eq(s.quotes.id, id)).limit(1).catch(() => []);
   return row ?? null;
+}
+
+/** Save (or unsave) a quote for one person. */
+export async function setQuoteSaved(quoteId: number, memberId: string, saved: boolean) {
+  const database = requireDb();
+  if (saved) await database.insert(s.quoteSaves).values({ quoteId, memberId }).onConflictDoNothing();
+  else await database.delete(s.quoteSaves).where(and(eq(s.quoteSaves.quoteId, quoteId), eq(s.quoteSaves.memberId, memberId)));
 }

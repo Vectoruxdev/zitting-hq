@@ -23,7 +23,7 @@ export async function FinancePage({ section, searchParams }: { section: string |
   const ctx = await frameContext(user);
 
   // Record "last opened the app" (throttled + defensive) for the People & Access view.
-  if (user?.memberId) await touchMemberLastSeen(user.memberId);
+  if (user?.memberId && !user.viewingAs) await touchMemberLastSeen(user.memberId);
 
   // ?as=<memberId> — owner's "preview as this member" (People → Preview).
   // getFinanceData only honors it for the owner role.

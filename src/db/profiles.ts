@@ -57,6 +57,7 @@ export async function getPeople(): Promise<Person[]> {
   const byId = new Map(profiles.map((p) => [p.memberId, p]));
   const people: Person[] = [];
   for (const m of members) {
+    if ((m.name ?? "").trim().toLowerCase() === "household") continue; // the roster's attribution placeholder, not a person
     const p = byId.get(m.id);
     people.push({
       id: m.id,

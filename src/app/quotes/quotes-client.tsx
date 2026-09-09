@@ -28,7 +28,8 @@ function Inner({ quotes, people, viewer }: { quotes: Quote[]; people: Pick<Perso
   const [busy, setBusy] = React.useState(false);
   const personOf = (id: string | null) => people.find((p) => p.id === id);
   const shown = quotes
-    .filter((x) => tab === "all" || (tab === "favorites" ? x.favorite : tab === "words" ? x.source === "seed" : tab === "family" ? x.source !== "seed" : x.saidByMemberId === tab))
+    .filter((x) => tab === "all" || (tab === "saved" ? x.saved : tab === "words" ? x.source === "seed" : tab === "family" ? x.source !== "seed" : x.saidByMemberId === tab))
+    .sort((a, b) => (tab === "saved" ? (b.savedAt || "").localeCompare(a.savedAt || "") : 0))
     .filter((x) => !q || x.text.toLowerCase().includes(q.toLowerCase()) || (x.saidByName || "").toLowerCase().includes(q.toLowerCase()));
   const speakers = Array.from(new Set(quotes.map((x) => x.saidByMemberId).filter(Boolean))) as string[];
   const save = async () => {
@@ -49,7 +50,7 @@ function Inner({ quotes, people, viewer }: { quotes: Quote[]; people: Pick<Perso
       {quotes.length ? (
         <Reveal index={1}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <Tabs size="sm" items={[{ key: "all", label: "All", count: quotes.length }, { key: "family", label: "Family", count: quotes.filter((x) => x.source !== "seed").length || undefined }, { key: "words", label: "Scripture & prophets", icon: "book-open", count: quotes.filter((x) => x.source === "seed").length || undefined }, { key: "favorites", label: "Favorites", icon: "heart", count: quotes.filter((x) => x.favorite).length || undefined }, ...speakers.map((id) => ({ key: id, label: personOf(id)?.greetingName || "Someone" }))]} value={tab} onChange={setTab} style={{ flex: "1 1 320px" }} />
+            <Tabs size="sm" items={[{ key: "all", label: "All", count: quotes.length }, { key: "family", label: "Family", count: quotes.filter((x) => x.source !== "seed").length || undefined }, { key: "words", label: "Scripture & prophets", icon: "book-open", count: quotes.filter((x) => x.source === "seed").length || undefined }, { key: "saved", label: "Saved", icon: "heart", count: quotes.filter((x) => x.saved).length || undefined }, ...speakers.map((id) => ({ key: id, label: personOf(id)?.greetingName || "Someone" }))]} value={tab} onChange={setTab} style={{ flex: "1 1 320px" }} />
             <SearchField size="sm" placeholder="Search quotes" value={q} onChange={setQ} style={{ flex: "0 1 260px" }} />
           </div>
         </Reveal>
@@ -67,7 +68,7 @@ function Inner({ quotes, people, viewer }: { quotes: Quote[]; people: Pick<Perso
                 <div style={{ position: "relative" }}>
                   <QuoteCard text={x.text} who={who ? { name: who.name, src: who.avatarUrl ?? undefined, person: who.hue } : { name: x.saidByName ?? undefined, person: 6 }} when={x.saidOn ? new Date(x.saidOn + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : undefined} tint={tint} tone="paper" />
                   <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 2 }}>
-                    <IconButton icon="heart" label={x.favorite ? "Unfavorite" : "Favorite"} size="sm" active={x.favorite} onClick={async () => { await actions.toggleFavorite(x.id, !x.favorite); router.refresh(); }} />
+                    <IconButton icon="heart" label={x.saved ? "Remove from your saved quotes" : "Save to your quotes"} size="sm" active={x.saved} onClick={async () => { await actions.toggleSaved(x.id, !x.saved); router.refresh(); }} />
                     {viewer.role === "owner" ? <IconButton icon={x.showOnLogin ? "eye" : "eye-off"} label={x.showOnLogin ? "Shown on the login page" : "Show on the login page"} size="sm" active={x.showOnLogin} onClick={async () => { await actions.setShowOnLogin(x.id, !x.showOnLogin); router.refresh(); }} /> : null}
                     {mine ? <IconButton icon="trash-2" label="Delete" size="sm" onClick={async () => { if (confirm("Delete this quote?")) { await actions.removeQuote(x.id); router.refresh(); } }} /> : null}
                   </div>

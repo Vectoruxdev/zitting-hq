@@ -1,6 +1,8 @@
+import { cookies, headers } from "next/headers";
 import { createSupabaseServerClient, isAuthConfigured } from "./supabase/server";
 import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export type Role = "owner" | "partner" | "member";
 
@@ -9,7 +11,11 @@ export interface CurrentUser {
   name: string;
   role: Role;
   memberId: string | null; // the family_members row id linked by email, if any
+  /** Set while the owner is looking at the app as another person (reads only). */
+  viewingAs?: { id: string; name: string; role: Role } | null;
 }
+
+export const VIEW_AS_COOKIE = "zhq-view-as";
 
 /**
  * Owner allowlist bootstraps the first owner before any family member is linked
@@ -63,5 +69,24 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     /* DB unavailable — fall back to allowlist role */
   }
 
-  return { email, name, role, memberId };
+  // Owner "view as": a cookie set from People / the family row swaps the
+  // identity for page reads only — server actions (the Next-Action header)
+  // always run as the real owner, so nothing gets written in someone's name.
+  if (role === "owner") {
+    try {
+      const target = (await cookies()).get(VIEW_AS_COOKIE)?.value;
+      const isAction = !!(await headers()).get("next-action");
+      if (target && !isAction && db) {
+        const [m] = await db.select({ id: familyMembers.id, name: familyMembers.name, role: familyMembers.role }).from(familyMembers).where(eq(familyMembers.id, target)).limit(1);
+        if (m && m.id !== memberId) {
+          const asRole = (["owner", "partner", "member"].includes(m.role) ? m.role : "member") as Role;
+          return { email, name: m.name, role: asRole, memberId: m.id, viewingAs: { id: m.id, name: m.name, role: asRole } };
+        }
+      }
+    } catch {
+      /* no cookie / no DB — plain owner */
+    }
+  }
+
+  return { email, name, role, memberId, viewingAs: null };
 }

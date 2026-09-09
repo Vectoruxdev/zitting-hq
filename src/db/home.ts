@@ -29,7 +29,7 @@ export interface HomeData {
   greetingName: string;
   viewer: { memberId: string | null; role: Viewer["role"]; kind: "adult" | "child"; hue: number; avatarUrl: string | null; modules: string[] };
   people: Pick<Person, "id" | "name" | "greetingName" | "hue" | "avatarUrl" | "kind">[];
-  quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn"> | null;
+  quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn" | "saved"> | null;
   photoOfDay: { id?: string; src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
   recentPhotos: { id: string | number; src: string }[];
   /** Photos module switched on? When off, Home shows a scenic picture and no upload prompts. */
@@ -101,7 +101,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     greetingName: me?.greetingName || fallbackName.split(" ")[0] || "there",
     viewer: { memberId: viewer.memberId, role: viewer.role, kind: me?.kind ?? "adult", hue: me?.hue ?? 1, avatarUrl: me?.avatarUrl ?? null, modules: allowedSlugs },
     people: people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind })),
-    quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn } : null,
+    quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn, saved: quote.saved } : null,
     photoOfDay: pod && pod.src ? { id: pod.id, src: pod.src, title: pod.caption, by: people.find((x) => x.id === pod.uploadedBy)?.greetingName ?? null, album: null, count: 0 } : null,
     recentPhotos: recent.filter((x) => x.thumb || x.src).map((x) => ({ id: x.id, src: (x.thumb || x.src) as string })),
     photosEnabled,
