@@ -7,5 +7,11 @@ a:hover { color: var(--accent-hover); text-decoration: underline; text-underline
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .zh-num, .zh-money { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-feature-settings: var(--num-features); }
-.zh-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
-@media (prefers-reduced-motion: reduce) { .zh-photo img { animation-name: zh-fade-in !important; } }
+.zh-photo img { display: block; width: 100%; height: 100%; object-fit: cover; animation: zh-fade-in var(--dur-slow) var(--ease-out) both; }
+/* The slow zoom only where the texture is small. On a big Retina window a
+   1600 px hero scaling continuously is a huge layer to re-raster every frame —
+   it flickered black on a Mac desktop install (2026-09-09). */
+@media (max-width: 900px) {
+  .zh-photo img.zh-drift { animation: zh-fade-in var(--dur-slow) var(--ease-out) both, zh-drift 18s linear infinite alternate; }
+}
+@media (prefers-reduced-motion: reduce) { .zh-photo img { animation: zh-fade-in var(--dur-slow) var(--ease-out) both !important; } }

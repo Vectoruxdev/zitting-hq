@@ -1,4 +1,5 @@
 "use client";
+import { SCENIC_SIZES } from "@/lib/scenic";
 /**
  * Home — the per-person dashboard, built from the design system's Home
  * (ui_kits/hub/HubHome.jsx): sections on the canvas, not boxes. Owner sees the
@@ -102,7 +103,7 @@ function SceneHero({ data, narrow }: { data: HomeData; narrow: boolean }) {
   const credit = <a className="zh-link" href={sc.source} target="_blank" rel="noopener noreferrer" style={{ font: "var(--type-caption)", color: "var(--text-on-photo)", opacity: 0.8, textDecoration: "none", textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{sc.title} · {sc.credit} · {sc.license}</a>;
   return (
     <PhotoHero
-      src={sc.src} alt={`${sc.title}, ${sc.place}`} ratio={ratio} eyebrow={`${HOME_PLACE.name}, ${HOME_PLACE.region}`}
+      src={sc.src} srcSet={sc.srcSet} sizes={SCENIC_SIZES} priority alt={`${sc.title}, ${sc.place}`} ratio={ratio} eyebrow={`${HOME_PLACE.name}, ${HOME_PLACE.region}`}
       title={w ? <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}><Icon name={w.icon} size={narrow ? 28 : 34} />{w.temp}°</span> : `${sc.title}`}
       subtitle={w ? [w.label, `High ${w.today.hi}° · Low ${w.today.lo}°`, w.feelsLike !== w.temp && Math.abs(w.feelsLike - w.temp) >= 5 ? `Feels like ${w.feelsLike}°` : null, w.wind >= 10 ? `Wind ${w.wind} mph` : null].filter(Boolean).join(" · ") : `${sc.place} · weather isn’t available right now`}
       topRight={credit} style={{ width: "100%", minWidth: 0 }}
