@@ -4,24 +4,28 @@
  * so we can prove the flow against a fake bank and flip to real banks by
  * changing one variable.
  */
-import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
+import type { PlaidApi, Products, CountryCode } from "plaid";
 
 const ENV = (process.env.PLAID_ENV || "production").toLowerCase();
-const basePath = PlaidEnvironments[ENV] || PlaidEnvironments.production;
+// Mirrors PlaidEnvironments without importing the SDK at module load.
+const BASE_PATHS: Record<string, string> = { production: "https://production.plaid.com", development: "https://development.plaid.com", sandbox: "https://sandbox.plaid.com" };
+const basePath = BASE_PATHS[ENV] || BASE_PATHS.production;
 
 export const isPlaidConfigured = Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
 
-export const PLAID_PRODUCTS: Products[] = [Products.Transactions];
-export const PLAID_COUNTRY_CODES: CountryCode[] = [CountryCode.Us];
+export const PLAID_PRODUCTS: Products[] = ["transactions" as Products];
+export const PLAID_COUNTRY_CODES: CountryCode[] = ["US" as CountryCode];
 
 /** Public base URL (for the Plaid webhook + OAuth redirect). */
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://zitting-hq.vercel.app";
 export const PLAID_WEBHOOK_URL = `${SITE_URL}/api/plaid/webhook`;
 
 let _client: PlaidApi | null = null;
-export function getPlaid(): PlaidApi | null {
+/** The SDK (axios + a large generated client) loads on first use, not at import. */
+export async function getPlaid(): Promise<PlaidApi | null> {
   if (!isPlaidConfigured) return null;
   if (!_client) {
+    const { Configuration, PlaidApi } = await import("plaid");
     _client = new PlaidApi(
       new Configuration({
         basePath,
