@@ -114,7 +114,7 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
           user={{ name: user.name, person: user.person, src: user.src ?? undefined }}
           onAction={() => setAdd(true)} actionIcon="plus" actionLabel="Add something" onSignOut={() => signOut()} onUser={() => router.push("/me")} headerActions={headerActions}
         >
-          <div ref={scroller} style={{ height: "100%", overflow: "auto", minWidth: 0 }}>{children}</div>
+          <div ref={scroller} style={{ height: "100%", overflow: "auto", minWidth: 0, scrollbarGutter: "stable" }}>{children}</div>
         </AppShell>
       </div>
       <BottomSheet open={add} onClose={() => setAdd(false)} title="Add">

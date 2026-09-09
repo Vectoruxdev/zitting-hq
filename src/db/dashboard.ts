@@ -113,10 +113,10 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   // to be stale pooled sockets, not concurrency — see src/db/index.ts.)
   const t0 = Date.now();
   const [meals, groceries, calendar, finance] = await Promise.all([
-    sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals"),
-    sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
-    sectionWithTimeout<DashboardData["calendar"]>(calendarSection(viewer, todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar"),
-    sectionWithTimeout<DashboardData["finance"]>(financeSectionCached(viewer), 20000, () => ({ role: viewer.role }), "finance"),
+    sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 6000, () => ({ tonight: null, upcoming: [] }), "meals"),
+    sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 6000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
+    sectionWithTimeout<DashboardData["calendar"]>(calendarSection(viewer, todayISO), 8000, () => ({ events: [], feedCount: 0 }), "calendar"),
+    sectionWithTimeout<DashboardData["finance"]>(financeSectionCached(viewer), 9000, () => ({ role: viewer.role }), "finance"),
   ]);
   const took = Date.now() - t0;
   if (took > 6000) console.log(`[dashboard] sections slow: ${took}ms`);

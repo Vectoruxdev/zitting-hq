@@ -20,11 +20,21 @@ import { HOME_PLACE } from "@/lib/weather";
 
 const T = { sec: { font: "var(--type-body-sm)", color: "var(--text-secondary)" } as React.CSSProperties, cap: { font: "var(--type-caption)", color: "var(--text-tertiary)" } as React.CSSProperties };
 
-function useNarrow(ref: React.RefObject<HTMLElement | null>) {
-  const [narrow, setNarrow] = React.useState(true);
+/**
+ * One column or two? Starts from the server's device hint (so a desktop paints
+ * the two-column layout on the first frame and never switches — a switch
+ * remounts the hero), then follows the container with hysteresis: it takes a
+ * 40 px band to flip, so a scrollbar appearing or disappearing can never
+ * bounce the layout back and forth.
+ */
+function useNarrow(ref: React.RefObject<HTMLElement | null>, initial: boolean) {
+  const [narrow, setNarrow] = React.useState(initial);
   React.useEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver(([e]) => setNarrow(e.contentRect.width < 900));
+    const ro = new ResizeObserver(([e]) => {
+      const w = e.contentRect.width;
+      setNarrow((cur) => (cur ? w >= 920 ? false : true : w < 880 ? true : false));
+    });
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, [ref]);
@@ -359,11 +369,11 @@ function Slow({ data, slow, render }: { data: HomeCore; slow: Promise<HomeSlow> 
   return <React.Suspense fallback={<SectionSkeleton />}><WithSlow data={data} slow={slow} render={render} /></React.Suspense>;
 }
 
-export function HomeScreen({ data, slow: slowProp }: { data: HomeCore; slow?: Promise<HomeSlow> | HomeSlow }) {
+export function HomeScreen({ data, slow: slowProp, initialNarrow = true }: { data: HomeCore; slow?: Promise<HomeSlow> | HomeSlow; initialNarrow?: boolean }) {
   // Previews and tests hand over the whole HomeData at once; the page streams the slow half.
   const slow: Promise<HomeSlow> | HomeSlow = slowProp ?? (data as HomeData);
   const ref = React.useRef<HTMLDivElement>(null);
-  const narrow = useNarrow(ref);
+  const narrow = useNarrow(ref, initialNarrow);
   const isMember = data.viewer.role === "member";
   const kid = data.viewer.kind === "child";
   const hidden = new Set<string>([]);
