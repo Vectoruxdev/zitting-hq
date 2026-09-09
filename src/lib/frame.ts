@@ -15,6 +15,8 @@ export interface FrameContext extends FrameUser {
   kind: "adult" | "child";
   /** Module slugs this person may open (Phase 6 People & permissions). */
   modules: string[];
+  /** The owner is looking at the app as this person. */
+  viewingAs: { id: string; name: string } | null;
 }
 
 export async function frameContext(user: CurrentUser | null | undefined): Promise<FrameContext> {
@@ -32,5 +34,6 @@ export async function frameContext(user: CurrentUser | null | undefined): Promis
     theme: person?.theme ?? "system",
     kind: person?.kind ?? "adult",
     modules,
+    viewingAs: user?.viewingAs ? { id: user.viewingAs.id, name: person?.greetingName || user.viewingAs.name } : null,
   };
 }

@@ -12,6 +12,7 @@ import {
 } from "@/ui";
 import { completeChoreAction, uncompleteChoreAction } from "@/app/chores/actions";
 import { toggleSaved } from "@/app/quotes/actions";
+import { viewAsAction } from "@/app/actions/view-as";
 import { modulesFor } from "@/lib/modules";
 import type { HomeData } from "@/db/home";
 import { HOME_PLACE } from "@/lib/weather";
@@ -42,14 +43,14 @@ function Greeting({ data }: { data: HomeData }) {
   );
 }
 
-/** The family, as people — tap yourself for your profile; the owner taps anyone to open their permissions (their photos when the library is on). */
+/** The family, as people — tap yourself for your profile; the owner taps anyone to see the app as they see it. */
 function FamilyRow({ data }: { data: HomeData }) {
   const router = useRouter();
   if (!data.people.length) return null;
   return (
     <div className="zhq-hscroll" style={{ display: "flex", gap: 4, overflowX: "auto", margin: "0 -8px", padding: "0 8px", flex: "0 1 auto", minWidth: 0 }}>
       {data.people.map((p, i) => (
-        <button key={p.id} type="button" onClick={() => router.push(p.id === data.viewer.memberId ? "/me" : data.photosEnabled ? `/photos?person=${encodeURIComponent(p.id)}` : data.viewer.role === "owner" ? `/people?who=${encodeURIComponent(p.id)}` : "/me")}
+        <button key={p.id} type="button" title={p.id === data.viewer.memberId ? "Your profile" : data.viewer.role === "owner" ? `See the app as ${p.greetingName}` : undefined} onClick={async () => { if (p.id === data.viewer.memberId) { router.push("/me"); return; } if (data.viewer.role === "owner") { const r = await viewAsAction(p.id); if (r.ok) { router.push("/"); router.refresh(); } return; } router.push("/me"); }}
           style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "6px 8px", border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-md)", color: "var(--text-primary)", font: "inherit", flex: "none", animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 40}ms both` }}>
           <Avatar name={p.name} src={p.avatarUrl} person={p.hue} size="lg" />
           <span style={{ font: "500 var(--fs-xs)/1 var(--font-ui)" }}>{p.greetingName}</span>
