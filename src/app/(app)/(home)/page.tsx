@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getCurrentUser } from "@/lib/auth";
 import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
@@ -24,5 +25,9 @@ export default async function Home() {
   // Not awaited: React streams this to the client, and the money, calendar,
   // chores and goals sections fill in behind their skeletons.
   const slow = getHomeSlow(viewer, core);
-  return <HomeScreen data={core} slow={slow} />;
+  // Phones start in one column, everything else in two — decided here so the
+  // first paint is already the right layout (a later switch remounts the hero).
+  const ua = (await headers()).get("user-agent") ?? "";
+  const initialNarrow = /Mobi|Android|iPhone|iPod/i.test(ua);
+  return <HomeScreen data={core} slow={slow} initialNarrow={initialNarrow} />;
 }

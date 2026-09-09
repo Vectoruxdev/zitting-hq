@@ -78,7 +78,7 @@ export function daypartFor(hour: number): HomeData["daypart"] {
  * pool — a hang here means a dead pooled socket, and everything after it
  * should reconnect rather than wait its own turn to time out.
  */
-function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000, opts: { db?: boolean } = {}): Promise<T> {
+function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 6000, opts: { db?: boolean } = {}): Promise<T> {
   const t0 = Date.now();
   return new Promise((resolve) => {
     const t = setTimeout(() => {
@@ -150,7 +150,7 @@ export async function getHomeSlow(viewer: Viewer, core: Pick<HomeCore, "todayISO
     guarded("goals", homeGoals(av, todayISO), () => []),
     guarded("chores", listChores(), () => [] as Chore[]),
     guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]),
-    guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000),
+    guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 8000),
   ]);
   console.log(`[home] slow reads ${Date.now() - t0}ms`);
   return {
