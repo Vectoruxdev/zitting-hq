@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { listGoals, listSavingsGoalOptions } from "@/db/goals";
@@ -12,7 +13,7 @@ export const metadata = { title: "Goals · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ add?: string }> }) {
-  const user = await getCurrentUser();
+  const user = await timed("/goals", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/goals");
   await guardModule(user, "goals");
   const { add } = await searchParams;

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { getPeople } from "@/db/profiles";
 import { listAccountAccess, listHouseholdAccounts, listMembersAdmin, listModuleAccess } from "@/db/permissions";
@@ -11,7 +12,7 @@ export const metadata = { title: "People · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
 export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ who?: string }> }) {
-  const user = await getCurrentUser();
+  const user = await timed("/people", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/people");
   if (user && user.role !== "owner") redirect("/");
   const { who } = await searchParams;
