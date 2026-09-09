@@ -6,6 +6,7 @@ import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { getGoal, listSavingsGoalOptions } from "@/db/goals";
 import { recentPhotos } from "@/db/photos";
+import { isModuleEnabled } from "@/lib/modules";
 import { familyTodayISO } from "@/db/dashboard";
 import { getPeople } from "@/db/profiles";
 import { GoalClient } from "./goal-client";
@@ -21,10 +22,10 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
   const todayISO = familyTodayISO();
   const goal = await getGoal(id, viewer, todayISO);
   if (!goal) notFound();
-  const [ctx, people, photos, savings] = await Promise.all([frameContext(user), getPeople().catch(() => []), recentPhotos(viewer, 30).catch(() => []), viewer.role === "owner" ? listSavingsGoalOptions().catch(() => []) : Promise.resolve([])]);
+  const [ctx, people, photos, savings] = await Promise.all([frameContext(user), getPeople().catch(() => []), (isModuleEnabled("photos") ? recentPhotos(viewer, 30).catch(() => []) : Promise.resolve([])), viewer.role === "owner" ? listSavingsGoalOptions().catch(() => []) : Promise.resolve([])]);
   return (
     <AppFrame user={ctx}>
-      <GoalClient goal={goal} people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))} me={user?.memberId ?? null} isOwner={viewer.role === "owner"} todayISO={todayISO} savingsOptions={savings} recentPhotos={photos} />
+      <GoalClient goal={goal} people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))} me={user?.memberId ?? null} isOwner={viewer.role === "owner"} todayISO={todayISO} savingsOptions={savings} recentPhotos={photos} photosEnabled={isModuleEnabled("photos")} />
     </AppFrame>
   );
 }

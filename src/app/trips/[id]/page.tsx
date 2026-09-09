@@ -6,6 +6,7 @@ import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { getTrip } from "@/db/trips";
 import { recentPhotos } from "@/db/photos";
+import { isModuleEnabled } from "@/lib/modules";
 import { familyTodayISO } from "@/db/dashboard";
 import { getPeople } from "@/db/profiles";
 import { TripClient } from "./trip-client";
@@ -21,10 +22,10 @@ export default async function TripPage({ params, searchParams }: { params: Promi
   const viewer = { memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" };
   const trip = await getTrip(id, viewer, familyTodayISO());
   if (!trip) notFound();
-  const [ctx, people, photos] = await Promise.all([frameContext(user), getPeople().catch(() => []), recentPhotos(viewer, 30).catch(() => [])]);
+  const [ctx, people, photos] = await Promise.all([frameContext(user), getPeople().catch(() => []), (isModuleEnabled("photos") ? recentPhotos(viewer, 30).catch(() => []) : Promise.resolve([]))]);
   return (
     <AppFrame user={ctx}>
-      <TripClient trip={trip} people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))} me={user?.memberId ?? null} isOwner={viewer.role === "owner"} recentPhotos={photos} initialTab={["plan", "docs", "packing", "people"].includes(tab || "") ? tab! : "plan"} />
+      <TripClient trip={trip} people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))} me={user?.memberId ?? null} isOwner={viewer.role === "owner"} recentPhotos={photos} photosEnabled={isModuleEnabled("photos")} initialTab={["plan", "docs", "packing", "people"].includes(tab || "") ? tab! : "plan"} />
     </AppFrame>
   );
 }

@@ -13,6 +13,7 @@ import {
 import { completeChoreAction, uncompleteChoreAction } from "@/app/chores/actions";
 import { modulesFor } from "@/lib/modules";
 import type { HomeData } from "@/db/home";
+import { HOME_PLACE } from "@/lib/weather";
 
 const T = { sec: { font: "var(--type-body-sm)", color: "var(--text-secondary)" } as React.CSSProperties, cap: { font: "var(--type-caption)", color: "var(--text-tertiary)" } as React.CSSProperties };
 
@@ -40,14 +41,14 @@ function Greeting({ data }: { data: HomeData }) {
   );
 }
 
-/** The family, as people — tap one to see their photos (Phase 3) or your own profile. */
+/** The family, as people — tap yourself for your profile; the owner taps anyone to open their permissions (their photos when the library is on). */
 function FamilyRow({ data }: { data: HomeData }) {
   const router = useRouter();
   if (!data.people.length) return null;
   return (
     <div className="zhq-hscroll" style={{ display: "flex", gap: 4, overflowX: "auto", margin: "0 -8px", padding: "0 8px", flex: "0 1 auto", minWidth: 0 }}>
       {data.people.map((p, i) => (
-        <button key={p.id} type="button" onClick={() => router.push(p.id === data.viewer.memberId ? "/me" : `/photos?person=${encodeURIComponent(p.id)}`)}
+        <button key={p.id} type="button" onClick={() => router.push(p.id === data.viewer.memberId ? "/me" : data.photosEnabled ? `/photos?person=${encodeURIComponent(p.id)}` : data.viewer.role === "owner" ? `/people?who=${encodeURIComponent(p.id)}` : "/me")}
           style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "6px 8px", border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-md)", color: "var(--text-primary)", font: "inherit", flex: "none", animation: `zh-fade-up var(--dur-base) var(--ease-out) ${i * 40}ms both` }}>
           <Avatar name={p.name} src={p.avatarUrl} person={p.hue} size="lg" />
           <span style={{ font: "500 var(--fs-xs)/1 var(--font-ui)" }}>{p.greetingName}</span>
@@ -57,16 +58,50 @@ function FamilyRow({ data }: { data: HomeData }) {
   );
 }
 
-function PhotoOfDay({ data, narrow }: { data: HomeData; narrow: boolean }) {
+/** The hero: the family's photo of the day when the library is on; otherwise today's scenic picture of the country around home with the weather over it. */
+function SceneHero({ data, narrow }: { data: HomeData; narrow: boolean }) {
   const router = useRouter();
-  const pod = data.photoOfDay;
+  const pod = data.photosEnabled ? data.photoOfDay : null;
+  const ratio = narrow ? "var(--ratio-hero-mobile)" : "var(--ratio-hero)";
+  if (pod) {
+    return (
+      <PhotoHero
+        src={pod.src} ratio={ratio} eyebrow="Photo of the day" title={pod.title ?? undefined}
+        subtitle={[pod.by && `Added by ${pod.by}`, pod.album && `${pod.count} more in “${pod.album}”`].filter(Boolean).join(" · ") || undefined}
+        actions={<Button variant="onPhoto" size="sm" iconLeft="image" onClick={() => router.push(pod.id ? `/photos?photo=${pod.id}` : "/photos")}>Open</Button>}
+        style={{ width: "100%", minWidth: 0 }}
+      />
+    );
+  }
+  const w = data.weather, sc = data.scenic;
+  const credit = <a className="zh-link" href={sc.source} target="_blank" rel="noopener noreferrer" style={{ font: "var(--type-caption)", color: "var(--text-on-photo)", opacity: 0.8, textDecoration: "none", textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{sc.title} · {sc.credit} · {sc.license}</a>;
   return (
     <PhotoHero
-      src={pod?.src} ratio={narrow ? "var(--ratio-hero-mobile)" : "var(--ratio-hero)"} eyebrow="Photo of the day" title={pod?.title ?? undefined}
-      subtitle={pod ? [pod.by && `Added by ${pod.by}`, pod.album && `${pod.count} more in “${pod.album}”`].filter(Boolean).join(" · ") : undefined}
-      actions={pod ? <Button variant="onPhoto" size="sm" iconLeft="image" onClick={() => router.push(pod.id ? `/photos?photo=${pod.id}` : "/photos")}>Open</Button> : undefined}
-      onAddPhoto={() => router.push("/photos?add=1")} style={{ width: "100%", minWidth: 0 }}
+      src={sc.src} alt={`${sc.title}, ${sc.place}`} ratio={ratio} eyebrow={`${HOME_PLACE.name}, ${HOME_PLACE.region}`}
+      title={w ? <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}><Icon name={w.icon} size={narrow ? 28 : 34} />{w.temp}°</span> : `${sc.title}`}
+      subtitle={w ? [w.label, `High ${w.today.hi}° · Low ${w.today.lo}°`, w.feelsLike !== w.temp && Math.abs(w.feelsLike - w.temp) >= 5 ? `Feels like ${w.feelsLike}°` : null, w.wind >= 10 ? `Wind ${w.wind} mph` : null].filter(Boolean).join(" · ") : `${sc.place} · weather isn’t available right now`}
+      topRight={credit} style={{ width: "100%", minWidth: 0 }}
     />
+  );
+}
+
+/** The next three days, as a quiet row under the hero. */
+function WeatherStrip({ data }: { data: HomeData }) {
+  const w = data.weather;
+  if (!w || !w.days.length) return null;
+  const dayName = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${w.days.length}, 1fr)`, gap: 8, marginTop: 10 }}>
+      {w.days.map((d) => (
+        <div key={d.dateISO} title={d.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)", minWidth: 0 }}>
+          <Icon name={d.icon} size={20} color="var(--text-secondary)" />
+          <span style={{ display: "flex", flexDirection: "column", minWidth: 0, lineHeight: 1.25 }}>
+            <span style={{ font: "var(--type-label)", color: "var(--text-primary)" }}>{dayName(d.dateISO)}</span>
+            <span className="zh-num" style={{ font: "var(--type-caption)", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{d.hi}° / {d.lo}°{d.precip != null && d.precip >= 20 ? ` · ${d.precip}%` : ""}</span>
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -284,20 +319,20 @@ export function HomeScreen({ data }: { data: HomeData }) {
           <ChoresSection data={data} />
           <TodaySection data={data} />
           <GoalsSection data={data} />
-          <PhotoOfDay data={data} narrow={narrow} />
+          <div><SceneHero data={data} narrow={narrow} /><WeatherStrip data={data} /></div>
           <QuoteBlock data={data} />
-          <RecentPhotos data={data} />
+          {data.photosEnabled ? <RecentPhotos data={data} /> : null}
         </Stack>
       ) : narrow ? (
         <Stack gap={32}>
           <Stack gap={20}><Greeting data={data} /><FamilyRow data={data} /></Stack>
-          <PhotoOfDay data={data} narrow />
+          <div><SceneHero data={data} narrow /><WeatherStrip data={data} /></div>
           <TodaySection data={data} />
           <AttentionSection data={data} />
           <ChoresSection data={data} />
           {isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}
           <QuoteBlock data={data} />
-          <RecentPhotos data={data} />
+          {data.photosEnabled ? <RecentPhotos data={data} /> : null}
           <GoalsSection data={data} />
           <Launcher data={data} />
         </Stack>
@@ -308,7 +343,7 @@ export function HomeScreen({ data }: { data: HomeData }) {
             <FamilyRow data={data} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 400px), 1fr))", gap: "40px 56px", alignItems: "start" }}>
-            <Stack start={2}><PhotoOfDay data={data} narrow={false} /><TodaySection data={data} /><QuoteBlock data={data} /><RecentPhotos data={data} /></Stack>
+            <Stack start={2}><div><SceneHero data={data} narrow={false} /><WeatherStrip data={data} /></div><TodaySection data={data} /><QuoteBlock data={data} />{data.photosEnabled ? <RecentPhotos data={data} /> : null}</Stack>
             <Stack start={3}><AttentionSection data={data} /><ChoresSection data={data} />{isMember ? <SpendableSection data={data} /> : <MoneySection data={data} />}<GoalsSection data={data} /><Launcher data={data} /></Stack>
           </div>
         </Stack>

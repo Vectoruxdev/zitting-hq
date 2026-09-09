@@ -10,7 +10,7 @@ import { GoalSheet, KIND_LABEL, type PersonLite, type SavingsOption } from "../g
 import { progressLine } from "../goals-client";
 import * as actions from "../actions";
 
-function Inner({ goal, people, me, isOwner, todayISO, savingsOptions, recentPhotos }: { goal: GoalDetail; people: PersonLite[]; me: string | null; isOwner: boolean; todayISO: string; savingsOptions: SavingsOption[]; recentPhotos: Photo[] }) {
+function Inner({ goal, people, me, isOwner, todayISO, savingsOptions, recentPhotos, photosEnabled }: { goal: GoalDetail; people: PersonLite[]; me: string | null; isOwner: boolean; todayISO: string; savingsOptions: SavingsOption[]; recentPhotos: Photo[]; photosEnabled: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -36,10 +36,10 @@ function Inner({ goal, people, me, isOwner, todayISO, savingsOptions, recentPhot
       <Celebrate fire={fire} origin="top" />
       <Reveal>
         <button type="button" onClick={() => router.push("/goals")} style={{ border: 0, background: "transparent", padding: "8px 0", cursor: "pointer", font: "var(--type-overline)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--accent)", textAlign: "left" }}>← Goals</button>
-        {goal.cover ? <PhotoHero src={goal.cover} ratio="21 / 9" eyebrow={eyebrow} title={goal.title} subtitle={goal.description ?? undefined} topRight={canEdit ? <><IconButton icon="image" label="Change cover" variant="onPhoto" size="sm" onClick={() => setCover(true)} /><IconButton icon="settings" label="Goal settings" variant="onPhoto" size="sm" onClick={() => setSettings(true)} /></> : undefined} /> : (
+        {goal.cover ? <PhotoHero src={goal.cover} ratio="21 / 9" eyebrow={eyebrow} title={goal.title} subtitle={goal.description ?? undefined} topRight={canEdit ? <>{photosEnabled ? <IconButton icon="image" label="Change cover" variant="onPhoto" size="sm" onClick={() => setCover(true)} /> : null}<IconButton icon="settings" label="Goal settings" variant="onPhoto" size="sm" onClick={() => setSettings(true)} /></> : undefined} /> : (
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
             <div style={{ minWidth: 0 }}><p style={{ margin: "0 0 6px", font: "var(--type-overline)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>{eyebrow}</p><h1 style={{ margin: 0, font: "var(--type-greeting)", fontSize: "clamp(var(--fs-2xl), 5vw, var(--fs-4xl))", letterSpacing: "var(--ls-display)" }}>{goal.title}</h1>{goal.description ? <p style={{ margin: "8px 0 0", font: "var(--type-body)", color: "var(--text-secondary)" }}>{goal.description}</p> : null}</div>
-            {canEdit ? <div style={{ display: "flex", gap: 6, flex: "none" }}><IconButton icon="image" label="Add a cover" variant="outline" size="sm" onClick={() => setCover(true)} /><IconButton icon="settings" label="Goal settings" variant="outline" size="sm" onClick={() => setSettings(true)} /></div> : null}
+            {canEdit ? <div style={{ display: "flex", gap: 6, flex: "none" }}>{photosEnabled ? <IconButton icon="image" label="Add a cover" variant="outline" size="sm" onClick={() => setCover(true)} /> : null}<IconButton icon="settings" label="Goal settings" variant="outline" size="sm" onClick={() => setSettings(true)} /></div> : null}
           </div>
         )}
       </Reveal>

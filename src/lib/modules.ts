@@ -27,6 +27,8 @@ export interface HqModule {
   status: ModuleStatus;
   /** In the phone tab bar (first four in list order). */
   primary?: boolean;
+  /** Switched off for now: out of every navigation surface, its pages redirect Home. */
+  hidden?: boolean;
   /** Only these roles see it (default: everyone). */
   roles?: Role[];
   href: string;
@@ -34,10 +36,11 @@ export interface HqModule {
 
 export const MODULES: HqModule[] = [
   { slug: "home", name: "Home", description: "Today, the family, and what needs you.", icon: "house", tint: "coral", group: "Family", status: "active", primary: true, href: "/" },
-  { slug: "photos", name: "Photos", description: "The family library — moments, albums, people.", icon: "image", tint: "rose", group: "Family", status: "active", primary: true, href: "/photos" },
+  // Photos: built, switched off 2026-09-09 (Jared) — Home shows scenic photos instead. Flip `hidden` to bring it back.
+  { slug: "photos", name: "Photos", description: "The family library — moments, albums, people.", icon: "image", tint: "rose", group: "Family", status: "active", primary: true, hidden: true, href: "/photos" },
   { slug: "meals", name: "Meals", description: "Whose night it is, what's for dinner, and the recipe box.", icon: "utensils", tint: "butter", group: "Family", status: "active", primary: true, href: "/meals" },
   { slug: "groceries", name: "Groceries", short: "List", description: "The shared list, plus the pantry and what's running low.", icon: "shopping-cart", tint: "mint", group: "Family", status: "active", href: "/groceries" },
-  { slug: "calendar", name: "Calendar", short: "Cal", description: "The family schedule in one place.", icon: "calendar", tint: "sky", group: "Family", status: "active", href: "/calendar" },
+  { slug: "calendar", name: "Calendar", short: "Cal", description: "The family schedule in one place.", icon: "calendar", tint: "sky", group: "Family", status: "active", primary: true, href: "/calendar" },
   { slug: "appointments", name: "Appointments", short: "Appts", description: "Doctor, dentist, school — who it's for and who's driving.", icon: "stethoscope", tint: "lilac", group: "Family", status: "active", href: "/appointments" },
   { slug: "quotes", name: "Quotes", description: "The funny and tender things people say.", icon: "quote", tint: "rose", group: "Family", status: "active", href: "/quotes" },
   { slug: "goals", name: "Goals", description: "Family and personal goals, with progress.", icon: "target", tint: "mint", group: "Family", status: "active", href: "/goals" },
@@ -55,8 +58,14 @@ export function getModule(slug: string): HqModule | undefined {
 }
 
 /** Modules a given role may see, with the finance label per role. */
+/** Is a module switched on at all (independent of role)? */
+export function isModuleEnabled(slug: string): boolean {
+  const m = MODULES.find((x) => x.slug === slug);
+  return !!m && !m.hidden;
+}
+
 export function modulesFor(role: Role): HqModule[] {
-  return MODULES.filter((m) => !m.roles || m.roles.includes(role)).map((m) =>
+  return MODULES.filter((m) => !m.hidden && (!m.roles || m.roles.includes(role))).map((m) =>
     m.slug === "finance" && role === "member" ? { ...m, name: "Spendable", icon: "hand-coins" } : m
   );
 }

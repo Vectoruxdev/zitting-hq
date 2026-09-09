@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { AppFrame } from "@/components/app-frame";
 import { HomeScreen } from "@/app/(home)/home-screen";
 import type { HomeData } from "@/db/home";
+import { scenicForDay } from "@/lib/scenic";
 
 export const metadata = { title: "Home preview · Zitting HQ" };
 export const dynamic = "force-dynamic";
@@ -27,6 +28,9 @@ function mock(variant: "owner" | "wife", state: "full" | "empty"): HomeData {
     quote: full ? { id: 1, text: "Mom, can the moon come to dinner?", saidByMemberId: "jae", saidByName: null, saidOn: "2026-09-02" } : null,
     photoOfDay: full ? { src: "https://picsum.photos/seed/zh-lake/1200/800", title: "Saturday at the lake", by: "Katelynn", album: "Lake weekend", count: 42 } : null,
     recentPhotos: full ? [1, 2, 3, 4, 5, 6].map((i) => ({ id: i, src: `https://picsum.photos/seed/zh-r${i}/400/400` })) : [],
+    photosEnabled: false,
+    scenic: scenicForDay("2026-09-08"),
+    weather: full ? { temp: 74, feelsLike: 64, code: 0, label: "Sunny", icon: "sun", isDay: true, wind: 15, humidity: 19, sunrise: "2026-09-08T07:09", sunset: "2026-09-08T19:48", fetchedAt: "2026-09-08T14:45:00Z", today: { dateISO: "2026-09-08", hi: 91, lo: 66, code: 0, label: "Sunny", icon: "sun", precip: 1 }, days: [{ dateISO: "2026-09-09", hi: 93, lo: 72, code: 3, label: "Overcast", icon: "cloud", precip: 2 }, { dateISO: "2026-09-10", hi: 88, lo: 70, code: 53, label: "Drizzle", icon: "cloud-drizzle", precip: 36 }, { dateISO: "2026-09-11", hi: 87, lo: 71, code: 2, label: "Partly cloudy", icon: "cloud-sun", precip: 5 }] } : null,
     goals: full ? [{ id: "hawaii", title: "Hawaii, spring break", value: 0.4, current: 3200, target: 8000, money: true, people: [1, 2, 3], progressKind: "savings" as const, doneToday: false, streak: 0, mine: true }, { id: "read", title: "Read together every night", value: 0.71, current: 21, target: 30, unit: null, money: false, people: [4, 5, 6], progressKind: "streak" as const, doneToday: true, streak: 6, mine: true }] : [],
     chores: full ? { people: [{ memberId: "azaleah", items: [{ choreId: "c1", title: "Make the bed", icon: "bed", done: true, needsCheck: false, checked: false }, { choreId: "c2", title: "Clear the table", icon: "utensils", done: true, needsCheck: true, checked: false }, { choreId: "c3", title: "Read 20 minutes", icon: "book-open", done: false, needsCheck: false, checked: false }], done: 2, total: 3, points: 1, possible: 4, streak: 4 }, { memberId: "emerick", items: [{ choreId: "c4", title: "Feed the dog", icon: "heart", done: true, needsCheck: false, checked: false }], done: 1, total: 1, points: 1, possible: 1, streak: 9 }], toCheck: 1 } : { people: [], toCheck: 0 },
     unread: full ? 3 : 0,

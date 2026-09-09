@@ -16,7 +16,9 @@ import { addDaysISO } from "./household";
 import { homeGoals } from "./goals";
 import { choreStreak, dayFor, listChores, listCompletions, type Chore, type Completion } from "./chores";
 import { getModuleAccess } from "./permissions";
-import { modulesFor } from "@/lib/modules";
+import { isModuleEnabled, modulesFor } from "@/lib/modules";
+import { fetchWeather, type Weather } from "@/lib/weather";
+import { scenicForDay, type Scenic } from "@/lib/scenic";
 import type { Viewer } from "./queries";
 
 export interface HomeData {
@@ -30,6 +32,12 @@ export interface HomeData {
   quote: Pick<Quote, "id" | "text" | "saidByMemberId" | "saidByName" | "saidOn"> | null;
   photoOfDay: { id?: string; src: string; title: string | null; by: string | null; album: string | null; count: number } | null;
   recentPhotos: { id: string | number; src: string }[];
+  /** Photos module switched on? When off, Home shows a scenic picture and no upload prompts. */
+  photosEnabled: boolean;
+  /** Today's scenic picture (the country around Colorado City) with its credit. */
+  scenic: Scenic;
+  /** Weather at home (Colorado City, AZ); null when the forecast couldn't be fetched. */
+  weather: Weather | null;
   goals: { id: string; title: string; value: number; current?: number; target?: number; unit?: string | null; money: boolean; people: number[]; progressKind: "checkoff" | "count" | "streak" | "savings"; doneToday: boolean; streak: number; mine: boolean }[];
   /** Chores today per person (kids first), and how many finished chores are waiting for an adult's check. */
   chores: { people: { memberId: string; items: { choreId: string; title: string; icon: string | null; done: boolean; needsCheck: boolean; checked: boolean }[]; done: number; total: number; points: number; possible: number; streak: number }[]; toCheck: number };
@@ -78,8 +86,10 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
   const goals = await guarded("goals", homeGoals(av, todayISO), () => []);
   const chores = await guarded("chores", listChores(), () => [] as Chore[]);
   const completions = await guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]);
-  const pod = await guarded("photo of the day", photoOfTheDay(av, todayISO), () => null);
-  const recent = await guarded("recent photos", recentPhotos(av, 6), () => []);
+  const photosEnabled = isModuleEnabled("photos");
+  const pod = photosEnabled ? await guarded("photo of the day", photoOfTheDay(av, todayISO), () => null) : null;
+  const recent = photosEnabled ? await guarded("recent photos", recentPhotos(av, 6), () => []) : [];
+  const weather = await guarded("weather", fetchWeather(), () => null, 5000);
   const cal = await guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000);
   console.log(`[home] reads ${Date.now() - tHome}ms`);
   const tonightPlan = nights[0];
@@ -94,6 +104,9 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     quote: quote ? { id: quote.id, text: quote.text, saidByMemberId: quote.saidByMemberId, saidByName: quote.saidByName, saidOn: quote.saidOn } : null,
     photoOfDay: pod && pod.src ? { id: pod.id, src: pod.src, title: pod.caption, by: people.find((x) => x.id === pod.uploadedBy)?.greetingName ?? null, album: null, count: 0 } : null,
     recentPhotos: recent.filter((x) => x.thumb || x.src).map((x) => ({ id: x.id, src: (x.thumb || x.src) as string })),
+    photosEnabled,
+    scenic: scenicForDay(todayISO),
+    weather,
     goals: goals.map((g) => ({ id: g.id, title: g.title, value: g.progress.value, current: g.progress.current, target: g.progress.target ?? undefined, unit: g.progress.unit, money: g.progress.money, people: g.participants.map((id) => people.find((p) => p.id === id)?.hue ?? 1), progressKind: g.progressKind, doneToday: g.progress.doneToday, streak: g.progress.streak, mine: !!viewer.memberId && g.participants.includes(viewer.memberId) })),
     chores: (() => {
       const ordered = [...people].sort((a, b) => Number(a.kind === "adult") - Number(b.kind === "adult"));
