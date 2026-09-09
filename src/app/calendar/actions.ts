@@ -7,7 +7,6 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
-import * as h from "@/db/household";
 import * as cal from "@/db/calendar";
 import { createNotification } from "@/db/mutations";
 import { getPeople } from "@/db/profiles";
@@ -24,9 +23,45 @@ const VIS = ["family", "private", "custom"];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{1,2}:\d{2}$/;
 
-export async function addCalendarFeed(args: { name: string; url: string; color?: string | null }) { const u = await who(); if (u.role !== "owner") throw new Error("Owner only"); const res = await h.addCalendarFeed(args); refresh(); return res; }
-export async function setCalendarFeedEnabled(id: number, enabled: boolean) { const u = await who(); if (u.role !== "owner") throw new Error("Owner only"); const res = await h.setCalendarFeedEnabled(id, enabled); refresh(); return res; }
-export async function deleteCalendarFeed(id: number) { const u = await who(); if (u.role !== "owner") throw new Error("Owner only"); const res = await h.deleteCalendarFeed(id); refresh(); return res; }
+/** Grown-ups (and the owner) manage calendars; kids don't get a feed of their own. */
+async function adultOrOwner() {
+  const u = await who();
+  if (u.role === "owner" || !u.memberId) return u;
+  const people = await getPeople().catch(() => []);
+  if (people.find((p) => p.id === u.memberId)?.kind === "child") throw new Error("Grown-ups only");
+  return u;
+}
+async function feedGuard(id: number) {
+  const u = await who();
+  const feed = await cal.feedById(id);
+  if (!feed) throw new Error("Not found");
+  if (u.role !== "owner" && (!feed.memberId || feed.memberId !== u.memberId)) throw new Error("Not authorized");
+  return { u, feed };
+}
+
+/** Add a Google Calendar (its secret iCal address). Yours by default; the owner may add a household feed that belongs to nobody. */
+export async function addCalendarFeed(args: { name: string; url: string; visibility?: string; sharedWith?: string[]; household?: boolean }) {
+  const u = await adultOrOwner();
+  const name = args.name.trim(), url = args.url.trim();
+  if (!name) return { ok: false as const, error: "Name the calendar" };
+  if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) return { ok: false as const, error: "Paste the https:// secret address" };
+  const memberId = args.household && u.role === "owner" ? null : u.memberId;
+  if (!memberId && u.role !== "owner") return { ok: false as const, error: "Your login isn't linked to a family member yet" };
+  const visibility = memberId ? (VIS.includes(args.visibility || "") ? args.visibility! : "family") : "family";
+  const id = await cal.addFeed({ name, url, memberId, visibility, sharedWith: visibility === "custom" ? args.sharedWith : [] });
+  refresh();
+  return { ok: true as const, id };
+}
+export async function setCalendarFeedEnabled(id: number, enabled: boolean) { await feedGuard(id); await cal.setFeedEnabled(id, !!enabled); refresh(); return { ok: true as const }; }
+export async function deleteCalendarFeed(id: number) { await feedGuard(id); await cal.deleteFeed(id); refresh(); return { ok: true as const }; }
+export async function setCalendarFeedVisibility(id: number, visibility: string, sharedWith?: string[]) {
+  const { feed } = await feedGuard(id);
+  if (!feed.memberId) return { ok: false as const, error: "Household calendars are always shared" };
+  if (!VIS.includes(visibility)) return { ok: false as const, error: "Bad visibility" };
+  await cal.setFeedVisibility(id, visibility, visibility === "custom" ? (sharedWith ?? []).filter((m) => m !== feed.memberId) : []);
+  refresh();
+  return { ok: true as const };
+}
 
 function clean(input: Omit<cal.EventInput, "createdBy">): { ok: true; value: Omit<cal.EventInput, "createdBy"> } | { ok: false; error: string } {
   const title = input.title.trim();

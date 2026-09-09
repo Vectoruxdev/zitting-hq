@@ -11,6 +11,7 @@ import { expandIcs } from "@/lib/ics";
 import { addDaysISO } from "./household";
 import { getNights } from "./kitchen";
 import { reminderDueAt } from "@/lib/zoned-time";
+import { personIndex } from "@/lib/frame-user";
 
 export type CalKind = "event" | "appointment" | "trip" | "feed" | "dinner";
 export interface CalItem {
@@ -38,7 +39,8 @@ export interface CalItem {
   dayOfTrip?: { n: number; of: number };
 }
 
-export interface FeedInfo { id: number; name: string; enabled: boolean; error?: string }
+/** A calendar feed as the client sees it — never the secret URL. */
+export interface FeedInfo { id: number; name: string; enabled: boolean; error?: string; memberId: string | null; visibility: string; sharedWith: string[]; color: string | null }
 
 const FEED_COLORS = ["var(--hue-sky)", "var(--hue-lilac)", "var(--hue-mint)", "var(--hue-butter)", "var(--hue-rose)"];
 
@@ -72,26 +74,72 @@ export function expandSpan<T extends { dateISO: string; endDateISO: string | nul
 
 /* ---------- reads ---------- */
 
-export async function getFeeds(): Promise<{ id: number; name: string; url: string; color: string | null; enabled: boolean }[]> {
+type FeedRow = typeof s.calendarFeeds.$inferSelect;
+
+/** Feeds the viewer may see: household feeds (no person) always; a person's feed by its visibility — family, private (them and the owner), custom (shares). */
+export async function getFeeds(viewer: Viewer): Promise<(FeedInfo & { url: string })[]> {
   if (!isDbConfigured || !db) return [];
-  return db.select().from(s.calendarFeeds).orderBy(asc(s.calendarFeeds.id)).catch(() => []);
+  const rows = await db.select().from(s.calendarFeeds).orderBy(asc(s.calendarFeeds.id)).catch(() => [] as FeedRow[]);
+  if (!rows.length) return [];
+  const shares = await db.select().from(s.shares).where(and(eq(s.shares.entityType, "calendar_feed"), inArray(s.shares.entityId, rows.map((r) => String(r.id))))).catch(() => [] as (typeof s.shares.$inferSelect)[]);
+  const memberIds = rows.map((r) => r.memberId).filter((x): x is string => !!x);
+  const hues = memberIds.length ? await db.select({ memberId: s.memberProfiles.memberId, hue: s.memberProfiles.hue }).from(s.memberProfiles).where(inArray(s.memberProfiles.memberId, memberIds)).catch(() => [] as { memberId: string; hue: number | null }[]) : [];
+  return rows
+    .map((r) => {
+      const sharedWith = shares.filter((x) => x.entityId === String(r.id)).map((x) => x.memberId);
+      const hue = r.memberId ? hues.find((h) => h.memberId === r.memberId)?.hue ?? personIndex(r.memberId) : null;
+      return { id: r.id, name: r.name, enabled: r.enabled, memberId: r.memberId, visibility: r.visibility, sharedWith, url: r.url, color: r.color || (hue ? `var(--person-${hue})` : null) };
+    })
+    .filter((f) => !f.memberId || canView({ visibility: f.visibility, ownerId: f.memberId, sharedWith: f.sharedWith }, viewer));
 }
 
-async function feedItems(fromISO: string, toISO: string): Promise<{ items: CalItem[]; feeds: FeedInfo[] }> {
-  const feeds = await getFeeds();
+export async function feedById(id: number): Promise<FeedRow | null> {
+  if (!isDbConfigured || !db) return null;
+  const [row] = await db.select().from(s.calendarFeeds).where(eq(s.calendarFeeds.id, id)).limit(1).catch(() => [] as FeedRow[]);
+  return row ?? null;
+}
+
+export async function addFeed(args: { name: string; url: string; memberId: string | null; visibility: string; sharedWith?: string[]; color?: string | null }): Promise<number> {
+  if (!db) throw new Error("Database not configured");
+  const [row] = await db.insert(s.calendarFeeds).values({ name: args.name, url: args.url, memberId: args.memberId, visibility: args.visibility, color: args.color ?? null }).returning({ id: s.calendarFeeds.id });
+  if (args.visibility === "custom" && args.sharedWith?.length) await db.insert(s.shares).values(args.sharedWith.map((memberId) => ({ entityType: "calendar_feed", entityId: String(row.id), memberId }))).onConflictDoNothing();
+  return row.id;
+}
+
+export async function setFeedEnabled(id: number, enabled: boolean) {
+  if (!db) throw new Error("Database not configured");
+  await db.update(s.calendarFeeds).set({ enabled, updatedAt: new Date() }).where(eq(s.calendarFeeds.id, id));
+}
+
+export async function setFeedVisibility(id: number, visibility: string, sharedWith: string[]) {
+  if (!db) throw new Error("Database not configured");
+  await db.update(s.calendarFeeds).set({ visibility, updatedAt: new Date() }).where(eq(s.calendarFeeds.id, id));
+  await db.delete(s.shares).where(and(eq(s.shares.entityType, "calendar_feed"), eq(s.shares.entityId, String(id))));
+  if (visibility === "custom" && sharedWith.length) await db.insert(s.shares).values(sharedWith.map((memberId) => ({ entityType: "calendar_feed", entityId: String(id), memberId }))).onConflictDoNothing();
+}
+
+export async function deleteFeed(id: number) {
+  if (!db) throw new Error("Database not configured");
+  await db.delete(s.shares).where(and(eq(s.shares.entityType, "calendar_feed"), eq(s.shares.entityId, String(id))));
+  await db.delete(s.calendarFeeds).where(eq(s.calendarFeeds.id, id));
+}
+
+async function feedItems(viewer: Viewer, fromISO: string, toISO: string): Promise<{ items: CalItem[]; feeds: FeedInfo[] }> {
+  const feeds = await getFeeds(viewer);
   const info: FeedInfo[] = [];
+  const pub = (feed: (typeof feeds)[number], extra: Partial<FeedInfo>): FeedInfo => ({ id: feed.id, name: feed.name, enabled: feed.enabled, memberId: feed.memberId, visibility: feed.visibility, sharedWith: feed.sharedWith, color: feed.color, ...extra });
   const perFeed = await Promise.all(feeds.map(async (feed, i) => {
-    if (!feed.enabled) { info.push({ id: feed.id, name: feed.name, enabled: false }); return [] as CalItem[]; }
+    if (!feed.enabled) { info.push(pub(feed, {})); return [] as CalItem[]; }
     try {
       const res = await fetch(feed.url, { next: { revalidate: 900 }, signal: AbortSignal.timeout(6000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const color = feed.color || FEED_COLORS[i % FEED_COLORS.length];
-      info.push({ id: feed.id, name: feed.name, enabled: true });
+      info.push(pub(feed, {}));
       return expandIcs(await res.text(), fromISO, toISO).map((ev) => ({
         key: `feed-${feed.id}-${ev.uid}-${ev.dateISO}-${ev.time ?? "allday"}`, kind: "feed" as const, title: ev.title, dateISO: ev.dateISO, endDateISO: ev.endDateISO ?? null, time: ev.time ?? null, endTime: null,
-        location: ev.location ?? null, note: null, prepNotes: null, forMemberId: null, driverMemberId: null, cookMemberId: null, source: feed.name, color, familyEventId: null, tripId: null, visibility: "family", createdBy: null, reminders: [],
+        location: ev.location ?? null, note: null, prepNotes: null, forMemberId: feed.memberId, driverMemberId: null, cookMemberId: null, source: feed.name, color, familyEventId: null, tripId: null, visibility: feed.visibility, createdBy: feed.memberId, reminders: [],
       }));
-    } catch (err) { info.push({ id: feed.id, name: feed.name, enabled: true, error: err instanceof Error ? err.message : "fetch failed" }); return []; }
+    } catch (err) { info.push(pub(feed, { error: err instanceof Error ? err.message : "fetch failed" })); return []; }
   }));
   return { items: perFeed.flat(), feeds: info.sort((a, b) => a.id - b.id) };
 }
@@ -138,7 +186,7 @@ export interface CalendarData { items: CalItem[]; feeds: FeedInfo[]; configured:
 export async function getCalendar(viewer: Viewer, fromISO: string, toISO: string, opts: { dinners?: boolean } = {}): Promise<CalendarData> {
   if (!isDbConfigured || !db) return { items: [], feeds: [], configured: false };
   // Sequential DB reads (pooler-safe); the ICS fetches inside feedItems stay concurrent (HTTP, not the pool).
-  const { items: feed, feeds } = await feedItems(fromISO, toISO);
+  const { items: feed, feeds } = await feedItems(viewer, fromISO, toISO);
   const fam = await familyItems(viewer, fromISO, toISO);
   const trips = await tripItems(viewer, fromISO, toISO);
   const items = [...feed, ...fam, ...trips];
