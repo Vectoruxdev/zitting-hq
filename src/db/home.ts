@@ -11,6 +11,8 @@ import { quoteOfTheDay, type Quote } from "./quotes";
 import { unreadCount } from "./notifications";
 import { getNights, listSwaps } from "./kitchen";
 import { photoOfTheDay, recentPhotos } from "./photos";
+import { getCalendar, type CalItem } from "./calendar";
+import { addDaysISO } from "./household";
 import type { Viewer } from "./queries";
 
 export interface HomeData {
@@ -30,6 +32,8 @@ export interface HomeData {
   tonight: { cook: string | null; dish: string[]; note: string | null } | null;
   /** Swap requests waiting on this viewer. */
   pendingSwaps: number;
+  /** Unified calendar for today + the next 7 days (events, appointments, trips, feeds). */
+  upNext: Pick<CalItem, "key" | "kind" | "title" | "dateISO" | "time" | "location" | "forMemberId" | "driverMemberId" | "familyEventId" | "tripId" | "dayOfTrip">[];
   dashboard: DashboardData;
 }
 
@@ -51,7 +55,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     listSwaps("pending").catch(() => []),
   ]);
   const av = { memberId: viewer.memberId, role: viewer.role };
-  const [pod, recent] = await Promise.all([photoOfTheDay(av, todayISO).catch(() => null), recentPhotos(av, 6).catch(() => [])]);
+  const [pod, recent, cal] = await Promise.all([photoOfTheDay(av, todayISO).catch(() => null), recentPhotos(av, 6).catch(() => []), getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }).catch(() => ({ items: [] as CalItem[], feeds: [], configured: false }))]);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
   return {
@@ -68,6 +72,7 @@ export async function getHomeData(viewer: Viewer, fallbackName: string): Promise
     unread,
     tonight: tonightPlan ? { cook: tonightPlan.cook, dish: tonightPlan.dish, note: tonightPlan.note } : null,
     pendingSwaps: swaps.filter((sw) => sw.toMemberId === viewer.memberId).length,
+    upNext: cal.items.slice(0, 12).map((i) => ({ key: i.key, kind: i.kind, title: i.title, dateISO: i.dateISO, time: i.time, location: i.location, forMemberId: i.forMemberId, driverMemberId: i.driverMemberId, familyEventId: i.familyEventId, tripId: i.tripId, dayOfTrip: i.dayOfTrip })),
     dashboard,
   };
 }

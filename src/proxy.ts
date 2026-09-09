@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/api/plaid/cron-sync",
   "/api/transfers/cron", // daily transfers job (CRON_SECRET-guarded)
   "/api/digest/cron", // email digests (CRON_SECRET-guarded)
+  "/api/reminders/cron", // event/appointment reminders every 15 min (CRON_SECRET-guarded)
   "/api/push/vapid", // public VAPID key (safe to expose)
   "/api/mcp", // remote MCP server — guarded by its own MCP_TOKEN, not a session
   "/api/nest/events", // Pub/Sub push (NEST_EVENTS_TOKEN-guarded)

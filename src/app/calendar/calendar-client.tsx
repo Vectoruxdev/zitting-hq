@@ -1,270 +1,128 @@
 "use client";
-
 /**
- * Calendar — the next 30 days as a clean agenda: Google Calendar feeds
- * (read-only ICS) merged with lightweight in-app family events.
+ * Calendar — everything on one timeline: Google feeds, family events,
+ * appointments, trips as spans, and dinner nights as a quiet daily row.
+ * Agenda by default; week and month for planning.
  */
-import React from "react";
+import * as React from "react";
 import { useRouter } from "next/navigation";
+import { Avatar, Badge, BottomSheet, Button, EmptyState, IconButton, InlineAlert, Input, Reveal, Row, Section, SegmentedControl, Stagger, Tag, Toggle, WeekStrip, ToastProvider, useToast, type Tint } from "@/ui";
+import type { CalItem, FeedInfo } from "@/db/calendar";
+import { WEEKDAYS_SHORT, fmtNight } from "@/lib/dates";
+import { EventSheet, type PersonLite } from "./event-sheet";
 import * as actions from "./actions";
 
-export interface DayEvent {
-  key: string;
-  title: string;
-  dateISO: string;
-  endDateISO: string | null;
-  time: string | null; // "18:30" | null = all-day
-  location: string | null;
-  source: string;
-  color: string;
-  familyEventId: number | null; // deletable when ours
-}
+interface Props { configured: boolean; items: CalItem[]; feeds: FeedInfo[]; people: PersonLite[]; todayISO: string; fromISO: string; toISO: string; viewer: { memberId: string | null; role: "owner" | "partner" | "member" }; openEventId: number | null; initialDate: string | null; initialView: string }
 
-const card: React.CSSProperties = {
-  background: "var(--surface-card)",
-  border: "1px solid var(--border-hairline)",
-  borderRadius: "var(--radius-lg, 18px)",
-};
+const addDays = (iso: string, d: number) => { const x = new Date(iso + "T00:00:00"); x.setDate(x.getDate() + d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+const KIND_ICON: Record<string, string> = { event: "calendar", appointment: "stethoscope", trip: "plane", feed: "calendar-days", dinner: "chef-hat" };
+const KIND_TINT: Record<string, Tint> = { event: "coral", appointment: "lilac", trip: "sky", feed: "sky", dinner: "butter" };
+const fmtTime = (t: string | null) => { if (!t) return null; const [h, m] = t.split(":").map(Number); const d = new Date(); d.setHours(h, m); return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); };
 
-function dayLabel(iso: string, todayISO: string): string {
-  if (iso === todayISO) return "Today";
-  const d = new Date(iso + "T00:00:00");
-  const t = new Date(todayISO + "T00:00:00");
-  if (d.getTime() - t.getTime() === 86400000) return "Tomorrow";
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-}
-
-function timeLabel(t: string | null): string {
-  if (!t) return "all day";
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "pm" : "am";
-  const hr = h % 12 || 12;
-  return m ? `${hr}:${String(m).padStart(2, "0")}${ampm}` : `${hr}${ampm}`;
-}
-
-export function CalendarClient({
-  configured, todayISO, windowEnd, events, feeds, feedErrors,
-}: {
-  configured: boolean;
-  todayISO: string;
-  windowEnd: string;
-  events: DayEvent[];
-  feeds: { id: number; name: string; enabled: boolean }[];
-  feedErrors: { name: string; error: string }[];
-}) {
+function Inner(p: Props) {
   const router = useRouter();
-  const [busy, setBusy] = React.useState<string | null>(null);
-  const [adding, setAdding] = React.useState(false);
-  const [managing, setManaging] = React.useState(false);
+  const { toast } = useToast();
+  const [view, setView] = React.useState(p.initialView);
+  const [day, setDay] = React.useState(p.initialDate || p.todayISO);
+  const [person, setPerson] = React.useState<string>("");
+  const [sheet, setSheet] = React.useState<{ event?: CalItem | null; date: string; kind?: "event" | "appointment" } | null>(() => { const ev = p.openEventId ? p.items.find((i) => i.familyEventId === p.openEventId) : null; return ev ? { event: ev, date: ev.dateISO } : null; });
+  const [feedsOpen, setFeedsOpen] = React.useState(false);
+  const who = (id: string | null | undefined) => p.people.find((x) => x.id === id) || null;
+  const items = p.items.filter((i) => !person || i.forMemberId === person || i.driverMemberId === person || i.cookMemberId === person);
+  const dayItems = (d: string) => items.filter((i) => i.dateISO === d);
+  const monthStart = day.slice(0, 7) + "-01";
+  const monthDays = (() => { const first = new Date(monthStart + "T00:00:00"); const pad = first.getDay(); const n = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(); return [...Array(pad).fill(null), ...Array.from({ length: n }, (_, i) => addDays(monthStart, i))] as (string | null)[]; })();
 
-  const run = async (key: string, fn: () => Promise<unknown>) => {
-    setBusy(key);
-    try {
-      await fn();
-      router.refresh();
-    } finally {
-      setBusy(null);
-    }
+  const ItemRow = ({ it }: { it: CalItem }) => {
+    const forP = who(it.forMemberId), drv = who(it.driverMemberId), cook = who(it.cookMemberId);
+    const mineDrive = !!drv && drv.id === p.viewer.memberId;
+    const title = it.kind === "dinner" ? (cook ? `${cook.greetingName}’s night${it.title !== "Dinner" ? ` — ${it.title}` : ""}` : "Dinner") : it.kind === "trip" ? `${it.title}${it.dayOfTrip ? ` · day ${it.dayOfTrip.n} of ${it.dayOfTrip.of}` : ""}` : forP && it.kind === "appointment" ? `${it.title} — ${forP.greetingName}` : it.title;
+    const meta = [it.time ? `${fmtTime(it.time)}${it.endTime ? `–${fmtTime(it.endTime)}` : ""}` : it.kind === "dinner" || it.kind === "trip" ? null : "All day", it.location, drv ? `${mineDrive ? "you're" : drv.greetingName + " is"} driving` : null, it.kind === "feed" ? it.source : null].filter(Boolean).join(" · ");
+    const editable = !!it.familyEventId;
+    return <Row time={it.time ? fmtTime(it.time) ?? undefined : undefined} avatar={!it.time && (forP || cook) ? { name: (forP || cook)!.name, src: (forP || cook)!.avatarUrl, person: (forP || cook)!.hue } : undefined} icon={it.time || (!forP && !cook) ? KIND_ICON[it.kind] : undefined} tint={KIND_TINT[it.kind]} tone={it.kind === "dinner" ? "default" : "default"} title={title} meta={meta || undefined} trailing={it.kind === "appointment" ? <Badge tone="info" icon="stethoscope">Appt</Badge> : it.kind === "trip" ? <Badge tone="accent" icon="plane">Trip</Badge> : mineDrive ? <Badge tone="warning" icon="car">Driving</Badge> : undefined} onClick={editable ? () => setSheet({ event: it, date: it.dateISO }) : it.kind === "trip" && it.tripId ? () => router.push(`/trips/${it.tripId}`) : it.kind === "dinner" ? () => router.push("/meals") : undefined} chevron={editable || it.kind === "trip"} style={{ opacity: it.kind === "dinner" ? 0.8 : 1 }} />;
   };
 
-  // group events by day (multi-day all-day events appear on each day in range)
-  const byDay = new Map<string, DayEvent[]>();
-  for (const ev of events) {
-    const last = ev.endDateISO ?? ev.dateISO;
-    let d = ev.dateISO < todayISO ? todayISO : ev.dateISO;
-    let guard = 0;
-    while (d <= last && d <= windowEnd && guard++ < 62) {
-      const arr = byDay.get(d) || [];
-      arr.push(ev);
-      byDay.set(d, arr);
-      const x = new Date(d + "T00:00:00");
-      x.setDate(x.getDate() + 1);
-      d = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
-    }
-  }
-  const days = [...byDay.keys()].sort();
+  const days = Array.from({ length: 31 }, (_, i) => addDays(p.fromISO, i)).filter((d) => d <= p.toISO);
+  const agenda = days.map((d) => ({ d, rows: dayItems(d) })).filter((x) => x.rows.length);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <p className="zt-eyebrow" style={{ marginBottom: 6 }}>Calendar</p>
-          <h1 style={{ margin: 0, fontSize: "clamp(22px, 4vw, 28px)", fontWeight: 600, letterSpacing: "-0.015em", color: "var(--text-primary)" }}>
-            The next 30 days
-          </h1>
+    <div style={{ width: "100%", maxWidth: "var(--content-max)", margin: "0 auto", padding: "16px var(--page-gutter-mobile) 64px", display: "flex", flexDirection: "column", gap: "var(--space-8)" }}>
+      <Reveal>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div><p style={{ margin: "0 0 6px", font: "var(--type-overline)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>Calendar</p><h1 style={{ margin: 0, font: "var(--type-greeting)", fontSize: "clamp(var(--fs-3xl), 5vw, var(--fs-4xl))", letterSpacing: "var(--ls-display)" }}>{view === "month" ? new Date(monthStart + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }) : view === "week" ? "This week" : "Coming up"}</h1></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <SegmentedControl size="sm" items={[{ key: "agenda", label: "Agenda" }, { key: "week", label: "Week" }, { key: "month", label: "Month" }]} value={view} onChange={setView} />
+            {p.viewer.role === "owner" ? <IconButton icon="link" label="Google Calendar feeds" variant="outline" onClick={() => setFeedsOpen(true)} /> : null}
+            <Button iconLeft="plus" onClick={() => setSheet({ date: day })}>Add</Button>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setManaging(true)}
-            style={{ border: "1px solid var(--border-hairline)", background: "var(--surface-raised)", color: "var(--text-secondary)", borderRadius: 999, padding: "10px 16px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", minHeight: 44 }}>
-            Feeds{feeds.length ? ` · ${feeds.length}` : ""}
-          </button>
-          <button onClick={() => setAdding(true)}
-            style={{ border: "none", background: "var(--accent)", color: "var(--text-on-accent, #06130b)", borderRadius: 999, padding: "10px 18px", font: "inherit", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 44 }}>
-            + Event
-          </button>
-        </div>
-      </div>
+      </Reveal>
+      {!p.configured ? <InlineAlert tone="warning" title="The calendar tables aren’t set up yet">Run supabase-calendar.sql and supabase-phase4-calendar-trips.sql, then reload.</InlineAlert> : null}
+      {p.feeds.some((f) => f.error) ? <InlineAlert tone="warning" title="A calendar feed didn’t load">{p.feeds.filter((f) => f.error).map((f) => `${f.name}: ${f.error}`).join(" · ")}</InlineAlert> : null}
+      <Reveal index={1}><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><Tag selected={!person} onClick={() => setPerson("")}>Everyone</Tag>{p.people.map((x) => <Tag key={x.id} selected={person === x.id} onClick={() => setPerson(person === x.id ? "" : x.id)} color={`var(--person-${x.hue})`}>{x.greetingName}</Tag>)}</div></Reveal>
 
-      {!configured ? (
-        <div style={{ ...card, padding: 22, fontSize: 14, lineHeight: 1.6, color: "var(--text-secondary)" }}>
-          The calendar tables aren&apos;t set up yet — run <code style={{ color: "var(--accent)" }}>supabase-calendar.sql</code> in the Supabase SQL Editor, then reload.
-        </div>
+      {view === "agenda" ? (
+        !agenda.length ? <Reveal index={2}><EmptyState icon="calendar" title="A quiet stretch" body={p.feeds.length ? "Nothing on the calendar for the next month. Add an event or appointment." : "Nothing planned. Add an event, or connect a Google Calendar feed to see the family's schedule here."} action={<Button iconLeft="plus" onClick={() => setSheet({ date: p.todayISO })}>Add something</Button>} /></Reveal> : (
+          <Stagger gap={24} start={2}>{agenda.map(({ d, rows }) => <Section key={d} title={d === p.todayISO ? "Today" : d === addDays(p.todayISO, 1) ? "Tomorrow" : fmtNight(d)}><div style={{ display: "flex", flexDirection: "column", gap: 2 }}>{rows.map((it) => <ItemRow key={it.key} it={it} />)}</div></Section>)}</Stagger>
+        )
       ) : null}
 
-      {feedErrors.length ? (
-        <div style={{ ...card, padding: "12px 16px", borderColor: "var(--warning)", fontSize: 13, color: "var(--text-secondary)" }}>
-          {feedErrors.map((e) => <div key={e.name}>⚠️ Couldn&apos;t load &quot;{e.name}&quot; ({e.error})</div>)}
-        </div>
+      {view === "week" ? (
+        <Stagger gap={20} start={2}>
+          <WeekStrip days={Array.from({ length: 7 }, (_, i) => { const d = addDays(day, i - new Date(day + "T00:00:00").getDay()); return { date: d, dots: dayItems(d).filter((x) => x.kind !== "dinner").slice(0, 4).map((x) => x.color || "var(--accent)") }; })} value={day} onChange={(d) => setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`)} />
+          <Section title={day === p.todayISO ? "Today" : fmtNight(day)} action={<Button size="sm" variant="soft" iconLeft="plus" onClick={() => setSheet({ date: day })}>Add</Button>}>
+            {dayItems(day).length ? <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>{dayItems(day).map((it) => <ItemRow key={it.key} it={it} />)}</div> : <EmptyState compact icon="calendar" title="Nothing this day" body="Free — or not written down yet." style={{ padding: "4px 0" }} />}
+          </Section>
+        </Stagger>
       ) : null}
 
-      {days.length === 0 ? (
-        <div style={{ ...card, padding: 28, textAlign: "center", color: "var(--text-tertiary)", fontSize: 14, lineHeight: 1.6 }}>
-          <div style={{ fontSize: 26, marginBottom: 8 }}>📅</div>
-          Nothing on the calendar yet. Connect a Google Calendar under <b>Feeds</b>{" "}
-          (Settings → &quot;Secret address in iCal format&quot;) or add a family event.
-        </div>
-      ) : (
-        days.map((d) => {
-          const rows = (byDay.get(d) || []).slice().sort((a, b) => ((a.time ?? "") < (b.time ?? "") ? -1 : 1));
-          const isToday = d === todayISO;
-          return (
-            <div key={d} style={{ ...card, padding: "8px 0", overflow: "hidden", borderColor: isToday ? "var(--green-tint)" : undefined }}>
-              <div className="zt-eyebrow" style={{ padding: "8px 16px 4px", color: isToday ? "var(--accent)" : undefined }}>{dayLabel(d, todayISO)}</div>
-              {rows.map((ev) => (
-                <div key={ev.key + d} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px" }}>
-                  <span style={{ flex: "none", width: 4, alignSelf: "stretch", borderRadius: 999, background: ev.color }} />
-                  <span className="zt-num" style={{ flex: "none", width: 64, fontSize: 12, color: "var(--text-tertiary)" }}>{timeLabel(ev.time)}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", fontSize: 14.5, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</span>
-                    <span style={{ display: "block", fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {[ev.source, ev.location].filter(Boolean).join(" · ")}
-                    </span>
-                  </span>
-                  {ev.familyEventId != null ? (
-                    <button onClick={() => run(ev.key, () => actions.deleteFamilyEvent(ev.familyEventId!))} disabled={busy === ev.key} aria-label={`Delete ${ev.title}`}
-                      style={{ flex: "none", width: 40, height: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 16 }}>
-                      ×
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          );
-        })
-      )}
+      {view === "month" ? (
+        <Stagger gap={20} start={2}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <IconButton icon="chevron-left" label="Previous month" size="sm" variant="outline" onClick={() => { const d = new Date(monthStart + "T00:00:00"); d.setMonth(d.getMonth() - 1); setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`); }} />
+            <IconButton icon="chevron-right" label="Next month" size="sm" variant="outline" onClick={() => { const d = new Date(monthStart + "T00:00:00"); d.setMonth(d.getMonth() + 1); setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`); }} />
+            <Button size="sm" variant="ghost" onClick={() => setDay(p.todayISO)}>Today</Button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4 }}>
+            {WEEKDAYS_SHORT.map((w) => <span key={w} style={{ font: "var(--type-overline)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--text-tertiary)", textAlign: "center", padding: "4px 0" }}>{w[0]}</span>)}
+            {monthDays.map((d, i) => d ? (
+              <button key={d} type="button" onClick={() => setDay(d)} aria-pressed={d === day} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 56, padding: "8px 2px", border: 0, borderRadius: "var(--radius-md)", background: d === day ? "var(--accent)" : d === p.todayISO ? "var(--accent-soft)" : "transparent", color: d === day ? "var(--text-on-accent)" : "var(--text-primary)", cursor: "pointer", font: "inherit" }}>
+                <span className="zh-num" style={{ font: `${d === p.todayISO ? 600 : 500} var(--fs-sm)/1 var(--font-num)` }}>{Number(d.slice(8))}</span>
+                <span style={{ display: "flex", gap: 2, height: 5 }}>{dayItems(d).filter((x) => x.kind !== "dinner").slice(0, 4).map((x, j) => <span key={j} style={{ width: 5, height: 5, borderRadius: 3, background: d === day ? "var(--text-on-accent)" : x.color || "var(--accent)" }} />)}</span>
+              </button>
+            ) : <span key={`pad-${i}`} />)}
+          </div>
+          <Section title={day === p.todayISO ? "Today" : fmtNight(day)} action={<Button size="sm" variant="soft" iconLeft="plus" onClick={() => setSheet({ date: day })}>Add</Button>}>
+            {dayItems(day).length ? <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>{dayItems(day).map((it) => <ItemRow key={it.key} it={it} />)}</div> : <EmptyState compact icon="calendar" title="Nothing this day" style={{ padding: "4px 0" }} />}
+          </Section>
+        </Stagger>
+      ) : null}
 
-      {adding ? (
-        <EventSheet
-          todayISO={todayISO}
-          busy={busy === "addEvent"}
-          onClose={() => setAdding(false)}
-          onSave={(args) => run("addEvent", async () => { await actions.addFamilyEvent(args); setAdding(false); })}
-        />
-      ) : null}
-      {managing ? (
-        <FeedsSheet feeds={feeds} busy={busy} run={run} onClose={() => setManaging(false)} />
-      ) : null}
+      {sheet ? <EventSheet open onClose={() => { setSheet(null); if (p.openEventId) router.replace("/calendar", { scroll: false }); }} event={sheet.event} people={p.people} me={p.viewer.memberId} defaultDate={sheet.date} defaultKind={sheet.kind} onSaved={(m) => { toast({ title: m, tone: "positive" }); router.refresh(); }} /> : null}
+      <FeedsSheet open={feedsOpen} onClose={() => setFeedsOpen(false)} feeds={p.feeds} onChanged={() => router.refresh()} />
+      {p.people.length === 0 ? null : <span style={{ display: "none" }}><Avatar name="" /></span>}
     </div>
   );
 }
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: "100%", maxWidth: 520, maxHeight: "85dvh", overflowY: "auto",
-        background: "var(--bg-app)", borderRadius: "var(--radius-lg, 18px) var(--radius-lg, 18px) 0 0",
-        border: "1px solid var(--border-hairline)", padding: "18px 18px calc(18px + env(safe-area-inset-bottom))",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--text-primary)" }}>{title}</h2>
-          <span style={{ flex: 1 }} />
-          <button onClick={onClose} aria-label="Close" style={{ width: 40, height: 40, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 18 }}>×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-const input: React.CSSProperties = {
-  height: 46, padding: "0 13px", background: "var(--surface-sunken)", border: "1px solid var(--border-hairline)",
-  borderRadius: "var(--radius-md, 12px)", color: "var(--text-primary)", fontSize: 14.5, outline: "none", minWidth: 0, width: "100%",
-  colorScheme: "dark",
-};
-
-function EventSheet({ todayISO, busy, onClose, onSave }: {
-  todayISO: string;
-  busy: boolean;
-  onClose: () => void;
-  onSave: (args: { title: string; date: string; time?: string | null; note?: string | null }) => void;
-}) {
-  const [title, setTitle] = React.useState("");
-  const [date, setDate] = React.useState(todayISO);
-  const [time, setTime] = React.useState("");
-  const [note, setNote] = React.useState("");
-  return (
-    <Sheet title="New family event" onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's happening? (Grandma's birthday)" autoFocus style={input} aria-label="Event title" />
-        <div style={{ display: "flex", gap: 10 }}>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...input, flex: 1 }} aria-label="Date" />
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ ...input, flex: 1 }} aria-label="Time (optional)" />
-        </div>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" style={input} aria-label="Note" />
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={onClose} disabled={busy}
-            style={{ border: "1px solid var(--border-hairline)", background: "var(--surface-raised)", color: "var(--text-secondary)", borderRadius: 999, padding: "11px 18px", font: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", minHeight: 46 }}>
-            Cancel
-          </button>
-          <button onClick={() => onSave({ title, date, time: time || null, note: note || null })} disabled={busy || !title.trim() || !date}
-            style={{ border: "none", background: "var(--accent)", color: "var(--text-on-accent, #06130b)", borderRadius: 999, padding: "11px 22px", font: "inherit", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 46, opacity: busy || !title.trim() || !date ? 0.55 : 1 }}>
-            Add event
-          </button>
-        </div>
-      </div>
-    </Sheet>
-  );
-}
-
-function FeedsSheet({ feeds, busy, run, onClose }: {
-  feeds: { id: number; name: string; enabled: boolean }[];
-  busy: string | null;
-  run: (k: string, fn: () => Promise<unknown>) => Promise<void>;
-  onClose: () => void;
-}) {
+function FeedsSheet({ open, onClose, feeds, onChanged }: { open: boolean; onClose: () => void; feeds: FeedInfo[]; onChanged: () => void }) {
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
   return (
-    <Sheet title="Calendar feeds" onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: "var(--text-tertiary)" }}>
-          In Google Calendar: Settings → your calendar → <b>Integrate calendar</b> → copy the
-          <b> Secret address in iCal format</b> and paste it here. Read-only — Zitting HQ never changes your Google Calendar.
-        </p>
-        {feeds.map((f) => (
-          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface-card)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-md, 12px)", padding: "10px 12px" }}>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-            <button onClick={() => run(`feed-${f.id}`, () => actions.setCalendarFeedEnabled(f.id, !f.enabled))} disabled={busy === `feed-${f.id}`}
-              style={{ flex: "none", border: "1px solid var(--border-hairline)", background: f.enabled ? "var(--green-glow)" : "var(--surface-sunken)", color: f.enabled ? "var(--accent)" : "var(--text-tertiary)", borderRadius: 999, padding: "7px 13px", font: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer", minHeight: 36 }}>
-              {f.enabled ? "On" : "Off"}
-            </button>
-            <button onClick={() => run(`feeddel-${f.id}`, () => actions.deleteCalendarFeed(f.id))} disabled={busy === `feeddel-${f.id}`} aria-label={`Remove ${f.name}`}
-              style={{ flex: "none", width: 36, height: 36, background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 15 }}>
-              ×
-            </button>
-          </div>
-        ))}
-        <form onSubmit={(e) => { e.preventDefault(); if (name.trim() && url.trim()) run("addFeed", async () => { await actions.addCalendarFeed({ name, url }); setName(""); setUrl(""); }); }}
-          style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (Jared's calendar)" style={input} aria-label="Feed name" />
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" style={input} aria-label="Feed URL" />
-          <button type="submit" disabled={!name.trim() || !url.trim() || busy === "addFeed"}
-            style={{ alignSelf: "flex-end", border: "none", background: "var(--accent)", color: "var(--text-on-accent, #06130b)", borderRadius: 999, padding: "11px 20px", font: "inherit", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 46, opacity: !name.trim() || !url.trim() || busy === "addFeed" ? 0.55 : 1 }}>
-            Add feed
-          </button>
-        </form>
+    <BottomSheet open={open} onClose={onClose} title="Google Calendar feeds" footer={<Button size="lg" fullWidth variant="ghost" onClick={onClose}>Done</Button>}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>Paste a calendar’s private “Secret address in iCal format” (Google Calendar → Settings → Integrate calendar). Read-only; events appear within 15 minutes.</p>
+        {feeds.map((f) => <Row key={f.id} icon="calendar-days" tint="sky" title={f.name} meta={f.error ? `Couldn’t load: ${f.error}` : f.enabled ? "On" : "Off"} trailing={<><Toggle size="sm" checked={f.enabled} onChange={async (v) => { setBusy(`f-${f.id}`); await actions.setCalendarFeedEnabled(f.id, v); setBusy(null); onChanged(); }} style={{ minHeight: 32 }} /><IconButton icon="x" label={`Remove ${f.name}`} size="sm" onClick={async () => { setBusy(`d-${f.id}`); await actions.deleteCalendarFeed(f.id); setBusy(null); onChanged(); }} /></>} chevron={false} />)}
+        <Input label="Name" placeholder="Jared’s work" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label="Secret iCal address" type="url" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" value={url} onChange={(e) => setUrl(e.target.value)} error={error ?? undefined} />
+        <Button loading={busy === "add"} disabled={!name.trim() || !url.trim()} iconLeft="plus" onClick={async () => { setBusy("add"); setError(null); const r = await actions.addCalendarFeed({ name, url }); setBusy(null); if (r.ok) { setName(""); setUrl(""); onChanged(); } else setError(r.error || "Couldn't add"); }}>Add feed</Button>
       </div>
-    </Sheet>
+    </BottomSheet>
   );
+}
+
+export function CalendarClient(props: Props) {
+  return <ToastProvider><Inner {...props} /></ToastProvider>;
 }

@@ -780,8 +780,29 @@ export const familyEvents = pgTable(
     note: text("note"),
     createdBy: text("created_by").references(() => familyMembers.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    // Phase 4 (supabase-phase4-calendar-trips.sql): unified events + appointments
+    kind: text("kind").notNull().default("event"), // event | appointment
+    endTime: text("end_time"),
+    forMemberId: text("for_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    driverMemberId: text("driver_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+    location: text("location"),
+    prepNotes: text("prep_notes"),
+    visibility: text("visibility").notNull().default("family"),
+    tripId: text("trip_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
-  (t) => [index("idx_family_events_date").on(t.date)]
+  (t) => [index("idx_family_events_date").on(t.date), index("idx_family_events_kind").on(t.kind, t.date)]
+);
+
+export const eventReminders = pgTable(
+  "event_reminders",
+  {
+    id: serial("id").primaryKey(),
+    eventId: integer("event_id").notNull().references(() => familyEvents.id, { onDelete: "cascade" }),
+    minutesBefore: integer("minutes_before").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_event_reminders_event").on(t.eventId)]
 );
 
 // ---- Nest (cameras → Govee lights) ---------------------------------------
@@ -1070,3 +1091,64 @@ export const attachments = pgTable(
   },
   (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.photoId] })]
 );
+
+// ---- Phase 4 (2026-09 revamp): trips — supabase-phase4-calendar-trips.sql ----
+
+export const trips = pgTable("trips", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  destination: text("destination"),
+  startsOn: date("starts_on"),
+  endsOn: date("ends_on"),
+  coverPhotoId: text("cover_photo_id").references(() => photos.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  visibility: text("visibility").notNull().default("family"),
+  goalId: text("goal_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const tripParticipants = pgTable(
+  "trip_participants",
+  {
+    tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.tripId, t.memberId] })]
+);
+
+export const tripItems = pgTable(
+  "trip_items",
+  {
+    id: serial("id").primaryKey(),
+    tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    day: date("day"),
+    time: text("time"),
+    title: text("title").notNull(),
+    location: text("location"),
+    notes: text("notes"),
+    url: text("url"),
+    sort: integer("sort").notNull().default(0),
+  },
+  (t) => [index("idx_trip_items_trip").on(t.tripId, t.day, t.sort)]
+);
+
+export const tripDocuments = pgTable("trip_documents", {
+  id: text("id").primaryKey(),
+  tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+  storagePath: text("storage_path").notNull(),
+  name: text("name").notNull(),
+  mime: text("mime"),
+  sizeBytes: integer("size_bytes"),
+  uploadedBy: text("uploaded_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const tripPacking = pgTable("trip_packing", {
+  id: serial("id").primaryKey(),
+  tripId: text("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  assigneeMemberId: text("assignee_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  checked: boolean("checked").notNull().default(false),
+  sort: integer("sort").notNull().default(0),
+});

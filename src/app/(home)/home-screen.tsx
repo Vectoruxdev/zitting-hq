@@ -72,7 +72,7 @@ function PhotoOfDay({ data, narrow }: { data: HomeData; narrow: boolean }) {
 function TodaySection({ data }: { data: HomeData }) {
   const router = useRouter();
   const d = data.dashboard.today;
-  const empty = !d.dinner && !d.events.length && !data.tonight?.cook;
+  const empty = !d.dinner && !d.events.length && !data.tonight?.cook && !data.upNext.length;
   return (
     <Section title="Today" onAction={() => router.push("/calendar")} actionLabel="Calendar">
       {empty ? (
@@ -86,11 +86,27 @@ function TodaySection({ data }: { data: HomeData }) {
             const title = d.dinner ? (mine ? `Your night — ${d.dinner.name}` : cook ? `${cook.greetingName}’s night — ${d.dinner.name}` : `Tonight — ${d.dinner.name}`) : mine ? "Your night — nothing planned yet" : `${cook!.greetingName}’s night — nothing planned yet`;
             return <Row avatar={cook ? { name: cook.name, src: cook.avatarUrl, person: cook.hue } : undefined} icon={cook ? undefined : "chef-hat"} tint="butter" title={title} meta={[data.tonight?.note, dish ? `dishes: ${dish}` : null].filter(Boolean).join(" · ") || "Dinner"} trailing={mine ? <Button size="sm" variant="soft" onClick={() => router.push(`/meals?swap=${data.todayISO}`)}>Swap</Button> : undefined} onClick={() => router.push("/meals")} chevron={!mine} />;
           })() : null}
-          {d.events.map((e, i) => <Row key={i} time={e.time || "All day"} title={e.title} onClick={() => router.push("/calendar")} />)}
+          {(data.upNext.length ? data.upNext.filter((e) => e.dateISO === data.todayISO) : d.events.map((e, i) => ({ key: `d${i}`, kind: "event" as const, title: e.title, dateISO: data.todayISO, time: e.time, location: null, forMemberId: null, driverMemberId: null, familyEventId: null, tripId: null, dayOfTrip: undefined }))).map((e) => <UpNextRow key={e.key} e={e} data={data} />)}
         </div>
       )}
+      {data.upNext.some((e) => e.dateISO !== data.todayISO) ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 8 }}>
+          <span style={{ font: "var(--type-overline)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--text-tertiary)", padding: "6px 0" }}>Coming up</span>
+          {data.upNext.filter((e) => e.dateISO !== data.todayISO).slice(0, 4).map((e) => <UpNextRow key={e.key} e={e} data={data} showDate />)}
+        </div>
+      ) : null}
     </Section>
   );
+}
+
+const fmtTime = (t: string | null) => { if (!t) return null; const [h, m] = t.split(":").map(Number); const d = new Date(); d.setHours(h, m); return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); };
+function UpNextRow({ e, data, showDate }: { e: HomeData["upNext"][number]; data: HomeData; showDate?: boolean }) {
+  const router = useRouter();
+  const forP = data.people.find((p) => p.id === e.forMemberId), drv = data.people.find((p) => p.id === e.driverMemberId);
+  const mine = !!drv && drv.id === data.viewer.memberId;
+  const day = showDate ? new Date(e.dateISO + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" }) : null;
+  const title = e.kind === "trip" ? `${e.title}${e.dayOfTrip ? ` · day ${e.dayOfTrip.n} of ${e.dayOfTrip.of}` : ""}` : e.kind === "appointment" && forP ? `${e.title} — ${forP.greetingName}` : e.title;
+  return <Row time={e.time ? fmtTime(e.time) ?? undefined : day ?? undefined} icon={e.time || day ? undefined : e.kind === "trip" ? "plane" : e.kind === "appointment" ? "stethoscope" : "calendar"} tint={e.kind === "appointment" ? "lilac" : e.kind === "trip" ? "sky" : "coral"} title={title} meta={[day && e.time ? fmtTime(e.time) : null, e.location, drv ? `${mine ? "you're" : drv.greetingName + " is"} driving` : null].filter(Boolean).join(" · ") || undefined} trailing={e.kind === "appointment" ? <Badge tone="info" icon="stethoscope">Appt</Badge> : mine ? <Badge tone="warning" icon="car">Driving</Badge> : undefined} onClick={() => router.push(e.tripId ? `/trips/${e.tripId}` : e.familyEventId ? `/calendar?event=${e.familyEventId}` : "/calendar")} />;
 }
 
 function AttentionSection({ data }: { data: HomeData }) {

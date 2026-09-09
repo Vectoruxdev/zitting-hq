@@ -31,6 +31,12 @@ function mock(variant: "owner" | "wife", state: "full" | "empty"): HomeData {
     unread: full ? 3 : 0,
     tonight: full ? { cook: "jaelynn", dish: ["katelynn"], note: null } : null,
     pendingSwaps: full && member ? 1 : 0,
+    upNext: full ? [
+      { key: "a", kind: "event", title: "School drop-off", dateISO: "2026-09-08", time: "8:15", location: null, forMemberId: null, driverMemberId: null, familyEventId: 1, tripId: null, dayOfTrip: undefined },
+      { key: "b", kind: "appointment", title: "Dentist", dateISO: "2026-09-08", time: "15:30", location: "Sunrise Pediatric Dental", forMemberId: "azaleah", driverMemberId: "katelynn", familyEventId: 2, tripId: null, dayOfTrip: undefined },
+      { key: "c", kind: "appointment", title: "Speech therapy", dateISO: "2026-09-10", time: "10:00", location: null, forMemberId: "jae", driverMemberId: "jaelynn", familyEventId: 3, tripId: null, dayOfTrip: undefined },
+      { key: "d", kind: "trip", title: "Lake weekend", dateISO: "2026-09-12", time: null, location: "Bear Lake", forMemberId: null, driverMemberId: null, familyEventId: null, tripId: "t1", dayOfTrip: { n: 1, of: 3 } },
+    ] : [],
     dashboard: {
       todayISO: "2026-09-08",
       finance: member
