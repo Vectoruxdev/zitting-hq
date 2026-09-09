@@ -7,7 +7,9 @@
  * Every section is defensive: a failing module renders as its empty state,
  * never a broken dashboard.
  */
+import { unstable_cache } from "next/cache";
 import { getFinanceData, type Viewer } from "./queries";
+import { resetDb } from "@/db";
 import { getGroceriesData, getMealsData, addDaysISO } from "./household";
 import { getCalendar } from "./calendar";
 
@@ -92,6 +94,7 @@ function sectionWithTimeout<T>(p: Promise<T>, ms: number, fallback: () => T, lab
   return new Promise((resolve) => {
     const t = setTimeout(() => {
       console.error(`[dashboard] ${label} section timed out after ${ms}ms — rendering its empty state`);
+      resetDb(`dashboard ${label} > ${ms}ms`);
       resolve(fallback());
     }, ms);
     p.then(
@@ -104,20 +107,17 @@ function sectionWithTimeout<T>(p: Promise<T>, ms: number, fallback: () => T, lab
 export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
   const todayISO = familyTodayISO();
 
-  // The four sections are independent — run them concurrently (the pooled
-  // postgres client handles a few parallel streams fine; the heavy sequential
-  // discipline lives INSIDE getFinanceData, unchanged). Each is fenced by a
-  // watchdog: one slow/hung section renders as its empty card instead of
-  // pinning the entire page to the skeleton.
-  // Sequential since 2026-09-09: a burst of new pooler connections from one
-  // instance is what stalled Home on the preview deploy (the first couple
-  // authenticate, the rest never do). One section at a time keeps the pool to
-  // a connection or two; the watchdogs still fence each one.
+  // The four sections are independent — run them together, each fenced by a
+  // watchdog so one slow/hung section renders as its empty card instead of
+  // pinning the page. (Sequential for a while to dodge a hang that turned out
+  // to be stale pooled sockets, not concurrency — see src/db/index.ts.)
   const t0 = Date.now();
-  const meals = await sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals");
-  const groceries = await sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries");
-  const calendar = await sectionWithTimeout<DashboardData["calendar"]>(calendarSection(viewer, todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar");
-  const finance = await sectionWithTimeout<DashboardData["finance"]>(financeSection(viewer), 20000, () => ({ role: viewer.role }), "finance");
+  const [meals, groceries, calendar, finance] = await Promise.all([
+    sectionWithTimeout<DashboardData["meals"]>(mealsSection(todayISO), 10000, () => ({ tonight: null, upcoming: [] }), "meals"),
+    sectionWithTimeout<DashboardData["groceries"]>(groceriesSection(), 10000, () => ({ listCount: 0, lowCount: 0, lowNames: [] }), "groceries"),
+    sectionWithTimeout<DashboardData["calendar"]>(calendarSection(viewer, todayISO), 10000, () => ({ events: [], feedCount: 0 }), "calendar"),
+    sectionWithTimeout<DashboardData["finance"]>(financeSectionCached(viewer), 20000, () => ({ role: viewer.role }), "finance"),
+  ]);
   const took = Date.now() - t0;
   if (took > 6000) console.log(`[dashboard] sections slow: ${took}ms`);
 
@@ -148,6 +148,18 @@ export async function getDashboardData(viewer: Viewer): Promise<DashboardData> {
 
   return { todayISO, finance, meals, groceries, calendar, today, needsAttention };
 }
+
+/**
+ * Home's Money card, remembered for two minutes per viewer. It is by far the
+ * slowest read on the page (it builds the whole finance model), and its
+ * numbers only move when transactions sync or someone edits — both of which
+ * call revalidateTag("finance-home") so the card is never stale after a change.
+ */
+const financeSectionCached = unstable_cache(
+  (viewer: Viewer) => financeSection(viewer),
+  ["home-finance-section"],
+  { revalidate: 120, tags: ["finance-home"] }
+);
 
 async function financeSection(viewer: Viewer): Promise<DashboardData["finance"]> {
   const finance: DashboardData["finance"] = { role: viewer.role };

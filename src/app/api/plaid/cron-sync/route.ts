@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { syncAllItems } from "@/db/plaid";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
   }
   try {
     const res = await syncAllItems();
+    revalidateTag("finance-home", "max"); // Home's Money card picks up the new numbers
     // Per-bank failures surface as a 500 so Vercel's cron monitoring flags the
     // run instead of recording a green check over a bank that didn't sync.
     return NextResponse.json(res, { status: res.ok ? 200 : 500 });

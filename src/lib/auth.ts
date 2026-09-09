@@ -1,6 +1,8 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { createSupabaseServerClient, isAuthConfigured } from "./supabase/server";
-import { db } from "@/db";
+import { getVerifiedClaims } from "./supabase/claims";
+import { db, withDbTimeout, DbTimeoutError } from "@/db";
 import { familyMembers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -31,21 +33,38 @@ export function roleForEmail(email?: string | null): Role {
   return email && OWNER_EMAILS.includes(email.toLowerCase()) ? "owner" : "member";
 }
 
-/** The signed-in user with role + name, synced from family_members by email. */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/**
+ * The roster, read with a short watchdog. This is the first query of almost
+ * every request, so it doubles as the stale-connection probe: if it hangs, the
+ * pool is reset and the read runs once more on fresh connections.
+ */
+async function rosterRows() {
+  const read = () => db!.select({ id: familyMembers.id, name: familyMembers.name, role: familyMembers.role, email: familyMembers.email }).from(familyMembers);
+  try {
+    return await withDbTimeout(read(), 2500, "roster");
+  } catch (e) {
+    if (!(e instanceof DbTimeoutError)) throw e;
+    return await withDbTimeout(read(), 4000, "roster (retry on a fresh pool)");
+  }
+}
+
+/**
+ * The signed-in user with role + name, synced from family_members by email.
+ * Memoised per request (React cache) — the layout, the page and any helper can
+ * all ask without repeating the work.
+ */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!isAuthConfigured) return null;
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const claims = await getVerifiedClaims(supabase);
+  if (!claims) return null;
 
-  const email = (user.email ?? "").toLowerCase();
+  const email = claims.email;
   let role: Role = roleForEmail(email);
   let memberId: string | null = null;
   let name =
-    (user.user_metadata?.name as string | undefined) ||
-    (user.user_metadata?.full_name as string | undefined) ||
+    (claims.metadata.name as string | undefined) ||
+    (claims.metadata.full_name as string | undefined) ||
     (email ? email.split("@")[0] : "there");
 
   // Sync role + display name + member id from the family_members roster (by
@@ -53,9 +72,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   // can't break auth.
   try {
     if (db && email) {
-      const rows = await db
-        .select({ id: familyMembers.id, name: familyMembers.name, role: familyMembers.role, email: familyMembers.email })
-        .from(familyMembers);
+      const rows = await rosterRows();
       const m = rows.find((r) => (r.email ?? "").toLowerCase() === email);
       if (m) {
         role = (m.role as Role) || role;
@@ -89,4 +106,4 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   }
 
   return { email, name, role, memberId, viewingAs: null };
-}
+});

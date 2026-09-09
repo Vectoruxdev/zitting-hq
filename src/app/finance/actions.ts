@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { isAuthConfigured } from "@/lib/supabase/server";
@@ -41,7 +41,7 @@ async function ensureCanEditTxns(ids: number[]) {
   return u;
 }
 
-const refresh = () => revalidatePath("/finance");
+const refresh = () => { revalidatePath("/finance"); revalidateTag("finance-home", "max"); };
 
 // ---- people / members ----
 export async function addMember(args: { name: string; email?: string | null; role: string; color?: string | null; invite?: boolean }) {

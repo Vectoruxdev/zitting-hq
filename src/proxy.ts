@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { getVerifiedClaims } from "@/lib/supabase/claims";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY =
@@ -27,8 +28,9 @@ const PUBLIC_PATHS = [
 ];
 
 /**
- * Next 16 Proxy (formerly Middleware). Refreshes the Supabase session cookie on
- * every request and does an optimistic redirect to /login when there's no user.
+ * Next 16 Proxy (formerly Middleware). Checks the Supabase session on every
+ * request (locally, refreshing the cookie when it has expired) and does an
+ * optimistic redirect to /login when there's no user.
  * Real authorization still happens in the server components/pages.
  */
 export async function proxy(request: NextRequest) {
@@ -52,9 +54,10 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verify the session here (signature check against Supabase's public keys)
+  // instead of asking the Auth server on every request; only an expired token
+  // still refreshes over the network.
+  const user = await getVerifiedClaims(supabase);
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"));

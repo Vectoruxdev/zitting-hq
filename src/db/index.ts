@@ -7,8 +7,18 @@
  *
  * Use the Supabase **connection pooler** URL (port 6543) here; pgbouncer in
  * transaction mode requires `prepare: false`.
+ *
+ * Why the pool can be thrown away (`resetDb`): on Vercel the function instance
+ * is frozen between requests, and a pooled connection that sat idle through a
+ * freeze can come back dead without the socket ever saying so — the next query
+ * on it simply never answers. That was the "infinite load" after coming back
+ * to the app (every Home read timing out at once, /me and /people pinned for
+ * 300 s). Idle connections are now closed quickly, every connection is
+ * recycled on a schedule, and any read that trips its watchdog swaps the whole
+ * pool for a fresh one so the rest of the request (and the next request)
+ * reconnects instead of waiting on a dead socket.
  */
-import { drizzle } from "drizzle-orm/postgres-js";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
@@ -18,34 +28,73 @@ const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
 export const isDbConfigured = Boolean(connectionString);
 
+type Client = ReturnType<typeof postgres>;
+type Db = PostgresJsDatabase<typeof schema>;
+
 // Reuse the client across hot reloads / serverless invocations.
-const globalForDb = globalThis as unknown as {
-  __zhqClient?: ReturnType<typeof postgres>;
-};
+const g = globalThis as unknown as { __zhqClient?: Client; __zhqDb?: Db };
 
-const client = connectionString
-  ? (globalForDb.__zhqClient ??= postgres(connectionString, {
-      prepare: false,
-      // Serverless: keep the per-instance pool small and fail fast instead of
-      // hanging a request when the Supabase pooler is saturated — a hung read
-      // here is what used to render the whole dashboard as $0. Fluid Compute
-      // shares one instance (and this pool) across concurrent requests, and a
-      // home-page render runs four sections concurrently — 6 keeps headroom.
-      max: 6,
-      idle_timeout: 20,
-      // 5 s: a connection attempt the pooler never answers fails fast and the
-      // read renders its empty state instead of pinning the page.
-      connect_timeout: 5,
-      // No pipelining: postgres.js normally sends the next query on a
-      // connection before the previous reply arrives (max_pipeline 100). The
-      // Supabase transaction pooler (Supavisor) scrambles or drops those
-      // replies once several are in flight, and the promises never settle —
-      // the "dashboard section timed out" hang. One query in flight per
-      // connection; concurrency comes from the pool instead.
-      max_pipeline: 1,
-      // max_pipeline is a real postgres.js option (src/index.js parses it) that
-      // its type definitions don't declare.
-    } as postgres.Options<Record<string, postgres.PostgresType>> & { max_pipeline: number }))
-  : null;
+function makeClient(): Client {
+  return postgres(connectionString!, {
+    prepare: false,
+    // Small per-instance pool: Fluid Compute shares one instance (and this
+    // pool) across concurrent requests, and a Home render fans out a dozen
+    // reads at once — the pool serialises what doesn't fit.
+    max: 6,
+    // Close idle connections fast and recycle every one on a schedule — an
+    // idle connection is the one that goes stale (see the header comment).
+    // Reconnecting in-region costs tens of milliseconds.
+    idle_timeout: 10,
+    max_lifetime: 60 * 5,
+    // A connection attempt the pooler never answers fails fast and the read
+    // renders its empty state instead of pinning the page.
+    connect_timeout: 5,
+    // One query in flight per connection; concurrency comes from the pool.
+    // (max_pipeline is a real postgres.js option its types don't declare.)
+    max_pipeline: 1,
+  } as postgres.Options<Record<string, postgres.PostgresType>> & { max_pipeline: number });
+}
+const makeDb = (c: Client): Db => drizzle(c, { schema });
 
-export const db = client ? drizzle(client, { schema }) : null;
+/** The Drizzle handle. A live binding — `resetDb()` swaps it for a fresh pool. */
+export let db: Db | null = connectionString ? (g.__zhqDb ??= makeDb((g.__zhqClient ??= makeClient()))) : null;
+
+/**
+ * Throw the pool away and start a new one. Queries still waiting on the old
+ * pool reject within a second (so their watchdogs don't have to run out), and
+ * everything after this reconnects.
+ */
+export function resetDb(reason: string) {
+  if (!connectionString) return;
+  const old = g.__zhqClient;
+  console.error(`[db] resetting connection pool — ${reason}`);
+  g.__zhqClient = makeClient();
+  g.__zhqDb = makeDb(g.__zhqClient);
+  db = g.__zhqDb;
+  old?.end({ timeout: 1 }).catch(() => {});
+}
+
+export class DbTimeoutError extends Error {
+  constructor(label: string, ms: number) {
+    super(`${label} took longer than ${ms}ms`);
+    this.name = "DbTimeoutError";
+  }
+}
+
+/**
+ * Race a read against a watchdog. When it trips, the pool is presumed stale
+ * and reset, and the caller gets a DbTimeoutError — retry once on the fresh
+ * pool if the read matters, or fall back to an empty state.
+ */
+export function withDbTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      resetDb(`${label} > ${ms}ms`);
+      reject(new DbTimeoutError(label, ms));
+    }, ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}

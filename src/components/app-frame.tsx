@@ -76,6 +76,14 @@ export function AppFrame({ user, children, bare = false }: { user: FrameProps; c
   const [add, setAdd] = React.useState(false);
   useThemeSync(user.theme);
   useReminderTick();
+  // Warm every route in the nav so a tap shows the next screen at once.
+  const moduleKey = user.modules?.join(",") ?? "";
+  React.useEffect(() => {
+    if (bare) return;
+    const allow = moduleKey ? new Set(moduleKey.split(",")) : null;
+    const hrefs = [...modulesFor(user.role).filter((m) => !allow || allow.has(m.slug)).map((m) => m.href), "/notifications", "/me"];
+    for (const h of hrefs) { try { router.prefetch(h); } catch { /* prefetch is best-effort */ } }
+  }, [bare, router, user.role, moduleKey]);
   const banner = user.viewingAs ? <ViewAsBanner name={user.viewingAs.name} /> : null;
   if (bare) return <>{banner}{children}</>;
   const allowed = user.modules?.length ? new Set(user.modules) : null;
