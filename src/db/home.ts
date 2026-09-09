@@ -50,21 +50,35 @@ export function daypartFor(hour: number): HomeData["daypart"] {
   return "evening";
 }
 
+/** A read that can neither throw nor hang: its fallback after `ms`, and on error. */
+function guarded<T>(label: string, p: Promise<T>, fallback: () => T, ms = 8000): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => { console.error(`[home] ${label} timed out after ${ms}ms — using its empty state`); resolve(fallback()); }, ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback()); });
+  });
+}
+
 export async function getHomeData(viewer: Viewer, fallbackName: string): Promise<HomeData> {
   const todayISO = familyTodayISO();
-  const [dashboard, people, quote, unread, nights, swaps] = await Promise.all([
-    getDashboardData(viewer),
-    getPeople().catch(() => [] as Person[]),
-    quoteOfTheDay({ memberId: viewer.memberId, role: viewer.role }, todayISO).catch(() => null),
-    unreadCount({ memberId: viewer.memberId, role: viewer.role }).catch(() => 0),
-    getNights(todayISO, 1).catch(() => []),
-    listSwaps("pending").catch(() => []),
-  ]);
   const av = { memberId: viewer.memberId, role: viewer.role };
-  const access: Record<string, boolean> = viewer.role !== "owner" && viewer.memberId ? await getModuleAccess(viewer.memberId).catch(() => ({} as Record<string, boolean>)) : {};
+  // Sequential on purpose. The Supabase transaction pooler scrambles queries
+  // that postgres.js pipelines when many run at once — a Promise.all here is
+  // exactly what hung Home on the first preview deploy. Each read is also
+  // fenced so one slow module renders as its empty state, never a hung page.
+  const dashboard = await getDashboardData(viewer);
+  const people = await guarded("people", getPeople(), () => [] as Person[]);
+  const quote = await guarded("quote", quoteOfTheDay(av, todayISO), () => null);
+  const unread = await guarded("unread", unreadCount(av), () => 0);
+  const nights = await guarded("nights", getNights(todayISO, 1), () => []);
+  const swaps = await guarded("swaps", listSwaps("pending"), () => []);
+  const access: Record<string, boolean> = viewer.role !== "owner" && viewer.memberId ? await guarded("module access", getModuleAccess(viewer.memberId), () => ({} as Record<string, boolean>)) : {};
   const allowedSlugs = modulesFor(viewer.role).map((m) => m.slug).filter((slug) => access[slug] !== false);
-  const [goals, chores, completions] = await Promise.all([homeGoals(av, todayISO).catch(() => []), listChores().catch(() => [] as Chore[]), listCompletions(addDaysISO(todayISO, -60), todayISO).catch(() => [] as Completion[])]);
-  const [pod, recent, cal] = await Promise.all([photoOfTheDay(av, todayISO).catch(() => null), recentPhotos(av, 6).catch(() => []), getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }).catch(() => ({ items: [] as CalItem[], feeds: [], configured: false }))]);
+  const goals = await guarded("goals", homeGoals(av, todayISO), () => []);
+  const chores = await guarded("chores", listChores(), () => [] as Chore[]);
+  const completions = await guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]);
+  const pod = await guarded("photo of the day", photoOfTheDay(av, todayISO), () => null);
+  const recent = await guarded("recent photos", recentPhotos(av, 6), () => []);
+  const cal = await guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 12000);
   const tonightPlan = nights[0];
   const me = people.find((p) => p.id === viewer.memberId) ?? null;
   return {

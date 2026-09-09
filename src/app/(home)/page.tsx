@@ -19,10 +19,10 @@ export default async function Home() {
   const user = await getCurrentUser();
   if (isAuthConfigured && !user) redirect("/login");
   const role = (user?.role ?? "owner") as "owner" | "partner" | "member";
-  const [ctx, data] = await Promise.all([
-    frameContext(user),
-    getHomeData({ memberId: user?.memberId ?? null, role }, user?.name ?? "there"),
-  ]);
+  // Sequential on purpose: the Supabase transaction pooler scrambles pipelined
+  // queries when many run at once (see src/db/queries.ts), and Home reads a lot.
+  const ctx = await frameContext(user);
+  const data = await getHomeData({ memberId: user?.memberId ?? null, role }, user?.name ?? "there");
   return (
     <AppFrame user={ctx}>
       <HomeScreen data={data} />

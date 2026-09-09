@@ -137,7 +137,10 @@ export interface CalendarData { items: CalItem[]; feeds: FeedInfo[]; configured:
 /** Everything between two dates (inclusive), sorted. */
 export async function getCalendar(viewer: Viewer, fromISO: string, toISO: string, opts: { dinners?: boolean } = {}): Promise<CalendarData> {
   if (!isDbConfigured || !db) return { items: [], feeds: [], configured: false };
-  const [{ items: feed, feeds }, fam, trips] = await Promise.all([feedItems(fromISO, toISO), familyItems(viewer, fromISO, toISO), tripItems(viewer, fromISO, toISO)]);
+  // Sequential DB reads (pooler-safe); the ICS fetches inside feedItems stay concurrent (HTTP, not the pool).
+  const { items: feed, feeds } = await feedItems(fromISO, toISO);
+  const fam = await familyItems(viewer, fromISO, toISO);
+  const trips = await tripItems(viewer, fromISO, toISO);
   const items = [...feed, ...fam, ...trips];
   if (opts.dinners !== false) {
     const days = Math.min(62, Math.max(1, Math.round((Date.parse(toISO) - Date.parse(fromISO)) / 86400000) + 1));

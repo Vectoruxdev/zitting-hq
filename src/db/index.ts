@@ -34,6 +34,13 @@ const client = connectionString
       max: 6,
       idle_timeout: 20,
       connect_timeout: 10,
+      // No pipelining: postgres.js normally sends the next query on a
+      // connection before the previous reply arrives (max_pipeline 100). The
+      // Supabase transaction pooler (Supavisor) scrambles or drops those
+      // replies once several are in flight, and the promises never settle —
+      // the "dashboard section timed out" hang. One query in flight per
+      // connection; concurrency comes from the pool instead.
+      max_pipeline: 1,
     }))
   : null;
 

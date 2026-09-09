@@ -19,11 +19,10 @@ export interface FrameContext extends FrameUser {
 
 export async function frameContext(user: CurrentUser | null | undefined): Promise<FrameContext> {
   const base = frameUser(user);
-  const [person, unread, modules] = await Promise.all([
-    getPerson(user?.memberId).catch(() => null),
-    unreadCount({ memberId: user?.memberId ?? null, role: user?.role ?? "owner" }).catch(() => 0),
-    allowedModules(user).catch(() => [] as string[]),
-  ]);
+  // Sequential: pooler-safe (concurrent pipelined reads hang on Supavisor).
+  const person = await getPerson(user?.memberId).catch(() => null);
+  const unread = await unreadCount({ memberId: user?.memberId ?? null, role: user?.role ?? "owner" }).catch(() => 0);
+  const modules = await allowedModules(user).catch(() => [] as string[]);
   return {
     ...base,
     name: person?.greetingName || base.name,
