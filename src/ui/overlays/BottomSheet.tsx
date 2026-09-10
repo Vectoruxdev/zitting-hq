@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { useDialog, useExit } from "./Modal";
+import { inOverlayHost, keyboardUp, overlayFrame, useOverlayHost, useVisibleViewport } from "./viewport";
 
 export interface BottomSheetProps {
   open: boolean;
@@ -14,11 +15,14 @@ export interface BottomSheetProps {
   style?: React.CSSProperties;
 }
 
-/** Phone-first dialog that rises from the bottom. Drag handle, focus trap, scroll lock, Escape. `container="absolute"` inside a 392px frame. */
+/** Phone-first dialog that rises from the bottom. Drag handle, focus trap, scroll lock, Escape. Fixed sheets render in a body portal (see useOverlayHost); `container="absolute"` inside a 392px frame. While the on-screen keyboard is up it sizes itself to the visible part of the screen, so the footer buttons stay above the keys and the body scrolls in the room that is left. */
 export function BottomSheet({ open, onClose, title, children, footer, container = "fixed", height = "auto", dismissible = true, style }: BottomSheetProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const mounted = useExit(open);
-  useDialog(open, dismissible ? onClose : null, ref);
+  const host = useOverlayHost(container);
+  useDialog(open && host !== null, dismissible ? onClose : null, ref);
+  const box = useVisibleViewport(open && container === "fixed", ref);
+  const keys = keyboardUp(box);
   const [dragY, setDragY] = React.useState(0);
   const start = React.useRef<number | null>(null);
   if (!mounted) return null;
@@ -26,16 +30,17 @@ export function BottomSheet({ open, onClose, title, children, footer, container 
   const onDown = (e: React.TouchEvent | React.MouseEvent) => { start.current = clientY(e); };
   const onMove = (e: React.TouchEvent | React.MouseEvent) => { if (start.current == null) return; setDragY(Math.max(0, clientY(e) - start.current)); };
   const onUp = () => { if (dragY > 90 && dismissible) onClose?.(); setDragY(0); start.current = null; };
-  return (
-    <div style={{ position: container, inset: 0, zIndex: "var(--z-sheet)", display: "flex", alignItems: "flex-end" }}>
+  return inOverlayHost(
+    <div style={{ ...overlayFrame(container, box), zIndex: "var(--z-sheet)", display: "flex", alignItems: "flex-end" }}>
       <div onClick={dismissible ? onClose : undefined} aria-hidden style={{ position: "absolute", inset: 0, background: "var(--overlay-scrim)", animation: `${open ? "zh-fade-in" : "zh-fade-out"} var(--dur-slow) var(--ease-out) both` }} />
       <div ref={ref} role="dialog" aria-modal="true" tabIndex={-1} onTouchMove={onMove} onTouchEnd={onUp} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-        style={{ position: "relative", width: "100%", maxHeight: "92%", height, display: "flex", flexDirection: "column", background: "var(--surface-raised)", color: "var(--text-primary)", borderRadius: "var(--radius-sheet) var(--radius-sheet) 0 0", boxShadow: "var(--shadow-3)", outline: "none", paddingBottom: "env(safe-area-inset-bottom)", transform: dragY ? `translateY(${dragY}px)` : undefined, transition: dragY ? "none" : "transform var(--dur-base) var(--ease-out)", animation: dragY ? "none" : `${open ? "zh-sheet-up" : "zh-fade-out"} var(--dur-slow) var(--ease-out) both`, ...style }}>
+        style={{ position: "relative", width: "100%", maxHeight: keys ? "100%" : "92%", height, display: "flex", flexDirection: "column", background: "var(--surface-raised)", color: "var(--text-primary)", borderRadius: "var(--radius-sheet) var(--radius-sheet) 0 0", boxShadow: "var(--shadow-3)", outline: "none", paddingBottom: keys ? 0 : "env(safe-area-inset-bottom)", transform: dragY ? `translateY(${dragY}px)` : undefined, transition: dragY ? "none" : "transform var(--dur-base) var(--ease-out)", animation: dragY ? "none" : `${open ? "zh-sheet-up" : "zh-fade-out"} var(--dur-slow) var(--ease-out) both`, ...style }}>
         <div onTouchStart={onDown} onMouseDown={onDown} style={{ display: "grid", placeItems: "center", height: 28, cursor: "grab", touchAction: "none" }}><span aria-hidden style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-strong)" }} /></div>
         {title ? <h2 style={{ margin: 0, padding: "0 20px 12px", font: "var(--type-h2)" }}>{title}</h2> : null}
-        <div style={{ padding: "0 20px 20px", overflow: "auto", flex: 1 }}>{children}</div>
+        <div style={{ padding: "0 20px 20px", overflow: "auto", overscrollBehavior: "contain", flex: 1, minHeight: 0 }}>{children}</div>
         {footer ? <footer style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 20px 20px", borderTop: "1px solid var(--border-hairline)" }}>{footer}</footer> : null}
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

@@ -131,7 +131,7 @@ export default function SetPasswordPage() {
     border: "1px solid var(--border-hairline)",
     borderRadius: "var(--radius-md, 12px)",
     color: "var(--text-primary)",
-    fontSize: 14,
+    fontSize: "max(14px, var(--fs-control-min, 0px))",
     outline: "none",
     boxSizing: "border-box",
   };

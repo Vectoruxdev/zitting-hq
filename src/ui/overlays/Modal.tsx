@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { IconButton } from "../core/IconButton";
+import { inOverlayHost, overlayFrame, useOverlayHost, useVisibleViewport } from "./viewport";
 
 /** Focus trap + scroll lock + Escape shared by Modal, BottomSheet, Drawer and Lightbox. */
 export function useDialog(open: boolean, onClose: (() => void) | null | undefined, ref: React.RefObject<HTMLElement | null>) {
@@ -58,16 +59,18 @@ export interface ModalProps {
   style?: React.CSSProperties;
 }
 
-/** Centered dialog (desktop and tablet). On phones prefer BottomSheet. `container="absolute"` scopes it to a positioned parent (device frames). */
+/** Centered dialog (desktop and tablet). On phones prefer BottomSheet. Fixed dialogs render in a body portal (see useOverlayHost); `container="absolute"` scopes it to a positioned parent (device frames). Header and footer stay put, only the body scrolls; while the on-screen keyboard is up the dialog sizes itself to the visible part of the screen. */
 export function Modal({ open, onClose, title, description, children, footer, size = "md", container = "fixed", dismissible = true, style }: ModalProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const mounted = useExit(open);
+  const host = useOverlayHost(container);
   const titleId = React.useId();
-  useDialog(open, dismissible ? onClose : null, ref);
+  useDialog(open && host !== null, dismissible ? onClose : null, ref);
+  const box = useVisibleViewport(open && container === "fixed", ref);
   if (!mounted) return null;
   const w = size === "sm" ? 400 : size === "lg" ? 720 : 520;
-  return (
-    <div style={{ position: container, inset: 0, zIndex: "var(--z-modal)", display: "grid", placeItems: "center", padding: 16 }}>
+  return inOverlayHost(
+    <div style={{ ...overlayFrame(container, box), zIndex: "var(--z-modal)", display: "grid", placeItems: "center", padding: 16 }}>
       <div onClick={dismissible ? onClose : undefined} aria-hidden style={{ position: "absolute", inset: 0, background: "var(--overlay-scrim)", backdropFilter: "blur(4px)", animation: `${open ? "zh-fade-in" : "zh-fade-out"} var(--dur-slow) var(--ease-out) both` }} />
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={title ? titleId : undefined} tabIndex={-1}
         style={{ position: "relative", width: "100%", maxWidth: w, maxHeight: "calc(100% - 32px)", display: "flex", flexDirection: "column", background: "var(--surface-raised)", color: "var(--text-primary)", borderRadius: "var(--radius-sheet)", boxShadow: "var(--shadow-3)", border: "1px solid var(--border-hairline)", outline: "none", overflow: "hidden", animation: `${open ? "zh-modal-in" : "zh-fade-out"} var(--dur-slow) var(--ease-out) both`, ...style }}>
@@ -80,9 +83,10 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             {dismissible ? <IconButton icon="x" label="Close" onClick={onClose} /> : null}
           </header>
         ) : null}
-        <div style={{ padding: 24, overflow: "auto", flex: 1 }}>{children}</div>
+        <div style={{ padding: 24, overflow: "auto", overscrollBehavior: "contain", flex: 1, minHeight: 0 }}>{children}</div>
         {footer ? <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "0 24px 20px" }}>{footer}</footer> : null}
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

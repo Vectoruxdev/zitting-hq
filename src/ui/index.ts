@@ -44,6 +44,7 @@ export { DetailList, type DetailListProps, type DetailItem } from "./display/Det
 export { Modal, useDialog, useExit, type ModalProps } from "./overlays/Modal";
 export { BottomSheet, type BottomSheetProps } from "./overlays/BottomSheet";
 export { Drawer, type DrawerProps } from "./overlays/Drawer";
+export { useVisibleViewport, visibleBox, keyboardUp, overlayFrame, useOverlayHost, inOverlayHost, type VisibleBox } from "./overlays/viewport";
 export { Toast, ToastProvider, useToast, type ToastOptions, type ToastTone } from "./overlays/Toast";
 export { Tooltip, type TooltipProps } from "./overlays/Tooltip";
 

@@ -47,7 +47,7 @@ export function TextInput({
             outline: 'none',
             color: 'var(--text-primary)',
             fontFamily: 'var(--font-sans)',
-            fontSize: 14,
+            fontSize: 'max(14px, var(--fs-control-min, 0px))',
           }}
           {...rest}
         />

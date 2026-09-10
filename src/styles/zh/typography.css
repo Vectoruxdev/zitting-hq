@@ -23,4 +23,12 @@
   --type-money-lg: 600 var(--fs-3xl)/var(--lh-tight) var(--font-num);
   --type-money: 500 var(--fs-md)/1.2 var(--font-num);
   --type-money-sm: 500 var(--fs-sm)/1.2 var(--font-num);
+  /* form controls: body size, but never under 16px on a touch screen — iPhone Safari
+     zooms the whole page when a smaller field gets focus, which throws sheets and
+     their buttons out of view. Raw <input>s outside the kit use --fs-control-min directly. */
+  --fs-control-min: 0px;
+  --fs-control: max(var(--fs-md), var(--fs-control-min));
+  --type-control: 400 var(--fs-control)/var(--lh-body) var(--font-ui);
+  --type-control-money: 500 var(--fs-control)/1.2 var(--font-num);
 }
+@media (hover: none) and (pointer: coarse) { :root { --fs-control-min: 16px; } }

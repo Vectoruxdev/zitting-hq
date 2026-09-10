@@ -35,7 +35,7 @@ export function Select({ label, hint, error, options = [], value, defaultValue, 
       >
         <select
           id={id} name={name} disabled={disabled} value={value} defaultValue={defaultValue} onChange={onChange} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-          style={{ appearance: "none", WebkitAppearance: "none", width: "100%", height: "100%", border: 0, outline: "none", background: "transparent", color: placeholderShown ? "var(--control-placeholder)" : "var(--text-primary)", font: "var(--type-body)", padding: "0 36px 0 12px", cursor: disabled ? "not-allowed" : "pointer" }}
+          style={{ appearance: "none", WebkitAppearance: "none", width: "100%", height: "100%", border: 0, outline: "none", background: "transparent", color: placeholderShown ? "var(--control-placeholder)" : "var(--text-primary)", font: "var(--type-control)", padding: "0 36px 0 12px", cursor: disabled ? "not-allowed" : "pointer" }}
         >
           {placeholder ? <option value="">{placeholder}</option> : null}
           {options.map((o) => typeof o === "string" ? <option key={o} value={o}>{o}</option> : <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}

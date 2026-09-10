@@ -4,6 +4,7 @@ import * as React from "react";
 import { IconButton } from "../core/IconButton";
 import { Avatar, type AvatarProps } from "../display/Avatar";
 import { useDialog, useExit } from "../overlays/Modal";
+import { inOverlayHost, useOverlayHost } from "../overlays/viewport";
 
 export interface LightboxItem {
   id?: string | number;
@@ -30,7 +31,8 @@ export interface LightboxProps {
 export function Lightbox({ open, onClose, items = [], index = 0, onIndexChange, container = "fixed", onFavorite, onShare, style }: LightboxProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const mounted = useExit(open);
-  useDialog(open, onClose, ref);
+  const host = useOverlayHost(container);
+  useDialog(open && host !== null, onClose, ref);
   const [i, setI] = React.useState(index);
   const [seen, setSeen] = React.useState({ index, open });
   if (seen.index !== index || seen.open !== open) { setSeen({ index, open }); setI(index); }
@@ -44,7 +46,7 @@ export function Lightbox({ open, onClose, items = [], index = 0, onIndexChange, 
   }, [open, i, go]);
   if (!mounted || !items.length) return null;
   const p = items[i] || items[0];
-  return (
+  return inOverlayHost(
     <div
       ref={ref} role="dialog" aria-modal="true" aria-label={p.alt || "Photo"} tabIndex={-1}
       onTouchStart={(e) => (startX.current = e.touches[0].clientX)}
@@ -77,6 +79,7 @@ export function Lightbox({ open, onClose, items = [], index = 0, onIndexChange, 
           <span style={{ font: "var(--type-caption)", opacity: 0.85 }}>{[p.person && p.person.name && `Added by ${p.person.name}`, p.when, p.album].filter(Boolean).join(" · ")}</span>
         </div>
       </footer>
-    </div>
+    </div>,
+    host,
   );
 }
