@@ -21,6 +21,7 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { isTransientDbError, noteDbFailure } from "./read-health";
 
 // Accept either our own DATABASE_URL or the names the Vercel→Supabase
 // integration injects (POSTGRES_URL = pooled transaction connection).
@@ -88,16 +89,19 @@ function guardedQuery(query: string, params?: unknown[], options?: unknown) {
   const run = (mode: "rows" | "values") =>
     new Promise<unknown>((resolve, reject) => {
       let settled = false;
+      // Whatever finally fails is noted for cached() (see read-health.ts), so an
+      // empty answer produced by a dropped connection is never cached.
+      const fail = (e: unknown) => { if (isTransientDbError(e)) noteDbFailure(e); reject(e); };
       const retry = (why: string) => {
         if (settled) return; settled = true;
-        if (!isRead(query)) { reject(new DbTimeoutError(`write (${query.slice(0, 40)}…)`, QUERY_STALL_MS)); return; }
+        if (!isRead(query)) { fail(new DbTimeoutError(`write (${query.slice(0, 40)}…)`, QUERY_STALL_MS)); return; }
         resetDb(why);
-        attempt(mode).then(resolve, reject);
+        attempt(mode).then(resolve, fail);
       };
       const t = setTimeout(() => retry(`query stalled > ${QUERY_STALL_MS}ms`), QUERY_STALL_MS);
       attempt(mode).then(
         (v) => { if (settled) return; settled = true; clearTimeout(t); resolve(v); },
-        (e) => { if (settled) return; clearTimeout(t); if (isDeadPool(e)) retry("query hit a dead pool"); else { settled = true; reject(e); } }
+        (e) => { if (settled) return; clearTimeout(t); if (isDeadPool(e)) retry("query hit a dead pool"); else { settled = true; fail(e); } }
       );
     });
   // The shape Drizzle expects back: awaitable, with .values() for row arrays.
@@ -152,7 +156,7 @@ export function withDbTimeout<T>(p: Promise<T>, ms: number, label: string): Prom
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => {
       resetDb(`${label} > ${ms}ms`);
-      reject(new DbTimeoutError(label, ms));
+      const err = new DbTimeoutError(label, ms); noteDbFailure(err); reject(err);
     }, ms);
     p.then(
       (v) => { clearTimeout(t); resolve(v); },
