@@ -7,16 +7,20 @@
  */
 export interface Scenic {
   title: string; place: string;
-  /** 1600 px thumb — the fallback when the browser ignores srcSet. */
+  /** 1280 px thumb — the fallback when the browser ignores srcSet. */
   src: string;
-  /** 640 / 1024 / 1600 / 1920 px thumbs; every source is at least 2000 px wide (Commons imageinfo, 2026-09-09), so none of these asks for an upscale. */
+  /** 500 / 960 / 1280 / 1920 px thumbs; every source is at least 2000 px wide (Commons imageinfo, 2026-09-09), so none of these asks for an upscale. */
   srcSet: string;
   credit: string; license: string; source: string;
 }
 
-const THUMB_WIDTHS = [640, 1024, 1600, 1920] as const;
+// Only Wikimedia's standard thumbnail widths (20 40 60 120 250 330 500 960 1280
+// 1920 3840): since 2026 hotlinked requests for any other width get a 400
+// "Use thumbnail sizes listed on https://w.wiki/GHai" (T414805), which blanked
+// the Home hero on 2026-09-10.
+const THUMB_WIDTHS = [500, 960, 1280, 1920] as const;
 const thumb = (path: string, w: number) => `https://upload.wikimedia.org/wikipedia/commons/thumb/${path}/${w}px-${path.split("/").pop()}`;
-const commons = (path: string) => thumb(path, 1600);
+const commons = (path: string) => thumb(path, 1280);
 const srcSet = (path: string) => THUMB_WIDTHS.map((w) => `${thumb(path, w)} ${w}w`).join(", ");
 /** Hero width by viewport: full width on phones, the content column on larger screens. */
 export const SCENIC_SIZES = "(max-width: 900px) 100vw, min(100vw - 280px, 1200px)";

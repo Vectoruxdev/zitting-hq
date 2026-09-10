@@ -15,8 +15,14 @@
  * Readers must take everything they need as arguments (no cookies()/headers()
  * inside) and return data, not class instances. Dates, Maps and Sets survive
  * the round trip; anything else exotic is flattened to JSON.
+ *
+ * A result read while the database was failing (dropped socket, stalled
+ * pooler, watchdog) is handed back as is but never stored — readers swallow
+ * query errors into empty rows, and caching those emptied every screen for
+ * ten minutes after each blip (see db/read-health.ts).
  */
 import { unstable_cache, revalidatePath, revalidateTag, updateTag } from "next/cache";
+import { watchDbRead } from "@/db/read-health";
 
 export type CacheTag =
   | "people"        // roster, profiles, module access, account access
@@ -37,6 +43,16 @@ const SAFETY_TTL_SECONDS = 600;
 const MAX_ENTRY_BYTES = 1_500_000;
 const oversized = new Set<string>();
 let cacheUsable = true;
+
+/** Thrown inside unstable_cache so nothing is stored; carries the value the caller still gets. */
+const DEGRADED = Symbol("degraded-read");
+interface Degraded<R> extends Error { [DEGRADED]: true; value: R; reason: Error }
+function degraded<R>(value: R, reason: Error): Degraded<R> {
+  const e = new Error("read degraded — not cached") as Degraded<R>;
+  e[DEGRADED] = true; e.value = value; e.reason = reason;
+  return e;
+}
+const isDegraded = <R,>(e: unknown): e is Degraded<R> => typeof e === "object" && e !== null && (e as Degraded<R>)[DEGRADED] === true;
 
 type Encoded = { $d: string } | { $m: [unknown, unknown][] } | { $s: unknown[] } | unknown;
 
@@ -76,7 +92,9 @@ export function cached<A extends unknown[], R>(
 ): (...args: A) => Promise<R> {
   const inner = unstable_cache(
     async (...args: A) => {
-      const enc = encode(await fn(...args));
+      const { value, failure } = await watchDbRead(() => fn(...args));
+      if (failure) throw degraded(value, failure);
+      const enc = encode(value);
       const bytes = JSON.stringify(enc).length;
       if (bytes > MAX_ENTRY_BYTES && !oversized.has(key)) {
         oversized.add(key);
@@ -92,6 +110,10 @@ export function cached<A extends unknown[], R>(
     try {
       return decode(await inner(...args)) as R;
     } catch (e) {
+      if (isDegraded<R>(e)) {
+        console.warn(`[cache] ${key}: the database failed during this read (${e.reason.message.slice(0, 120)}) — served as is, not cached`);
+        return e.value;
+      }
       // No incremental cache here (vitest, a script): read live, quietly, from now on.
       if (e instanceof Error && /incrementalCache/.test(e.message)) { cacheUsable = false; return fn(...args); }
       throw e;
