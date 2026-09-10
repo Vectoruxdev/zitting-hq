@@ -15,7 +15,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
     border: "1px solid var(--control-border)",
     borderRadius: "var(--radius-control)",
     color: "var(--text-primary)",
-    font: "var(--type-body)",
+    font: "var(--type-control)",
     outline: "none",
   };
 

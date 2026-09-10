@@ -35,7 +35,7 @@ export function Select({ value, onChange, options = [], placeholder, label, disa
             outline: 'none',
             color: value ? 'var(--text-primary)' : 'var(--text-tertiary)',
             fontFamily: 'var(--font-sans)',
-            fontSize: 14,
+            fontSize: 'max(14px, var(--fs-control-min, 0px))',
             cursor: disabled ? 'not-allowed' : 'pointer',
           }}
           {...rest}

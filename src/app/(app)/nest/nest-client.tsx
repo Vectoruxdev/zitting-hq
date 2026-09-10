@@ -94,7 +94,7 @@ function Btn({ children, onClick, disabled, tone }: { children: React.ReactNode;
 }
 
 const selStyle: React.CSSProperties = {
-  font: "inherit", fontSize: 14, padding: "9px 10px", borderRadius: 10,
+  font: "inherit", fontSize: "max(14px, var(--fs-control-min, 0px))", padding: "9px 10px", borderRadius: 10,
   border: "1px solid var(--border-hairline)", background: "var(--surface-sunken)",
   color: "var(--text-primary)", minHeight: 40,
 };

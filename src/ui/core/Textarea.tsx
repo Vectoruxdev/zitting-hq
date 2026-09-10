@@ -38,7 +38,7 @@ export function Textarea({ label, hint, error, rows = 3, maxRows = 8, disabled, 
         style={{
           resize: "none", width: "100%", padding: "12px 14px", borderRadius: "var(--radius-control)", background: disabled ? "var(--surface-sunken)" : "var(--control-bg)",
           border: `1px solid ${error ? "var(--negative)" : focus ? "var(--accent)" : "var(--control-border)"}`,
-          boxShadow: focus ? (error ? "var(--ring-error)" : "0 0 0 3px var(--accent-soft)") : "none", color: "var(--text-primary)", font: "var(--type-body)",
+          boxShadow: focus ? (error ? "var(--ring-error)" : "0 0 0 3px var(--accent-soft)") : "none", color: "var(--text-primary)", font: "var(--type-control)",
           lineHeight: "24px", outline: "none", opacity: disabled ? 0.6 : 1, ...transition("border-color, box-shadow"),
         }}
       />

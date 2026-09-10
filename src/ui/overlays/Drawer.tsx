@@ -2,6 +2,7 @@
 import * as React from "react";
 import { IconButton } from "../core/IconButton";
 import { useDialog, useExit } from "./Modal";
+import { inOverlayHost, overlayFrame, useOverlayHost, useVisibleViewport } from "./viewport";
 
 export interface DrawerProps {
   open: boolean;
@@ -20,11 +21,13 @@ export interface DrawerProps {
 export function Drawer({ open, onClose, title, description, children, footer, width = 420, container = "fixed", side = "right", style }: DrawerProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const mounted = useExit(open);
-  useDialog(open, onClose, ref);
+  const host = useOverlayHost(container);
+  useDialog(open && host !== null, onClose, ref);
+  const box = useVisibleViewport(open && container === "fixed", ref);
   if (!mounted) return null;
   const off = side === "right" ? "translateX(24px)" : "translateX(-24px)";
-  return (
-    <div style={{ position: container, inset: 0, zIndex: "var(--z-drawer)", display: "flex", justifyContent: side === "right" ? "flex-end" : "flex-start" }}>
+  return inOverlayHost(
+    <div style={{ ...overlayFrame(container, box), zIndex: "var(--z-drawer)", display: "flex", justifyContent: side === "right" ? "flex-end" : "flex-start" }}>
       <div onClick={onClose} aria-hidden style={{ position: "absolute", inset: 0, background: "var(--overlay-scrim)", animation: `${open ? "zh-fade-in" : "zh-fade-out"} var(--dur-slow) var(--ease-out) both` }} />
       <div ref={ref} role="dialog" aria-modal="true" tabIndex={-1} style={{ position: "relative", width: "100%", maxWidth: width, height: "100%", display: "flex", flexDirection: "column", background: "var(--surface-raised)", color: "var(--text-primary)", boxShadow: "var(--shadow-3)", outline: "none", borderRadius: side === "right" ? "var(--radius-xl) 0 0 var(--radius-xl)" : "0 var(--radius-xl) var(--radius-xl) 0", opacity: open ? 1 : 0, transform: open ? "none" : off, transition: "opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out)", animation: open ? "zh-fade-in var(--dur-slow) var(--ease-out) both" : undefined, ...style }}>
         <header style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "20px 16px 12px 24px" }}>
@@ -34,9 +37,10 @@ export function Drawer({ open, onClose, title, description, children, footer, wi
           </div>
           <IconButton icon="x" label="Close" onClick={onClose} />
         </header>
-        <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>{children}</div>
+        <div style={{ padding: "0 24px 24px", overflow: "auto", overscrollBehavior: "contain", flex: 1, minHeight: 0 }}>{children}</div>
         {footer ? <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 24px 20px", borderTop: "1px solid var(--border-hairline)" }}>{footer}</footer> : null}
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

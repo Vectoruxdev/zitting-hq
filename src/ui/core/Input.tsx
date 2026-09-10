@@ -69,7 +69,7 @@ export function Input({ label, hint, error, iconLeft, prefix, suffix, size = "md
         <input
           type={type} disabled={disabled} value={value} defaultValue={defaultValue} onChange={onChange} placeholder={placeholder} aria-invalid={!!error || undefined}
           onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} inputMode={isMoney ? "decimal" : undefined} {...rest}
-          style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", color: "var(--text-primary)", font: isMoney ? "var(--type-money)" : "var(--type-body)", fontVariantNumeric: isMoney ? "tabular-nums" : undefined, textAlign: isMoney ? "right" : "left", padding: 0, ...inputStyle }}
+          style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", color: "var(--text-primary)", font: isMoney ? "var(--type-control-money)" : "var(--type-control)", fontVariantNumeric: isMoney ? "tabular-nums" : undefined, textAlign: isMoney ? "right" : "left", padding: 0, ...inputStyle }}
         />
         {loading ? <Icon name="loader-circle" size={16} color="var(--text-tertiary)" style={{ animation: "zh-spin 800ms linear infinite" }} />
           : error ? <Icon name="circle-alert" size={16} color="var(--negative)" />

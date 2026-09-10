@@ -47,6 +47,7 @@ export function Gallery() {
   const [theme, setTheme] = React.useState<"light" | "dark">("light");
   const [modal, setModal] = React.useState(false);
   const [sheet, setSheet] = React.useState(false);
+  const [sheetForm, setSheetForm] = React.useState(false);
   const [drawer, setDrawer] = React.useState(false);
   const [box, setBox] = React.useState(false);
   const [fire, setFire] = React.useState(0);
@@ -140,7 +141,7 @@ export function Gallery() {
           </Block>
 
           <Block title="Overlays and navigation">
-            <Button variant="secondary" onClick={() => setModal(true)}>Modal</Button><Button variant="secondary" onClick={() => setSheet(true)}>Bottom sheet</Button><Button variant="secondary" onClick={() => setDrawer(true)}>Drawer</Button><Button variant="secondary" onClick={() => setBox(true)}>Lightbox</Button>
+            <Button variant="secondary" onClick={() => setModal(true)}>Modal</Button><Button variant="secondary" onClick={() => setSheet(true)}>Bottom sheet</Button><Button variant="secondary" onClick={() => setSheetForm(true)}>Long form sheet</Button><Button variant="secondary" onClick={() => setDrawer(true)}>Drawer</Button><Button variant="secondary" onClick={() => setBox(true)}>Lightbox</Button>
             <Tabs items={[{ key: "home", label: "Home" }, { key: "activity", label: "Activity", count: 12 }, { key: "review", label: "Review", count: 2 }]} style={{ width: "100%" }} />
             <WeekStrip days={week} value={new Date()} style={{ width: "100%" }} />
           </Block>
@@ -183,6 +184,18 @@ export function Gallery() {
         </Modal>
         <BottomSheet open={sheet} onClose={() => setSheet(false)} title="Add" footer={<Button size="lg" fullWidth iconLeft="camera" onClick={() => setSheet(false)}>Open camera</Button>}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{[["image", "A photo"], ["receipt", "A receipt"], ["quote", "A quote"], ["shopping-cart", "To the list"]].map(([ic, t]) => <Card key={t} icon={ic} title={t} intensity="finance" onClick={() => setSheet(false)} />)}</div>
+        </BottomSheet>
+        <BottomSheet open={sheetForm} onClose={() => setSheetForm(false)} title="New recipe" footer={<><Button size="lg" fullWidth onClick={() => setSheetForm(false)}>Save recipe</Button><Button size="lg" fullWidth variant="ghost" onClick={() => setSheetForm(false)}>Cancel</Button></>}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <Input label="Name" placeholder="Sheet-pan chicken" />
+            <Input label="Ingredient" placeholder="Chicken thighs" />
+            <Input label="Ingredient" placeholder="Red onion" />
+            <Input label="Ingredient" placeholder="Lemon" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><Input label="Serves" type="number" inputMode="numeric" /><Input label="Minutes" type="number" inputMode="numeric" /></div>
+            <Input label="Tags" hint="comma separated · weeknight, kids love it" />
+            <Input label="Where it's from" type="url" placeholder="https://…" />
+            <Textarea label="Notes" placeholder="Oven temp, the trick that makes it work…" />
+          </div>
         </BottomSheet>
         <Drawer open={drawer} onClose={() => setDrawer(false)} title="Target" description="Sep 8 · Kids" footer={<Button onClick={() => setDrawer(false)}>Done</Button>}>
           <DetailList items={[{ label: "Amount", value: <Money value={-42.18} /> }, { label: "Account", value: "Jaelynn’s card" }, { label: "Receipt", value: "Attached" }]} />

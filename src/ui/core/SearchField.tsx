@@ -28,7 +28,7 @@ export function SearchField({ value, defaultValue = "", onChange, onSubmit, plac
         type="search" value={v} autoFocus={autoFocus} placeholder={placeholder} aria-label={placeholder}
         onChange={(e) => set(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
         onKeyDown={(e) => { if (e.key === "Escape") set(""); if (e.key === "Enter" && onSubmit) onSubmit(v); }}
-        style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", color: "var(--text-primary)", font: "var(--type-body)", padding: 0, appearance: "none", WebkitAppearance: "none" }}
+        style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", color: "var(--text-primary)", font: "var(--type-control)", padding: 0, appearance: "none", WebkitAppearance: "none" }}
       />
       {v ? (
         <button type="button" aria-label="Clear" onClick={() => set("")} style={{ width: 24, height: 24, borderRadius: 12, border: 0, background: "var(--border-strong)", color: "var(--surface-card)", display: "grid", placeItems: "center", cursor: "pointer", padding: 0 }}>
