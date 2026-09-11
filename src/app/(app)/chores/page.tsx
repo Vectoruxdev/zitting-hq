@@ -13,11 +13,11 @@ import { CleaningClient } from "./cleaning-client";
 export const metadata = { title: "Cleaning · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
-export default async function CleaningPage({ searchParams }: { searchParams: Promise<{ day?: string; tab?: string }> }) {
+export default async function CleaningPage({ searchParams }: { searchParams: Promise<{ day?: string; tab?: string; new?: string }> }) {
   const user = await timed("/chores", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/chores");
   await guardModule(user, "chores");
-  const { day, tab } = await searchParams;
+  const { day, tab, new: openNew } = await searchParams;
   const todayISO = familyTodayISO();
   const dayISO = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : todayISO;
   const [peopleAll, data] = await Promise.all([getPeople().catch(() => []), loadCleaning(todayISO)]);
@@ -34,7 +34,7 @@ export default async function CleaningPage({ searchParams }: { searchParams: Pro
       <CleaningClient
         lists={lists} tasks={tasks} completions={data.completions.filter((c) => taskIds.has(c.taskId))} handoffs={data.handoffs.filter((h) => taskIds.has(h.taskId))}
         people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))}
-        me={me} isAdult={user?.role === "owner" || meKind === "adult"} todayISO={todayISO} dayISO={dayISO} initialTab={tab === "week" || tab === "lists" ? tab : "today"}
+        me={me} isAdult={user?.role === "owner" || meKind === "adult"} todayISO={todayISO} dayISO={dayISO} initialTab={tab === "week" || tab === "lists" ? tab : "today"} openNew={openNew === "1"}
         templates={CLEANING_TEMPLATES.map((t) => ({ key: t.key, name: t.name, icon: t.icon, body: t.body, count: t.tasks.length }))}
       />
     </Suspense>

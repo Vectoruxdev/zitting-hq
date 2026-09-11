@@ -15,7 +15,7 @@ import * as actions from "./actions";
 
 export interface PersonLite { id: string; name: string; greetingName: string; hue: number; avatarUrl: string | null; kind: "adult" | "child" }
 export interface TemplateLite { key: string; name: string; icon: string; body: string; count: number }
-interface Props { lists: CleaningList[]; tasks: CleaningTask[]; completions: CleaningCompletion[]; handoffs: Handoff[]; people: PersonLite[]; me: string | null; isAdult: boolean; todayISO: string; dayISO: string; initialTab: string; templates: TemplateLite[] }
+interface Props { lists: CleaningList[]; tasks: CleaningTask[]; completions: CleaningCompletion[]; handoffs: Handoff[]; people: PersonLite[]; me: string | null; isAdult: boolean; todayISO: string; dayISO: string; initialTab: string; templates: TemplateLite[]; /** Open the new-task sheet straight away (the Add button on the tab bar). */ openNew?: boolean }
 
 const TIMES: { key: TimeOfDay; label: string }[] = [{ key: "morning", label: "Morning" }, { key: "afternoon", label: "Afternoon" }, { key: "evening", label: "Evening" }, { key: "any", label: "Anytime" }];
 const timeLabel = (t: TimeOfDay) => (t === "any" ? null : TIMES.find((x) => x.key === t)?.label ?? null);
@@ -39,7 +39,7 @@ function Inner(p: Props) {
   const [fire, setFire] = React.useState(0);
   const [whoSheet, setWhoSheet] = React.useState<OpenItem | null>(null);
   const [handSheet, setHandSheet] = React.useState<OpenItem | null>(null);
-  const [editTask, setEditTask] = React.useState<{ task?: CleaningTask; listId?: string } | null>(null);
+  const [editTask, setEditTask] = React.useState<{ task?: CleaningTask; listId?: string } | null>(p.openNew && p.isAdult && p.lists.length ? { listId: p.lists[0].id } : null);
   const [editList, setEditList] = React.useState<{ list?: CleaningList } | null>(null);
   const person = React.useCallback((id: string | null) => p.people.find((x) => x.id === id) || null, [p.people]);
   const go = (day: string, t = tab) => router.push(`/chores?day=${day}&tab=${t}`);
