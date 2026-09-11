@@ -111,7 +111,7 @@ function Inner({ person, prefs, canEdit }: { person: Person | null; prefs: Membe
         <Section title="Notifications" eyebrow="What reaches you">
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {MEMBER_NOTIFICATION_EVENTS.map((e) => {
-              const p = prefState.find((x) => x.event === e.key) || { event: e.key, inApp: true, push: true, email: true };
+              const p = prefState.find((x) => x.event === e.key) || { event: e.key, inApp: !e.defaultOff, push: !e.defaultOff, email: !e.defaultOff };
               return (
                 <div key={e.key} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 0" }}>
                   <span style={{ font: "var(--type-body)", fontWeight: 500 }}>{e.label}</span>

@@ -2,7 +2,7 @@
    App data is authenticated and live, so it is never cached: pages go to the
    network first and fall back to /offline when there is none. Static assets
    (Next chunks, icons, self-hosted fonts) are cached stale-while-revalidate. */
-const VERSION = "zhq-v2";
+const VERSION = "zhq-v3";
 const STATIC = `${VERSION}-static`;
 const PAGES = `${VERSION}-pages`;
 const OFFLINE_URL = "/offline";
@@ -83,13 +83,21 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     (async () => {
       const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const isFinance = url.startsWith("/finance");
       for (const client of list) {
-        if (client.url.includes("/finance") && "focus" in client) {
+        if (!("focus" in client)) continue;
+        if (isFinance && client.url.includes("/finance")) {
           await client.focus();
           // Focus alone won't navigate the SPA — tell it which notification to open.
           if (notifId != null && "postMessage" in client) {
             client.postMessage({ type: "open-notif", notifId });
           }
+          return;
+        }
+        if (!isFinance) {
+          // Any open app window: bring it forward and take it to the page (Cleaning, Calendar, …).
+          await client.focus();
+          if ("navigate" in client) { try { await client.navigate(url); } catch (e) { /* uncontrolled window: fall through to a new one */ if (self.clients.openWindow) await self.clients.openWindow(url); } }
           return;
         }
       }

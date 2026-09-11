@@ -6,12 +6,13 @@ import { SCENIC_SIZES } from "@/lib/scenic";
  * household money; a wife sees only her Spendable; both see the family.
  */
 import * as React from "react";
+import { fmtShort } from "@/lib/dates";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Avatar, Badge, Button, Celebrate, Checkbox, EmptyState, Icon, IconButton, ImageCard, ModuleTile, Money, PhotoHero, ProgressBar, Reveal, Row, Section, Skeleton, Stagger,
 } from "@/ui";
-import { completeChoreAction, uncompleteChoreAction } from "@/app/(app)/chores/actions";
+import { completeTaskAction, uncompleteTaskAction } from "@/app/(app)/chores/actions";
 import { toggleSaved } from "@/app/(app)/quotes/actions";
 import { viewAsAction } from "@/app/actions/view-as";
 import { modulesFor } from "@/lib/modules";
@@ -289,32 +290,29 @@ function GoalsSection({ data }: { data: HomeData }) {
   );
 }
 
-/** Adults: each kid's day at a glance. A child: their own list with big check-offs. */
+/** Your open cleaning for today (yours plus anything for "anyone"); adults also see each kid's day at a glance. */
 function ChoresSection({ data }: { data: HomeData }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
   const [fire, setFire] = React.useState(0);
-  const kid = data.viewer.kind === "child";
   const mine = data.chores.people.find((p) => p.memberId === data.viewer.memberId);
-  if (kid) {
-    if (!mine) return <Section title="Your chores"><Row icon="sun" tint="butter" title="Nothing today" meta="No chores on your list." /></Section>;
-    const left = mine.items.filter((i) => !i.done).length;
-    return (
-      <Section title="Your chores" action={<Badge tone={left ? "neutral" : "positive"} icon={left ? undefined : "circle-check"}>{mine.done}/{mine.total}</Badge>} onAction={() => router.push("/chores")}>
-        <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 2 }}>
-          <Celebrate fire={fire} />
-          {mine.items.map((it) => <Row key={it.choreId} leading={<Checkbox checked={it.done} size="lg" disabled={busy === it.choreId} onChange={async (v) => { setBusy(it.choreId); await (v ? completeChoreAction(it.choreId, data.todayISO, data.viewer.memberId) : uncompleteChoreAction(it.choreId, data.todayISO)); setBusy(null); if (v && left === 1) setFire((f) => f + 1); router.refresh(); }} style={{ minHeight: 0, padding: 0 }} />} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: it.done ? "line-through" : "none", opacity: it.done ? 0.65 : 1 }}><Icon name={it.icon ?? "square-check"} size={18} color="var(--text-secondary)" />{it.title}</span>} trailing={it.needsCheck && it.done ? <Badge tone={it.checked ? "positive" : "warning"} size="sm">{it.checked ? "Checked" : "Waiting"}</Badge> : undefined} chevron={false} style={{ minHeight: 56 }} />)}
-          {!left ? <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 0", font: "var(--type-body-sm)", color: "var(--positive)" }}><Icon name="party-popper" size={18} />All done for today</div> : null}
-        </div>
-      </Section>
-    );
-  }
-  const kids = data.chores.people.filter((p) => data.people.find((x) => x.id === p.memberId)?.kind === "child");
-  if (!kids.length) return null;
+  const items = [...(mine?.items ?? []), ...data.chores.anyone];
+  const kids = data.viewer.kind === "adult" ? data.chores.people.filter((p) => data.people.find((x) => x.id === p.memberId)?.kind === "child") : [];
+  if (!items.length && !kids.length) return null;
+  const left = items.filter((i) => !i.done).length;
+  const tick = async (it: HomeData["chores"]["anyone"][number], v: boolean) => {
+    setBusy(it.taskId);
+    await (v ? completeTaskAction(it.taskId, it.periodKey, data.viewer.memberId) : uncompleteTaskAction(it.taskId, it.periodKey));
+    setBusy(null);
+    if (v && left === 1 && items.length > 1) setFire((f) => f + 1);
+  };
   return (
-    <Section title="Chores today" onAction={() => router.push("/chores")}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {kids.map((k) => { const who = data.people.find((x) => x.id === k.memberId); const all = k.done === k.total; return <Row key={k.memberId} avatar={who ? { name: who.name, src: who.avatarUrl, person: who.hue } : undefined} title={who?.greetingName ?? "Someone"} meta={`${k.done} of ${k.total} done · ${k.points} pt${k.points === 1 ? "" : "s"}${k.streak > 1 ? ` · ${k.streak}-day streak` : ""}`} trailing={all ? <Badge tone="positive" icon="circle-check">Done</Badge> : <Badge tone="neutral">{k.total - k.done} left</Badge>} onClick={() => router.push("/chores")} />; })}
+    <Section title="Cleaning today" action={items.length ? <Badge tone={left ? "neutral" : "positive"} icon={left ? undefined : "circle-check"}>{items.length - left}/{items.length}</Badge> : undefined} onAction={() => router.push("/chores")}>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 2 }}>
+        <Celebrate fire={fire} />
+        {items.map((it) => <Row key={`${it.taskId}:${it.periodKey}`} leading={<Checkbox checked={it.done} size="lg" disabled={busy === it.taskId} onChange={(v) => tick(it, v)} style={{ minHeight: 0, padding: 0 }} />} title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: it.done ? "line-through" : "none", opacity: it.done ? 0.65 : 1 }}><Icon name={it.icon ?? "sparkles"} size={18} color="var(--text-secondary)" />{it.title}</span>} meta={[it.list, it.due ? (it.due === data.todayISO ? "due today" : `by ${fmtShort(it.due)}`) : null].filter(Boolean).join(" · ")} chevron={false} style={{ minHeight: 52 }} />)}
+        {items.length && !left ? <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 0", font: "var(--type-body-sm)", color: "var(--positive)" }}><Icon name="party-popper" size={18} />All done for today</div> : null}
+        {kids.map((k) => { const who = data.people.find((x) => x.id === k.memberId); const all = k.done === k.total; return <Row key={k.memberId} avatar={who ? { name: who.name, src: who.avatarUrl, person: who.hue } : undefined} title={`${who?.greetingName ?? "Kid"}: ${k.done}/${k.total}`} meta={[k.streak > 1 ? `${k.streak}-day streak` : null, all ? "All done" : `${k.total - k.done} to go`].filter(Boolean).join(" · ")} trailing={all ? <Badge tone="positive" icon="circle-check">Done</Badge> : undefined} onClick={() => router.push("/chores")} />; })}
       </div>
     </Section>
   );

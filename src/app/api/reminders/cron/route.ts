@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendDueReminders } from "@/db/reminders";
+import { sendCleaningReminders } from "@/db/cleaning-reminders";
 import { touchedByJob } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +19,11 @@ export async function GET(req: Request) {
     if (auth !== `Bearer ${secret}`) return NextResponse.json({ ok: false }, { status: 401 });
   }
   try {
-    const sent = await sendDueReminders(new Date());
+    const now = new Date();
+    const sent = await sendDueReminders(now);
+    const cleaning = await sendCleaningReminders(now).catch((e) => { console.error("[reminders cron] cleaning", e); return 0; });
     touchedByJob("notifications");
-    return NextResponse.json({ ok: true, sent });
+    return NextResponse.json({ ok: true, sent, cleaning });
   } catch (err) {
     console.error("[reminders cron]", err);
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "failed" }, { status: 500 });

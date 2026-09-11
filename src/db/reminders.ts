@@ -45,4 +45,5 @@ export async function tickReminders(): Promise<void> {
   if (now - lastTick < TICK_MS) return;
   lastTick = now;
   try { await sendDueReminders(new Date(now)); } catch (err) { console.error("[reminders tick]", err); }
+  try { const { sendCleaningReminders } = await import("./cleaning-reminders"); await sendCleaningReminders(new Date(now)); } catch (err) { console.error("[cleaning tick]", err); }
 }

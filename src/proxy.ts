@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/auth",
   "/offline", // service-worker offline shell (static, no data)
   "/api/health/db", // DB reachability probe (no data)
+  "/api/tick", // sends already-due reminders; idempotent, returns counts only (keep-warm ping)
   "/api/plaid/webhook",
   "/api/plaid/cron-sync",
   "/api/transfers/cron", // daily transfers job (CRON_SECRET-guarded)

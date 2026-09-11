@@ -70,7 +70,8 @@ export async function sendPushToAudience(t: PushTarget): Promise<PushStats> {
     const payload = JSON.stringify({
       title: t.title,
       body: t.body ?? "",
-      url: t.notifId != null ? `/finance?notif=${t.notifId}` : "/finance",
+      // An app route (starts with "/") opens that page; finance ids keep the finance deep link.
+      url: t.linkTo && t.linkTo.startsWith("/") ? t.linkTo : t.notifId != null ? `/finance?notif=${t.notifId}` : "/finance",
       linkTo: t.linkTo ?? null,
       notifId: t.notifId ?? null,
       tag: t.tag ?? undefined,
