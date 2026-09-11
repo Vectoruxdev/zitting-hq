@@ -145,7 +145,7 @@ function Inner(p: Props) {
       {/* ---- night sheet ---- */}
       {night ? <NightSheet date={night} cell={cellFor(night)} plan={nightFor(night)} recipes={p.recipes} people={adults.length ? adults : p.people} allPeople={p.people} onClose={() => setNight(null)} busy={busy} run={run} /> : null}
       {/* ---- swap sheet ---- */}
-      {swapFor ? <SwapSheet date={swapFor} me={me} isOwner={isOwner} nights={p.nights} people={adults} person={person} onClose={() => { setSwapFor(null); router.replace("/meals"); }} busy={busy} run={run} /> : null}
+      {swapFor ? <SwapSheet date={swapFor} todayISO={p.todayISO} me={me} isOwner={isOwner} nights={p.nights} people={adults} person={person} onClose={() => { setSwapFor(null); router.replace("/meals"); }} busy={busy} run={run} /> : null}
       {/* ---- rotation sheet ---- */}
       <RotationSheet open={rotationOpen} onClose={() => setRotationOpen(false)} rotation={p.rotation} degraded={!!p.degraded} people={p.people} run={run} />
       {/* ---- recipe editor ---- */}
@@ -236,14 +236,15 @@ function NightSheet({ date, cell, plan, recipes, people, allPeople, onClose, bus
   );
 }
 
-function SwapSheet({ date, me, isOwner, nights, people, person, onClose, busy, run }: { date: string; me: string | null; isOwner: boolean; nights: NightPlan[]; people: PersonLite[]; person: (id: string | null | undefined) => PersonLite | null; onClose: () => void; busy: string | null; run: Run }) {
+function SwapSheet({ date, todayISO, me, isOwner, nights, people, person, onClose, busy, run }: { date: string; todayISO: string; me: string | null; isOwner: boolean; nights: NightPlan[]; people: PersonLite[]; person: (id: string | null | undefined) => PersonLite | null; onClose: () => void; busy: string | null; run: Run }) {
   const mine = nights.find((n) => n.date === date);
   const cookId = mine?.cook ?? me;
   const others = people.filter((x) => x.id !== cookId);
   const [to, setTo] = React.useState(others[0]?.id ?? "");
   const [toDate, setToDate] = React.useState("");
   const [msg, setMsg] = React.useState("");
-  const theirNights = nights.filter((n) => n.cook === to && n.date > date).slice(0, 6);
+  // Any of their upcoming nights, earlier in the week included — on a Monday you can give Friday away and take Wednesday.
+  const theirNights = nights.filter((n) => n.cook === to && n.date !== date && n.date >= todayISO).slice(0, 6);
   const target = person(to);
   return (
     <BottomSheet open onClose={onClose} title="Swap dinner night" footer={<><Button size="lg" fullWidth disabled={!to || !toDate} loading={busy === "swap"} onClick={async () => { if (await run("swap", () => actions.requestSwap({ toMemberId: to, fromDate: date, toDate, message: msg }), `Asked ${target?.greetingName ?? "them"} to swap`)) onClose(); }}>Ask {target?.greetingName ?? "them"} to swap</Button><Button size="lg" fullWidth variant="ghost" onClick={onClose}>Cancel</Button></>}>
