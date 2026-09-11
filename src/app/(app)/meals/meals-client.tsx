@@ -250,7 +250,7 @@ function SwapSheet({ date, me, isOwner, nights, people, person, onClose, busy, r
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>{fmtNight(date)} is {cookId === me ? "yours" : `${person(cookId)?.greetingName ?? "someone"}’s`}. Give it to someone and take one of their nights.{!isOwner && cookId !== me ? " Only the cook (or the owner) can offer a swap." : ""}</p>
         <Select label="Give it to" value={to} options={others.map((x) => ({ value: x.id, label: x.greetingName }))} onChange={(e) => { setTo(e.target.value); setToDate(""); }} />
-        {theirNights.length ? <RadioGroup label={`Take which of ${target?.greetingName ?? "their"} nights?`} layout="cards" columns={2} value={toDate} onChange={setToDate} options={theirNights.map((n) => ({ value: n.date, label: fmtNight(n.date), description: n.note || undefined }))} /> : <InlineAlert tone="info">{target?.greetingName ?? "They"} {to ? "has no nights in the next two weeks — set the rotation first." : "—"}</InlineAlert>}
+        {theirNights.length ? <RadioGroup label={`Take which of ${target ? `${target.greetingName}’s` : "their"} nights?`} layout="cards" columns={2} value={toDate} onChange={setToDate} options={theirNights.map((n) => ({ value: n.date, label: fmtNight(n.date), description: n.note || undefined }))} /> : <InlineAlert tone="info">{target?.greetingName ?? "They"} {to ? "has no nights in the next two weeks — set the rotation first." : "—"}</InlineAlert>}
         <Input label="Say why (optional)" placeholder="Late meeting" value={msg} onChange={(e) => setMsg(e.target.value)} />
       </div>
     </BottomSheet>
