@@ -6,6 +6,7 @@ import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
 import { getMealsData, addDaysISO, localISO } from "@/db/household";
 import { coverUrl, getNights, listIdeas, listSwaps, getRotation, weekStartOf } from "@/db/kitchen";
+import { collectDbFailures } from "@/db/read-health";
 import { getPeople } from "@/db/profiles";
 import { familyTodayISO } from "@/db/dashboard";
 import { MealsClient } from "./meals-client";
@@ -20,14 +21,18 @@ export default async function MealsPage({ searchParams }: { searchParams: Promis
   const { week, tab, swap } = await searchParams;
   const todayISO = familyTodayISO();
   const weekStart = week && /^\d{4}-\d{2}-\d{2}$/.test(week) ? weekStartOf(new Date(week + "T00:00:00")) : weekStartOf(new Date(todayISO + "T00:00:00"));
-  const [data, nights, swaps, rotation, ideas, people] = await Promise.all([
+  // Readers answer with empty rows when the database drops a connection (so a
+  // missing feature table never takes the screen down); the tally says when
+  // that happened so the screen can admit it instead of showing an empty week.
+  const { value: [data, nights, swaps, rotation, ideas, people], failures } = await collectDbFailures(() => Promise.all([
     getMealsData(weekStart),
     getNights(weekStart, 14).catch(() => []),
     listSwaps("pending").catch(() => []),
     getRotation().catch(() => []),
     listIdeas().catch(() => []),
     getPeople().catch(() => []),
-  ]);
+  ]));
+  if (failures.length) console.warn(`[page /meals] rendered from a degraded read: ${failures.join("; ")}`);
   const recipes = await Promise.all(data.recipes.map(async (r) => ({
     id: r.id, name: r.name, ingredients: r.ingredients || [], notes: r.notes, servings: r.servings ?? null, prepMinutes: r.prepMinutes ?? null, tags: r.tags ?? [], sourceUrl: r.sourceUrl ?? null, lastMadeOn: r.lastMadeOn ? String(r.lastMadeOn) : null,
     coverUrl: await coverUrl(r.coverPhotoPath).catch(() => null),
@@ -44,6 +49,7 @@ export default async function MealsPage({ searchParams }: { searchParams: Promis
           nights={nights} swaps={swaps} rotation={rotation} ideas={ideas}
           people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))}
           viewer={{ memberId: user?.memberId ?? null, role: (user?.role ?? "owner") as "owner" | "partner" | "member" }}
+          degraded={failures.length > 0}
           localToday={localISO(new Date())}
         />
       </Suspense>

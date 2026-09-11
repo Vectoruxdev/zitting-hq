@@ -21,7 +21,11 @@ interface Props {
   initialTab: "week" | "recipes" | "ideas"; swapDate: string | null; swapId: number | null;
   recipes: Recipe[]; plan: PlanCell[]; nights: NightPlan[]; swaps: Swap[]; rotation: RotationDay[]; ideas: Idea[]; people: PersonLite[];
   viewer: { memberId: string | null; role: "owner" | "partner" | "member" };
+  /** A database read failed underneath this render (a dropped pooler connection): what is shown may be incomplete, and the rotation sheet must not take it as the truth. */
+  degraded?: boolean;
 }
+/** Runs a server action and says whether it worked, so a sheet closes only on success. */
+type Run = (key: string, fn: () => Promise<unknown>, done?: string) => Promise<boolean>;
 
 const addDays = (iso: string, d: number) => { const x = new Date(iso + "T00:00:00"); x.setDate(x.getDate() + d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
 const weekdayOf = (iso: string) => new Date(iso + "T00:00:00").getDay();
@@ -42,7 +46,22 @@ function Inner(p: Props) {
   const recipeById = new Map(p.recipes.map((r) => [r.id, r]));
   const cellFor = (date: string) => p.plan.find((m) => m.date === date && m.slot === "dinner") || null;
   const nightFor = (date: string) => p.nights.find((n) => n.date === date) || null;
-  const run = async (key: string, fn: () => Promise<unknown>, done?: string) => { setBusy(key); try { const r = (await fn()) as { ok?: boolean; error?: string } | undefined; if (r && r.ok === false) toast({ title: r.error || "That didn't save", tone: "negative" }); else if (done) toast({ title: done, tone: "positive" }); router.refresh(); } finally { setBusy(null); } };
+  // Toast the outcome, refresh on success, and never let a thrown error
+  // (network, timeout, a stalled pooler) vanish into the console — that
+  // silence is what made one bad database minute look like a broken form.
+  const run: Run = async (key, fn, done) => {
+    setBusy(key);
+    try {
+      const r = (await fn()) as { ok?: boolean; error?: string } | undefined;
+      if (r && r.ok === false) { toast({ title: r.error || "That didn't save", tone: "negative" }); return false; }
+      if (done) toast({ title: done, tone: "positive" });
+      router.refresh();
+      return true;
+    } catch {
+      toast({ title: "That didn’t save — check the connection and try again", tone: "negative" });
+      return false;
+    } finally { setBusy(null); }
+  };
   const days = Array.from({ length: 7 }, (_, i) => addDays(p.weekStart, i));
   const incoming = p.swaps.filter((s) => s.toMemberId === me);
   const outgoing = p.swaps.filter((s) => s.fromMemberId === me);
@@ -78,6 +97,7 @@ function Inner(p: Props) {
         </div>
       </Reveal>
       {!p.configured ? <InlineAlert tone="warning" title="The kitchen tables aren’t set up yet">Run <code>supabase-phase2-kitchen.sql</code> in the Supabase SQL Editor, then reload.</InlineAlert> : null}
+      {p.degraded ? <InlineAlert tone="warning" title="Couldn’t reach the family database just now" action={<Button size="sm" variant="soft" iconLeft="refresh-cw" onClick={() => router.refresh()}>Reload</Button>}>Some of this page may be missing or out of date. Anything you save still goes through — reload in a moment to see it.</InlineAlert> : null}
 
       {tab === "week" ? (
         <Stagger gap={28} start={1}>
@@ -98,7 +118,7 @@ function Inner(p: Props) {
           <Section title={`${fmtShort(p.weekStart)} – ${fmtShort(addDays(p.weekStart, 6))}`} action={<div style={{ display: "flex", gap: 4 }}><IconButton icon="chevron-left" label="Previous week" size="sm" variant="outline" onClick={() => router.push(`/meals?week=${p.prevWeek}`)} /><IconButton icon="chevron-right" label="Next week" size="sm" variant="outline" onClick={() => router.push(`/meals?week=${p.nextWeek}`)} /><IconButton icon="sliders-horizontal" label="Who cooks when" size="sm" variant="outline" onClick={() => setRotationOpen(true)} /></div>}>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{days.map((d) => <NightRow key={d} date={d} />)}</div>
           </Section>
-          {!p.rotation.length ? <EmptyState compact icon="chef-hat" title="No dinner rotation yet" body="Set who cooks on which nights once, and every week fills itself in. Swaps handle the exceptions." action={<Button size="sm" variant="soft" iconLeft="sliders-horizontal" onClick={() => setRotationOpen(true)}>Set the rotation</Button>} style={{ padding: "4px 0" }} /> : null}
+          {!p.rotation.length && !p.degraded ? <EmptyState compact icon="chef-hat" title="No dinner rotation yet" body="Set who cooks on which nights once, and every week fills itself in. Swaps handle the exceptions." action={<Button size="sm" variant="soft" iconLeft="sliders-horizontal" onClick={() => setRotationOpen(true)}>Set the rotation</Button>} style={{ padding: "4px 0" }} /> : null}
         </Stagger>
       ) : null}
 
@@ -127,24 +147,66 @@ function Inner(p: Props) {
       {/* ---- swap sheet ---- */}
       {swapFor ? <SwapSheet date={swapFor} me={me} isOwner={isOwner} nights={p.nights} people={adults} person={person} onClose={() => { setSwapFor(null); router.replace("/meals"); }} busy={busy} run={run} /> : null}
       {/* ---- rotation sheet ---- */}
-      <BottomSheet open={rotationOpen} onClose={() => setRotationOpen(false)} title="Who cooks when" footer={<Button size="lg" fullWidth variant="ghost" onClick={() => setRotationOpen(false)}>Done</Button>}>
-        <p style={{ margin: "0 0 12px", font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>The default for each night. Swaps and one-off changes sit on top.</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {[1, 2, 3, 4, 5, 6, 0].map((wd) => { const r = p.rotation.find((x) => x.weekday === wd); return (
-            <div key={wd} style={{ display: "grid", gridTemplateColumns: "72px 1fr 1fr", gap: 8, alignItems: "end" }}>
-              <span style={{ font: "var(--type-label)", paddingBottom: 12 }}>{WEEKDAYS[wd]}</span>
-              <Select label="Cooks" size="sm" value={r?.cookMemberId ?? ""} placeholder="Nobody" options={p.people.filter((x) => x.kind === "adult").map((x) => ({ value: x.id, label: x.greetingName }))} onChange={(e) => run(`rot-${wd}`, () => actions.setRotationDay(wd, e.target.value || null, r?.dishMemberIds ?? []))} />
-              <Select label="Dishes" size="sm" value={r?.dishMemberIds?.[0] ?? ""} placeholder="Nobody" options={p.people.map((x) => ({ value: x.id, label: x.greetingName }))} onChange={(e) => run(`rotd-${wd}`, () => actions.setRotationDay(wd, r?.cookMemberId ?? null, e.target.value ? [e.target.value] : []))} />
-            </div>); })}
-        </div>
-      </BottomSheet>
+      <RotationSheet open={rotationOpen} onClose={() => setRotationOpen(false)} rotation={p.rotation} degraded={!!p.degraded} people={p.people} run={run} />
       {/* ---- recipe editor ---- */}
       {editing ? <RecipeSheet recipe={editing === "new" ? null : editing} onClose={() => setEditing(null)} busy={busy} run={run} /> : null}
     </div>
   );
 }
 
-function NightSheet({ date, cell, plan, recipes, people, allPeople, onClose, busy, run }: { date: string; cell: PlanCell | null; plan: NightPlan | null; recipes: Recipe[]; people: PersonLite[]; allPeople: PersonLite[]; onClose: () => void; busy: string | null; run: (k: string, fn: () => Promise<unknown>, done?: string) => Promise<void> }) {
+/** One night's defaults as the sheet shows them ("" = nobody). */
+interface RotRow { cook: string; dish: string }
+const NIGHTS = [1, 2, 3, 4, 5, 6, 0];
+function rotationRows(rotation: RotationDay[]): Record<number, RotRow> {
+  const out: Record<number, RotRow> = {};
+  for (const wd of NIGHTS) { const r = rotation.find((x) => x.weekday === wd); out[wd] = { cook: r?.cookMemberId ?? "", dish: r?.dishMemberIds?.[0] ?? "" }; }
+  return out;
+}
+
+/**
+ * Who cooks when. Each picker shows the choice the moment it is made and
+ * saves in the background. The old version bound the pickers to the server's
+ * copy, so every choice snapped back to "Nobody" until the page had refreshed:
+ * a fraction of a second normally, but a database blip on 2026-09-11 stretched
+ * that to 10–25 s and made four nights of choices look like they never took.
+ * Server truth (a refresh after a save, or someone else's edit) still wins for
+ * any night with no save in flight; a degraded read is not truth.
+ */
+function RotationSheet({ open, onClose, rotation, degraded, people, run }: { open: boolean; onClose: () => void; rotation: RotationDay[]; degraded: boolean; people: PersonLite[]; run: Run }) {
+  const [rows, setRows] = React.useState(() => rotationRows(rotation));
+  const [pending, setPending] = React.useState<Record<number, number>>({});
+  const [seen, setSeen] = React.useState(rotation);
+  if (seen !== rotation) {
+    setSeen(rotation);
+    if (!degraded) { const fresh = rotationRows(rotation); setRows((prev) => { const next = { ...fresh }; for (const wd of NIGHTS) if (pending[wd]) next[wd] = prev[wd]; return next; }); }
+  }
+  const change = async (wd: number, patch: Partial<RotRow>) => {
+    const before = rows[wd]; const next = { ...before, ...patch };
+    setRows((r) => ({ ...r, [wd]: next }));
+    setPending((c) => ({ ...c, [wd]: (c[wd] ?? 0) + 1 }));
+    const ok = await run(`rot-${wd}`, () => actions.setRotationDay(wd, next.cook || null, next.dish ? [next.dish] : []));
+    setPending((c) => ({ ...c, [wd]: Math.max(0, (c[wd] ?? 1) - 1) }));
+    if (!ok) setRows((r) => (r[wd] === next ? { ...r, [wd]: before } : r));
+  };
+  const adults = people.filter((x) => x.kind === "adult").map((x) => ({ value: x.id, label: x.greetingName }));
+  const everyone = people.map((x) => ({ value: x.id, label: x.greetingName }));
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Who cooks when" footer={<Button size="lg" fullWidth variant="ghost" onClick={onClose}>Done</Button>}>
+      <p style={{ margin: "0 0 12px", font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>The default for each night. Swaps and one-off changes sit on top. Each choice saves as you make it.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {NIGHTS.map((wd) => (
+          <div key={wd} style={{ display: "grid", gridTemplateColumns: "72px 1fr 1fr", gap: 8, alignItems: "end" }}>
+            <span style={{ font: "var(--type-label)", paddingBottom: 12, display: "flex", flexDirection: "column", gap: 2 }}>{WEEKDAYS[wd]}{pending[wd] ? <span aria-live="polite" style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Saving…</span> : null}</span>
+            <Select label="Cooks" size="sm" value={rows[wd].cook} placeholder="Nobody" options={adults} onChange={(e) => change(wd, { cook: e.target.value })} />
+            <Select label="Dishes" size="sm" value={rows[wd].dish} placeholder="Nobody" options={everyone} onChange={(e) => change(wd, { dish: e.target.value })} />
+          </div>
+        ))}
+      </div>
+    </BottomSheet>
+  );
+}
+
+function NightSheet({ date, cell, plan, recipes, people, allPeople, onClose, busy, run }: { date: string; cell: PlanCell | null; plan: NightPlan | null; recipes: Recipe[]; people: PersonLite[]; allPeople: PersonLite[]; onClose: () => void; busy: string | null; run: Run }) {
   const [text, setText] = React.useState(cell?.recipeId ? "" : cell?.title ?? "");
   const [q, setQ] = React.useState("");
   const [cook, setCook] = React.useState<string>(plan?.cook ?? "");
@@ -153,7 +215,7 @@ function NightSheet({ date, cell, plan, recipes, people, allPeople, onClose, bus
   const current = cell?.recipeId ? recipes.find((r) => r.id === cell.recipeId) : null;
   const saveWho = () => run(`night-${date}`, () => actions.setNight(date, { cookMemberId: cook || null, dishMemberIds: dish, note }), "Saved");
   return (
-    <BottomSheet open onClose={onClose} title={`${fmtNight(date)} — dinner`} footer={<><Button size="lg" fullWidth onClick={async () => { await saveWho(); onClose(); }} loading={busy === `night-${date}`}>Save</Button>{plan?.overridden ? <Button size="lg" fullWidth variant="ghost" onClick={() => run(`night-${date}`, () => actions.setNight(date, { reset: true }))}>Back to the usual rotation</Button> : null}</>}>
+    <BottomSheet open onClose={onClose} title={`${fmtNight(date)} — dinner`} footer={<><Button size="lg" fullWidth onClick={async () => { if (await saveWho()) onClose(); }} loading={busy === `night-${date}`}>Save</Button>{plan?.overridden ? <Button size="lg" fullWidth variant="ghost" onClick={() => run(`night-${date}`, () => actions.setNight(date, { reset: true }))}>Back to the usual rotation</Button> : null}</>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <Section title="What" gap={8}>
           {current ? <Row icon="utensils" tint="butter" title={current.name} meta={`${current.ingredients.length} ingredients`} trailing={<><Button size="sm" variant="soft" iconLeft="shopping-cart" onClick={() => run(`send-${current.id}`, () => actions.sendRecipeToList(current.id), "Ingredients added to the list")}>List</Button><IconButton icon="x" label="Clear" size="sm" onClick={() => run(`meal-${date}`, () => actions.setMeal({ date, recipeId: null, title: null }))} /></>} chevron={false} /> : (
@@ -174,7 +236,7 @@ function NightSheet({ date, cell, plan, recipes, people, allPeople, onClose, bus
   );
 }
 
-function SwapSheet({ date, me, isOwner, nights, people, person, onClose, busy, run }: { date: string; me: string | null; isOwner: boolean; nights: NightPlan[]; people: PersonLite[]; person: (id: string | null | undefined) => PersonLite | null; onClose: () => void; busy: string | null; run: (k: string, fn: () => Promise<unknown>, done?: string) => Promise<void> }) {
+function SwapSheet({ date, me, isOwner, nights, people, person, onClose, busy, run }: { date: string; me: string | null; isOwner: boolean; nights: NightPlan[]; people: PersonLite[]; person: (id: string | null | undefined) => PersonLite | null; onClose: () => void; busy: string | null; run: Run }) {
   const mine = nights.find((n) => n.date === date);
   const cookId = mine?.cook ?? me;
   const others = people.filter((x) => x.id !== cookId);
@@ -184,18 +246,18 @@ function SwapSheet({ date, me, isOwner, nights, people, person, onClose, busy, r
   const theirNights = nights.filter((n) => n.cook === to && n.date > date).slice(0, 6);
   const target = person(to);
   return (
-    <BottomSheet open onClose={onClose} title="Swap dinner night" footer={<><Button size="lg" fullWidth disabled={!to || !toDate} loading={busy === "swap"} onClick={async () => { await run("swap", () => actions.requestSwap({ toMemberId: to, fromDate: date, toDate, message: msg }), `Asked ${target?.greetingName ?? "them"} to swap`); onClose(); }}>Ask {target?.greetingName ?? "them"} to swap</Button><Button size="lg" fullWidth variant="ghost" onClick={onClose}>Cancel</Button></>}>
+    <BottomSheet open onClose={onClose} title="Swap dinner night" footer={<><Button size="lg" fullWidth disabled={!to || !toDate} loading={busy === "swap"} onClick={async () => { if (await run("swap", () => actions.requestSwap({ toMemberId: to, fromDate: date, toDate, message: msg }), `Asked ${target?.greetingName ?? "them"} to swap`)) onClose(); }}>Ask {target?.greetingName ?? "them"} to swap</Button><Button size="lg" fullWidth variant="ghost" onClick={onClose}>Cancel</Button></>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>{fmtNight(date)} is {cookId === me ? "yours" : `${person(cookId)?.greetingName ?? "someone"}’s`}. Give it to someone and take one of their nights.{!isOwner && cookId !== me ? " Only the cook (or the owner) can offer a swap." : ""}</p>
         <Select label="Give it to" value={to} options={others.map((x) => ({ value: x.id, label: x.greetingName }))} onChange={(e) => { setTo(e.target.value); setToDate(""); }} />
-        {theirNights.length ? <RadioGroup label={`Take which of ${target?.greetingName ?? "their"} nights?`} layout="cards" columns={2} value={toDate} onChange={setToDate} options={theirNights.map((n) => ({ value: n.date, label: fmtNight(n.date), description: n.note || undefined }))} /> : <InlineAlert tone="info">{target?.greetingName ?? "They"} {to ? "has no nights in the next two weeks — set the rotation first." : "—"}</InlineAlert>}
+        {theirNights.length ? <RadioGroup label={`Take which of ${target ? `${target.greetingName}’s` : "their"} nights?`} layout="cards" columns={2} value={toDate} onChange={setToDate} options={theirNights.map((n) => ({ value: n.date, label: fmtNight(n.date), description: n.note || undefined }))} /> : <InlineAlert tone="info">{target?.greetingName ?? "They"} {to ? "has no nights in the next two weeks — set the rotation first." : "—"}</InlineAlert>}
         <Input label="Say why (optional)" placeholder="Late meeting" value={msg} onChange={(e) => setMsg(e.target.value)} />
       </div>
     </BottomSheet>
   );
 }
 
-function RecipeSheet({ recipe, onClose, busy, run }: { recipe: Recipe | null; onClose: () => void; busy: string | null; run: (k: string, fn: () => Promise<unknown>, done?: string) => Promise<void> }) {
+function RecipeSheet({ recipe, onClose, busy, run }: { recipe: Recipe | null; onClose: () => void; busy: string | null; run: Run }) {
   const [name, setName] = React.useState(recipe?.name ?? "");
   const [ing, setIng] = React.useState<{ name: string; qty?: string }[]>(recipe?.ingredients?.length ? recipe.ingredients : [{ name: "" }]);
   const [notes, setNotes] = React.useState(recipe?.notes ?? "");
@@ -219,7 +281,7 @@ function RecipeSheet({ recipe, onClose, busy, run }: { recipe: Recipe | null; on
     await run("cover", async () => { const r = await actions.uploadRecipeCover(recipe.id, fd); if (r.ok) setCover(r.url ?? null); return r; }, "Photo added");
   };
   return (
-    <BottomSheet open onClose={onClose} title={recipe ? "Edit recipe" : "New recipe"} footer={<><Button size="lg" fullWidth onClick={save} disabled={!name.trim()} loading={busy === "recipe"}>Save recipe</Button>{recipe ? (confirm ? <Button size="lg" fullWidth variant="danger" onClick={() => run("recipe", async () => { const r = await actions.deleteRecipe(recipe.id); onClose(); return r; })}>Really delete</Button> : <Button size="lg" fullWidth variant="ghost" onClick={() => setConfirm(true)}>Delete</Button>) : null}</>}>
+    <BottomSheet open onClose={onClose} title={recipe ? "Edit recipe" : "New recipe"} footer={<><Button size="lg" fullWidth onClick={save} disabled={!name.trim()} loading={busy === "recipe"}>Save recipe</Button>{recipe ? (confirm ? <Button size="lg" fullWidth variant="danger" onClick={() => run("recipe", async () => { const r = await actions.deleteRecipe(recipe.id); if (r.ok) onClose(); return r; })}>Really delete</Button> : <Button size="lg" fullWidth variant="ghost" onClick={() => setConfirm(true)}>Delete</Button>) : null}</>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {recipe ? <div style={{ display: "flex", gap: 12, alignItems: "center" }}><ImageCard src={cover} ratio="4 / 3" style={{ width: 120 }} /><div style={{ display: "flex", flexDirection: "column", gap: 6 }}><input ref={file} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onCover(e.target.files?.[0])} /><Button size="sm" variant="secondary" iconLeft="camera" loading={busy === "cover"} onClick={() => file.current?.click()}>{cover ? "Change photo" : "Add a photo"}</Button><span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)" }}>Shows on the recipe and on Home.</span></div></div> : null}
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Sheet-pan chicken" />
@@ -238,7 +300,7 @@ function RecipeSheet({ recipe, onClose, busy, run }: { recipe: Recipe | null; on
   );
 }
 
-function IdeasTab({ ideas, people, me, busy, run, localToday }: { ideas: Idea[]; people: PersonLite[]; me: string | null; busy: string | null; run: (k: string, fn: () => Promise<unknown>, done?: string) => Promise<void>; localToday: string }) {
+function IdeasTab({ ideas, people, me, busy, run, localToday }: { ideas: Idea[]; people: PersonLite[]; me: string | null; busy: string | null; run: Run; localToday: string }) {
   const [url, setUrl] = React.useState("");
   const [planning, setPlanning] = React.useState<number | null>(null);
   const [date, setDate] = React.useState(localToday);
@@ -271,7 +333,7 @@ function IdeasTab({ ideas, people, me, busy, run, localToday }: { ideas: Idea[];
             </Card>); })}
         </div>
       )}
-      <BottomSheet open={planning != null} onClose={() => setPlanning(null)} title="Which night?" footer={<Button size="lg" fullWidth loading={busy === "plan"} onClick={async () => { if (planning != null) await run("plan", () => actions.planIdea(planning, date), "Planned"); setPlanning(null); }}>Plan it</Button>}>
+      <BottomSheet open={planning != null} onClose={() => setPlanning(null)} title="Which night?" footer={<Button size="lg" fullWidth loading={busy === "plan"} onClick={async () => { if (planning != null && (await run("plan", () => actions.planIdea(planning, date), "Planned"))) setPlanning(null); }}>Plan it</Button>}>
         <Input label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </BottomSheet>
     </Stagger>

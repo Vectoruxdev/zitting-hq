@@ -22,7 +22,7 @@
  * ten minutes after each blip (see db/read-health.ts).
  */
 import { unstable_cache, revalidatePath, revalidateTag, updateTag } from "next/cache";
-import { watchDbRead } from "@/db/read-health";
+import { noteDegradedRead, watchDbRead } from "@/db/read-health";
 
 export type CacheTag =
   | "people"        // roster, profiles, module access, account access
@@ -105,17 +105,24 @@ export function cached<A extends unknown[], R>(
     [key],
     { tags, revalidate: opts.revalidate ?? SAFETY_TTL_SECONDS }
   );
+  // A live read is not stored, but the page still deserves to know it failed.
+  const live = async (...args: A) => {
+    const { value, failure } = await watchDbRead(() => fn(...args));
+    if (failure) noteDegradedRead(key);
+    return value;
+  };
   return async (...args: A) => {
-    if (!cacheUsable || oversized.has(key)) return fn(...args);
+    if (!cacheUsable || oversized.has(key)) return live(...args);
     try {
       return decode(await inner(...args)) as R;
     } catch (e) {
       if (isDegraded<R>(e)) {
         console.warn(`[cache] ${key}: the database failed during this read (${e.reason.message.slice(0, 120)}) — served as is, not cached`);
+        noteDegradedRead(key);
         return e.value;
       }
       // No incremental cache here (vitest, a script): read live, quietly, from now on.
-      if (e instanceof Error && /incrementalCache/.test(e.message)) { cacheUsable = false; return fn(...args); }
+      if (e instanceof Error && /incrementalCache/.test(e.message)) { cacheUsable = false; return live(...args); }
       throw e;
     }
   };

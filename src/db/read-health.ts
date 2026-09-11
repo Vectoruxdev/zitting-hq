@@ -14,6 +14,15 @@ import { AsyncLocalStorage } from "node:async_hooks";
 interface Scope { failure: Error | null }
 const scope = new AsyncLocalStorage<Scope>();
 
+/**
+ * A page-wide tally on top of the per-reader scope: `collectDbFailures()`
+ * wraps a page's reads and comes back with every failure noted underneath,
+ * so the page can say "what you see may be incomplete" instead of presenting
+ * an empty week as the truth (2026-09-11: a two-minute pooler blip made four
+ * freshly saved dinner nights look like they had never been set).
+ */
+const tally = new AsyncLocalStorage<Set<string>>();
+
 /** Run a reader and report whether the database failed underneath it. */
 export async function watchDbRead<T>(fn: () => Promise<T>): Promise<{ value: T; failure: Error | null }> {
   const s: Scope = { failure: null };
@@ -21,10 +30,24 @@ export async function watchDbRead<T>(fn: () => Promise<T>): Promise<{ value: T; 
   return { value, failure: s.failure };
 }
 
+/** Run a page's reads and list the database failures that happened underneath them (empty when everything was read cleanly). */
+export async function collectDbFailures<T>(fn: () => Promise<T>): Promise<{ value: T; failures: string[] }> {
+  const seen = new Set<string>();
+  const value = await tally.run(seen, fn);
+  return { value, failures: [...seen] };
+}
+
 /** Called by the query wrapper when a query fails for a reason a retry could fix. */
 export function noteDbFailure(err: unknown): void {
+  const e = err instanceof Error ? err : new Error(String(err));
   const s = scope.getStore();
-  if (s && !s.failure) s.failure = err instanceof Error ? err : new Error(String(err));
+  if (s && !s.failure) s.failure = e;
+  tally.getStore()?.add(e.message.slice(0, 100));
+}
+
+/** Called by `cached()` when it hands back a value it refused to store. */
+export function noteDegradedRead(key: string): void {
+  tally.getStore()?.add(key);
 }
 
 /**
