@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTransientDbError, noteDbFailure, watchDbRead } from "./read-health";
+import { collectDbFailures, isTransientDbError, noteDbFailure, noteDegradedRead, watchDbRead } from "./read-health";
 
 describe("watchDbRead", () => {
   it("reports a failure noted anywhere under the read", async () => {
@@ -41,5 +41,31 @@ describe("isTransientDbError", () => {
     expect(isTransientDbError(Object.assign(new Error('relation "x" does not exist'), { code: "42P01" }))).toBe(false);
     expect(isTransientDbError(Object.assign(new Error("bad column"), { code: "42703" }))).toBe(false);
     expect(isTransientDbError(Object.assign(new Error("wrapped"), { cause: { code: "23505" } }))).toBe(false);
+  });
+});
+
+describe("collectDbFailures", () => {
+  it("lists every failure noted under a page's reads, through nested watched reads", async () => {
+    const r = await collectDbFailures(async () => {
+      const a = await watchDbRead(async () => { noteDbFailure(new Error("write CONNECTION_DESTROYED host:6543")); return []; });
+      const b = await watchDbRead(async () => "fine");
+      noteDegradedRead("kitchen:getRotation");
+      return [a.value, b.value];
+    });
+    expect(r.value).toEqual([[], "fine"]);
+    expect(r.failures).toEqual(["write CONNECTION_DESTROYED host:6543", "kitchen:getRotation"]);
+  });
+  it("is empty when every read was clean", async () => {
+    const r = await collectDbFailures(async () => watchDbRead(async () => 1));
+    expect(r.failures).toEqual([]);
+  });
+  it("keeps concurrent pages apart and ignores notes outside a page", async () => {
+    noteDegradedRead("stray");
+    const [a, b] = await Promise.all([
+      collectDbFailures(async () => { await new Promise((res) => setTimeout(res, 5)); noteDegradedRead("a"); return "a"; }),
+      collectDbFailures(async () => { await new Promise((res) => setTimeout(res, 1)); return "b"; }),
+    ]);
+    expect(a.failures).toEqual(["a"]);
+    expect(b.failures).toEqual([]);
   });
 });
