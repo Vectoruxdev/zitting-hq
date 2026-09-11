@@ -104,12 +104,16 @@ function guardedQuery(query: string, params?: unknown[], options?: unknown) {
         (e) => { if (settled) return; clearTimeout(t); if (isDeadPool(e)) retry("query hit a dead pool"); else { settled = true; fail(e); } }
       );
     });
-  // The shape Drizzle expects back: awaitable, with .values() for row arrays.
+  // The shape Drizzle expects back: awaitable, with .values() for row arrays,
+  // and .execute() — postgres.js's own begin() calls it on the BEGIN it sends
+  // through this wrapper, so every db.transaction() (the Plaid sync) needs it.
+  // Its absence broke every transaction from 2026-09-10 until this line.
   return {
     then: (a?: (v: unknown) => unknown, b?: (e: unknown) => unknown) => run("rows").then(a, b),
     catch: (b?: (e: unknown) => unknown) => run("rows").catch(b),
     finally: (f?: () => void) => run("rows").finally(f),
     values: () => run("values"),
+    execute: () => run("rows"),
   };
 }
 
@@ -123,7 +127,7 @@ let lastReset = 0;
  * Start a fresh pool for everything from here on. The old pool is left to
  * drain — in-flight queries on it finish normally (a busy pool must not have
  * its work destroyed under it), and a truly dead socket just sits there with
- * its watchdog already answered. At most one reset per 15 s: a burst of
+ * its watchdog already answered. At most one reset per 10 s: a burst of
  * timeouts means the pool is saturated, not stale, and swapping it repeatedly
  * only floods the pooler with new connections.
  */
