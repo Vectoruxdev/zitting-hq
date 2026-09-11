@@ -4,30 +4,39 @@ import { getCurrentUser } from "@/lib/auth";
 import { timed } from "@/lib/timing";
 import { isAuthConfigured } from "@/lib/supabase/server";
 import { guardModule } from "@/lib/module-access";
-import { listChores, listCompletions, weekOf } from "@/db/chores";
-import { addDaysISO } from "@/db/household";
+import { loadCleaning, visibleLists } from "@/db/cleaning";
+import { CLEANING_TEMPLATES } from "@/db/cleaning-templates";
 import { familyTodayISO } from "@/db/dashboard";
 import { getPeople } from "@/db/profiles";
-import { ChoresClient } from "./chores-client";
+import { CleaningClient } from "./cleaning-client";
 
-export const metadata = { title: "Chores · Zitting HQ" };
+export const metadata = { title: "Cleaning · Zitting HQ" };
 export const dynamic = "force-dynamic";
 
-export default async function ChoresPage({ searchParams }: { searchParams: Promise<{ day?: string; tab?: string }> }) {
+export default async function CleaningPage({ searchParams }: { searchParams: Promise<{ day?: string; tab?: string }> }) {
   const user = await timed("/chores", getCurrentUser());
   if (isAuthConfigured && !user) redirect("/login?redirect=/chores");
   await guardModule(user, "chores");
   const { day, tab } = await searchParams;
   const todayISO = familyTodayISO();
   const dayISO = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : todayISO;
-  const week = weekOf(dayISO);
-  const [people, chores, completions] = await Promise.all([getPeople().catch(() => []), listChores({ includeInactive: true }), listCompletions(addDaysISO(week[0], -70), week[6])]);
-  const meKind = people.find((p) => p.id === user?.memberId)?.kind ?? "adult";
+  const [peopleAll, data] = await Promise.all([getPeople().catch(() => []), loadCleaning(todayISO)]);
+  const people = peopleAll.filter((p) => p.id !== "household");
+  const me = user?.memberId ?? null;
+  // Personal lists belong to their owner: nothing from anyone else's leaves the server.
+  const lists = visibleLists(data.lists, me);
+  const listIds = new Set(lists.map((l) => l.id));
+  const tasks = data.tasks.filter((t) => listIds.has(t.listId));
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const meKind = people.find((p) => p.id === me)?.kind ?? "adult";
   return (
-    <>
-      <Suspense fallback={null}>
-        <ChoresClient chores={chores} completions={completions} people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))} me={user?.memberId ?? null} isAdult={(user?.role ?? "owner") === "owner" || meKind === "adult"} todayISO={todayISO} dayISO={dayISO} week={week} initialTab={tab === "chart" || tab === "manage" ? tab : "today"} />
-      </Suspense>
-    </>
+    <Suspense fallback={null}>
+      <CleaningClient
+        lists={lists} tasks={tasks} completions={data.completions.filter((c) => taskIds.has(c.taskId))} handoffs={data.handoffs.filter((h) => taskIds.has(h.taskId))}
+        people={people.map((p) => ({ id: p.id, name: p.name, greetingName: p.greetingName, hue: p.hue, avatarUrl: p.avatarUrl, kind: p.kind }))}
+        me={me} isAdult={user?.role === "owner" || meKind === "adult"} todayISO={todayISO} dayISO={dayISO} initialTab={tab === "week" || tab === "lists" ? tab : "today"}
+        templates={CLEANING_TEMPLATES.map((t) => ({ key: t.key, name: t.name, icon: t.icon, body: t.body, count: t.tasks.length }))}
+      />
+    </Suspense>
   );
 }

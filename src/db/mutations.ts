@@ -6,6 +6,7 @@
  * These are plain async functions; the "use server" boundary + auth checks
  * live in src/app/finance/actions.ts.
  */
+import { MEMBER_NOTIFICATION_EVENTS } from "@/lib/notification-events";
 import { and, eq, gte, inArray, or, isNull, lt, like, sql, ne } from "drizzle-orm";
 import { db } from "./index";
 import * as s from "./schema";
@@ -1930,6 +1931,8 @@ export async function runMonthlyAllowances(now: Date) {
 // ====================================================================
 // Notifications
 // ====================================================================
+const DEFAULT_OFF_EVENTS = new Set(MEMBER_NOTIFICATION_EVENTS.filter((e) => e.defaultOff).map((e) => e.key));
+
 export async function createNotification(args: {
   type: string;
   tone?: string; // info | accent | warning | negative
@@ -1964,6 +1967,8 @@ export async function createNotification(args: {
       ch.inApp = ch.inApp && mine[0].inApp;
       ch.push = ch.push && mine[0].push;
       if (!ch.inApp && !ch.push) return { ok: true as const, skipped: true as const };
+    } else if (DEFAULT_OFF_EVENTS.has(args.type)) {
+      return { ok: true as const, skipped: true as const }; // opt-in events stay quiet until the person switches them on
     }
   }
   // Idempotency: never double-post the same logical alert (webhook + cron, etc.)

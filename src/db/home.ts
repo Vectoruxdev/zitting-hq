@@ -14,7 +14,7 @@ import { photoOfTheDay, recentPhotos } from "./photos";
 import { getCalendar, type CalItem } from "./calendar";
 import { addDaysISO } from "./household";
 import { homeGoals } from "./goals";
-import { choreStreak, dayFor, listChores, listCompletions, type Chore, type Completion } from "./chores";
+import { dayStats, loadCleaning, openOn, streak, visibleLists, type OpenItem } from "./cleaning";
 import { getModuleAccess } from "./permissions";
 import { isModuleEnabled, modulesFor } from "@/lib/modules";
 import { fetchWeather, type Weather } from "@/lib/weather";
@@ -53,11 +53,14 @@ export interface HomeCore {
   pendingSwaps: number;
 }
 
+/** One open cleaning task on Home: what, for which period, and whether it is done. */
+export interface HomeCleaningItem { taskId: string; periodKey: string; title: string; icon: string | null; done: boolean; needsCheck: boolean; checked: boolean; due: string | null; list: string }
+
 /** The sections that take longer (money, calendar, chores, goals) — streamed in behind their skeletons. */
 export interface HomeSlow {
   goals: { id: string; title: string; value: number; current?: number; target?: number; unit?: string | null; money: boolean; people: number[]; progressKind: "checkoff" | "count" | "streak" | "savings"; doneToday: boolean; streak: number; mine: boolean }[];
   /** Chores today per person (kids first), and how many finished chores are waiting for an adult's check. */
-  chores: { people: { memberId: string; items: { choreId: string; title: string; icon: string | null; done: boolean; needsCheck: boolean; checked: boolean }[]; done: number; total: number; points: number; possible: number; streak: number }[]; toCheck: number };
+  chores: { people: { memberId: string; items: HomeCleaningItem[]; done: number; total: number; points: number; possible: number; streak: number }[]; anyone: HomeCleaningItem[]; toCheck: number };
   /** Unified calendar for today + the next 7 days (events, appointments, trips, feeds). */
   upNext: Pick<CalItem, "key" | "kind" | "title" | "dateISO" | "time" | "location" | "forMemberId" | "driverMemberId" | "familyEventId" | "tripId" | "dayOfTrip">[];
   dashboard: DashboardData;
@@ -145,23 +148,27 @@ export async function getHomeSlow(viewer: Viewer, core: Pick<HomeCore, "todayISO
   const people = core.people;
   const av = { memberId: viewer.memberId, role: viewer.role };
   const t0 = Date.now();
-  const [dashboard, goals, chores, completions, cal] = await Promise.all([
+  const [dashboard, goals, cleaning, cal] = await Promise.all([
     getDashboardData(viewer),
     guarded("goals", homeGoals(av, todayISO), () => []),
-    guarded("chores", listChores(), () => [] as Chore[]),
-    guarded("chore completions", listCompletions(addDaysISO(todayISO, -60), todayISO), () => [] as Completion[]),
+    guarded("cleaning", loadCleaning(todayISO), () => ({ lists: [], tasks: [], completions: [], handoffs: [] })),
     guarded("calendar", getCalendar(av, todayISO, addDaysISO(todayISO, 7), { dinners: false }), () => ({ items: [] as CalItem[], feeds: [], configured: false }), 8000),
   ]);
   console.log(`[home] slow reads ${Date.now() - t0}ms`);
   return {
     goals: goals.map((g) => ({ id: g.id, title: g.title, value: g.progress.value, current: g.progress.current, target: g.progress.target ?? undefined, unit: g.progress.unit, money: g.progress.money, people: g.participants.map((id) => people.find((p) => p.id === id)?.hue ?? 1), progressKind: g.progressKind, doneToday: g.progress.doneToday, streak: g.progress.streak, mine: !!viewer.memberId && g.participants.includes(viewer.memberId) })),
     chores: (() => {
+      const lists = visibleLists(cleaning.lists, viewer.memberId);
+      const ids = new Set(lists.map((l) => l.id));
+      const items = openOn(todayISO, cleaning.tasks.filter((t) => ids.has(t.listId)), lists, cleaning.completions, cleaning.handoffs);
+      const toItem = (i: OpenItem): HomeCleaningItem => ({ taskId: i.task.id, periodKey: i.occ.periodKey, title: i.task.title, icon: i.task.icon, done: !!i.completion, needsCheck: i.task.needsCheck, checked: !!i.completion?.checkedAt, due: i.occ.period === "day" ? null : i.occ.dueISO, list: i.list.name });
       const ordered = [...people].sort((a, b) => Number(a.kind === "adult") - Number(b.kind === "adult"));
-      const days = dayFor(chores, completions, ordered.map((p) => p.id), todayISO).filter((d) => d.due.length);
-      return {
-        people: days.map((d) => ({ memberId: d.memberId as string, items: d.due.map((c) => { const done = d.done.find((x) => x.choreId === c.id); return { choreId: c.id, title: c.title, icon: c.icon, done: !!done, needsCheck: c.needsCheck, checked: !!done?.checkedAt }; }), done: d.done.length, total: d.due.length, points: d.points, possible: d.possible, streak: choreStreak(chores, completions, d.memberId as string, todayISO) })),
-        toCheck: days.reduce((a, d) => a + d.waitingCheck, 0),
-      };
+      const per = ordered.map((p) => {
+        const mine = items.filter((i) => i.assignee === p.id);
+        const st = dayStats(items, p.id);
+        return { memberId: p.id, items: mine.map(toItem), done: mine.filter((i) => i.completion).length, total: mine.length, points: st.points, possible: st.possible, streak: p.kind === "child" ? streak(cleaning.tasks, lists, cleaning.completions, cleaning.handoffs, p.id, todayISO) : 0 };
+      }).filter((x) => x.total);
+      return { people: per, anyone: items.filter((i) => i.assignee === null).map(toItem), toCheck: items.filter((i) => i.task.needsCheck && i.completion && !i.completion.checkedAt).length };
     })(),
     upNext: cal.items.slice(0, 12).map((i) => ({ key: i.key, kind: i.kind, title: i.title, dateISO: i.dateISO, time: i.time, location: i.location, forMemberId: i.forMemberId, driverMemberId: i.driverMemberId, familyEventId: i.familyEventId, tripId: i.tripId, dayOfTrip: i.dayOfTrip })),
     dashboard,

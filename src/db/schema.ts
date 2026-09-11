@@ -9,6 +9,7 @@
  * human strings (e.g. "Jun 4", "2m ago") verbatim so the UI stays faithful;
  * those become real dates once bank sync is wired up.
  */
+import type { Rhythm as CleaningRhythm, Assign as CleaningAssign } from "@/lib/cleaning/schedule";
 import {
   pgTable,
   text,
@@ -1207,6 +1208,7 @@ export const goalCheckins = pgTable("goal_checkins", {
 }, (t) => [index("idx_goal_checkins_goal").on(t.goalId, t.day)]);
 
 /** A recurring chore: who, which weekdays (digits, Sunday = 0), when in the day, points, whether an adult checks it. */
+// DEPRECATED 2026-09-10: never used (0 rows); replaced by the cleaning_* tables below. Kept until a cleanup migration drops them.
 export const chores = pgTable("chores", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -1238,3 +1240,55 @@ export const quoteSaves = pgTable("quote_saves", {
   memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (t) => [primaryKey({ columns: [t.quoteId, t.memberId] }), index("idx_quote_saves_member").on(t.memberId, t.createdAt)]);
+
+// ---- Cleaning (2026-09-10): lists, tasks with rhythms, completions per period, hand-offs — supabase-cleaning.sql ----
+// Replaces the never-used Chores tables above (left in place, unused, to be dropped later).
+export const cleaningLists = pgTable("cleaning_lists", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  icon: text("icon"),
+  tint: text("tint"),
+  visibility: text("visibility").notNull().default("family"), // family | personal
+  ownerMemberId: text("owner_member_id").references(() => familyMembers.id, { onDelete: "cascade" }), // personal lists only
+  remindTime: text("remind_time"), // HH:MM family time for the morning digest; null = the default
+  sort: integer("sort").notNull().default(0),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+export const cleaningTasks = pgTable("cleaning_tasks", {
+  id: text("id").primaryKey(),
+  listId: text("list_id").notNull().references(() => cleaningLists.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  icon: text("icon"),
+  notes: text("notes"),
+  rhythm: jsonb("rhythm").$type<CleaningRhythm>().notNull(),
+  assign: jsonb("assign").$type<CleaningAssign>().notNull(),
+  timeOfDay: text("time_of_day").notNull().default("any"), // morning | afternoon | evening | any
+  points: integer("points").notNull().default(0),
+  needsCheck: boolean("needs_check").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  sort: integer("sort").notNull().default(0),
+  createdBy: text("created_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("idx_cleaning_tasks_list").on(t.listId)]);
+
+export const cleaningCompletions = pgTable("cleaning_completions", {
+  id: serial("id").primaryKey(),
+  taskId: text("task_id").notNull().references(() => cleaningTasks.id, { onDelete: "cascade" }),
+  periodKey: text("period_key").notNull(), // YYYY-MM-DD (day / week's Sunday / once) or YYYY-MM (month)
+  memberId: text("member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  doneAt: timestamp("done_at", { withTimezone: true }).defaultNow(),
+  checkedBy: text("checked_by").references(() => familyMembers.id, { onDelete: "set null" }),
+  checkedAt: timestamp("checked_at", { withTimezone: true }),
+}, (t) => [uniqueIndex("cleaning_completions_task_period_key").on(t.taskId, t.periodKey), index("idx_cleaning_completions_done_at").on(t.doneAt)]);
+
+/** "Take this" / "Hand to…" for one period of one task. */
+export const cleaningHandoffs = pgTable("cleaning_handoffs", {
+  taskId: text("task_id").notNull().references(() => cleaningTasks.id, { onDelete: "cascade" }),
+  periodKey: text("period_key").notNull(),
+  memberId: text("member_id").notNull().references(() => familyMembers.id, { onDelete: "cascade" }),
+  byMemberId: text("by_member_id").references(() => familyMembers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [primaryKey({ columns: [t.taskId, t.periodKey] })]);
